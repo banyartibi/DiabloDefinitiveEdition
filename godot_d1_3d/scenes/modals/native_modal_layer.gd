@@ -18,6 +18,7 @@ var last_qtext_line_count := -1
 var last_is_dead := false
 
 const FONT_EXOCET = preload("res://assets/fonts/Exocet.ttf")
+const UpscalerModelConfig = preload("res://scripts/upscaler_model_config.gd")
 
 func _apply_font_recursive(node: Node):
 	if node is Label or node is Button or node is LineEdit:
@@ -61,6 +62,7 @@ var _opt_color_button: Button = null
 var _opt_hdr_button: Button = null
 var _opt_upscaler_button: Button = null
 var _opt_relief_button: Button = null
+var _opt_tile_model_button: Button = null  # Neural upscale model selector (6 offline AI models)
 var _opt_wet_floor_button: Button = null
 var _opt_effects_button: Button = null
 var _opt_display_mode_button: Button = null
@@ -306,6 +308,10 @@ func _ready() -> void:
 	_opt_relief_button = relief_row.get_node("Button")
 	_opt_relief_button.pressed.connect(_on_opt_relief_cycled)
 
+	var tile_model_row := _add_option_button_row(opt_vbox, "Tile Upscale Model", "Cycle")
+	_opt_tile_model_button = tile_model_row.get_node("Button")
+	_opt_tile_model_button.pressed.connect(_on_opt_tile_model_cycled)
+
 	var wet_floor_row := _add_option_button_row(opt_vbox, "Wet Floor", "On")
 	_opt_wet_floor_button = wet_floor_row.get_node("Button")
 	_opt_wet_floor_button.pressed.connect(_on_opt_wet_floor_toggled)
@@ -509,6 +515,12 @@ func _refresh_option_values() -> void:
 	_set_row_text(_opt_hdr_button, "Definitive Edition", "Engine HDR Glow")
 	_set_row_text(_opt_upscaler_button, "Definitive Edition", "Upscaler")
 	_set_row_text(_opt_relief_button, "Definitive Edition", "3D Surface Relief")
+	_set_row_text(_opt_tile_model_button, "Definitive Edition", "AI Tile Upscale Model")
+	if _opt_tile_model_button and _opt_tile_model_button.text == "":
+		var tm: int = 0
+		if brightness_host and brightness_host.has_method("get_tile_model_index"):
+			tm = int(brightness_host.get_tile_model_index())
+		_opt_tile_model_button.text = UpscalerModelConfig.get_model_display_name(tm)
 	_set_row_text(_opt_wet_floor_button, "Definitive Edition", "Wet Floor")
 	_set_row_text(_opt_effects_button, "Definitive Edition", "Definitive Effects")
 	_set_row_text(_opt_display_mode_button, "Definitive Edition", "Display Mode")
@@ -616,6 +628,27 @@ func _on_opt_upscaler_cycled() -> void:
 
 func _on_opt_relief_cycled() -> void:
 	_cycle_d1de_list(_opt_relief_button, "Definitive Edition", "3D Surface Relief")
+
+func _on_opt_tile_model_cycled() -> void:
+	if _options_refreshing:
+		return
+	if diablo_bridge != null and diablo_bridge.has_method("set_setting_list"):
+		_cycle_d1de_list(_opt_tile_model_button, "Definitive Edition", "AI Tile Upscale Model")
+		var info = _get_bridge_entry("Definitive Edition", "AI Tile Upscale Model")
+		if info:
+			var new_id = int(info.get("list_index", 0))
+			if brightness_host and brightness_host.has_method("set_tile_model"):
+				brightness_host.set_tile_model(new_id)
+			return
+	# Standalone fallback
+	var current: int = 0
+	if brightness_host and brightness_host.has_method("get_tile_model_index"):
+		current = int(brightness_host.get_tile_model_index())
+	var next_id = (current + 1) % UpscalerModelConfig.get_model_count()
+	if brightness_host and brightness_host.has_method("set_tile_model"):
+		brightness_host.set_tile_model(next_id)
+	if _opt_tile_model_button:
+		_opt_tile_model_button.text = UpscalerModelConfig.get_model_display_name(next_id)
 
 func _on_opt_wet_floor_toggled() -> void:
 	_toggle_d1de_bool(_opt_wet_floor_button, "Definitive Edition", "Wet Floor")

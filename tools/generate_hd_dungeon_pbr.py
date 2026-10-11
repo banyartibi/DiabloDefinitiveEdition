@@ -29,21 +29,26 @@ def delight_image_4x(img_rgba: Image.Image, is_floor: bool, ref_floor_arr: np.nd
     if not np.any(mask) or not is_floor:
         return Image.fromarray(arr, mode="RGBA")
 
+    import scipy.ndimage as ndimage
+    interior_mask = ndimage.binary_erosion(mask, iterations=4)
+
     lum = 0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2]
     blood_mask = (arr[:, :, 0] > 60) & (arr[:, :, 0].astype(int) > arr[:, :, 1].astype(int) * 1.5)
-    shadow_mask = (lum < 24.0) & mask & (~blood_mask)
+    shadow_mask = (lum < 24.0) & interior_mask & (~blood_mask)
 
     shadow_count = int(np.sum(shadow_mask))
-    total_valid = int(np.sum(mask))
+    total_valid = int(np.sum(interior_mask))
 
-    if shadow_count >= 450 and (shadow_count / float(total_valid)) < 0.85:
+    if total_valid > 0 and shadow_count >= 450 and (shadow_count / float(total_valid)) < 0.85:
         if ref_floor_arr is not None and ref_floor_arr.shape == arr.shape:
             arr[shadow_mask] = ref_floor_arr[shadow_mask]
         else:
-            lit_mean = float(np.mean(lum[mask & (~shadow_mask)]))
-            factor = lit_mean / np.maximum(lum[shadow_mask], 1.0)
-            for c in range(3):
-                arr[shadow_mask, c] = np.clip(arr[shadow_mask, c] * factor, 0, 255).astype(np.uint8)
+            valid_lit = interior_mask & (~shadow_mask)
+            if np.any(valid_lit):
+                lit_mean = float(np.mean(lum[valid_lit]))
+                factor = np.clip(lit_mean / np.maximum(lum[shadow_mask], 1.0), 1.0, 2.0)
+                for c in range(3):
+                    arr[shadow_mask, c] = np.clip(arr[shadow_mask, c] * factor, 0, 255).astype(np.uint8)
 
     return Image.fromarray(arr, mode="RGBA")
 
@@ -76,18 +81,6 @@ def compute_pbr_maps_4x(img_rgba: Image.Image, bump_strength: float = 1.8):
         pad_lum[0:h, 0:w] * ky[0, 0] + pad_lum[0:h, 1:w+1] * ky[0, 1] + pad_lum[0:h, 2:w+2] * ky[0, 2]
     )
 
-    # 2-pixel boundary mask: clamp edge gradients to zero so tile junctions are perfectly seamless
-    boundary = np.zeros_like(alpha_mask, dtype=bool)
-    for y in range(h):
-        for x in range(w):
-            if alpha_mask[y, x]:
-                if (x < 2 or not alpha_mask[y, x-1] or x >= w-2 or not alpha_mask[y, x+1] or
-                    y < 2 or not alpha_mask[y-1, x] or y >= h-2 or not alpha_mask[y+1, x]):
-                    boundary[y, x] = True
-
-    gx[boundary] = 0.0
-    gy[boundary] = 0.0
-
     # 1. Normal Map (RGB)
     scale = bump_strength
     nx = -gx * scale
@@ -106,7 +99,6 @@ def compute_pbr_maps_4x(img_rgba: Image.Image, bump_strength: float = 1.8):
     # 2. Height Map (Normal Alpha channel) for Parallax Occlusion Mapping
     edge_gradient = np.sqrt(gx * gx + gy * gy)
     height = np.clip(lum - edge_gradient * 0.40, 0.0, 1.0)
-    height[boundary] = 0.50
     height_u8 = (np.clip(height, 0.0, 1.0) * 255.0).astype(np.uint8)
     height_u8[~alpha_mask] = 0
 
@@ -145,7 +137,6 @@ def compute_pbr_maps_4x(img_rgba: Image.Image, bump_strength: float = 1.8):
     # Specular Map for CanvasTexture.specular_texture
     # Encodes ORM directly: RGB = ORM, Alpha = Shininess/Flatness
     shininess_u8 = (np.clip((1.0 - rough) * 255.0, 10, 240)).astype(np.uint8)
-    shininess_u8[boundary] = 0
     shininess_u8[~alpha_mask] = 0
     spec_img = Image.fromarray(np.dstack([ao_u8, rough_u8, metallic_u8, shininess_u8]), mode="RGBA")
 

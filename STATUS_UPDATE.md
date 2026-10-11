@@ -14,7 +14,7 @@ mi kész, mi van vissza. Áttekintés: ~10 500 sor GDScript + ~4 100 sor C++ (br
 |---|---|---|---|
 | **Task 1** | DevilutionX C++ + Godot Vulkan megjelenés extra tuningokkal | ✅ **Működik, ~98%** – Esc→Save Game valós játékmenetben is verifikálva | 98% |
 | **Task 2** | Godot native 2.5D – lépcsézetes átültetés | 🟢 **Nagy előrehaladás** – megjelenés, PBR, árnyékok és UI rétegek készek; a logika még C++-on | ~85% |
-| **Task 3** | Godot 3D megjelenítés (Sandbox) | ✅ **Sandbox szinten kész, ~80%** – minden kód-generálva, nem production-ready asset-el | 80% (sandbox) |
+| **Task 3** | Godot 3D megjelenítés (Sandbox) | ✅ **Fejlett 3D Sandbox, ~90%** – Unifikált 4X PBR billboard scenery, interaktív props, szintváltás-izoláció és hősies skálázás | 90% (sandbox) |
 | **Task 4** | Minden átültetése 3D-be | ⬜ **Nem kezdett el – a legnagyobb maradvány** | 0% |
 
 A hibrid architektúra (DevilutionX in-process GDExtension + Godot Forward+ Vulkan) **teljesen működik**:
@@ -56,7 +56,20 @@ Minden verifikálva után commit + push (a felhasználó kéri).
 
 **Build:** `./build_gdextension.sh` + Godot headless import tiszta (3 canvas_item shader compila, PlaneMesh scenes OK).
 
-**Re-verification (2026-09-21, second agent):** ✅ Clean build (`ninja: no work to do`, core + GDExtension), clean headless import (new `*_2d.tscn` scenes & 3 canvas_item shaders valid resources), és `--check-only` parse-check tiszta a 3 érintett scripten (`one_shot_particles_2d.gd`, `native_25d_view.gd`, `native_modal_layer.gd`). A C++ gate (`PushVisualEvent()` → render_bridge.cpp ~L1108) és az Options row (native_modal_layer.gd L313-614) helyén. **Következő lépés:** valós visual runtime verify a user display/Vulkan session-ban – `./run_d1_godot3d.sh` → Native Godot 2.5D mode → kill monster / fireball → VFX látható? → Options → Resurrected Effects OFF → nincs VFX (minden mód), ON vissza.
+**Re-verification (2026-09-21, second agent):** ✅ Clean build (`ninja: no work to do`, core + GDExtension), clean headless import (new `*_2d.tscn` scenes & 3 canvas_item shaders valid resources), és `--check-only` parse-check tiszta a 3 érintett scripten (`one_shot_particles_2d.gd`, `native_25d_view.gd`, `native_modal_layer.gd`). A C++ gate (`PushVisualEvent()` → render_bridge.cpp ~L1108) és az Options row (native_modal_layer.gd L313-614) helyén.
+
+---
+
+## 🆕 Fázis-4: Natív 3D Sandbox & PBR Billboarding, Teleport/Szintváltás Isoláció, Crash Védelem és Skálázás (2026-10-11)
+
+| # | Munka | Állapot |
+|---|---|---|
+| 1 | **Unifikált 3D Billboard Scenery (Mode 2)**: Moduláris tégla dobozok/piramisok teljes lecserélése autentikus 4X PBR billboard szcenikára minden dungeon témában (Cathedral, Catacombs, Caves, Hell) és Faluban (L0). 100% tömör diamond padló mesh (`transparency = TRANSPARENCY_DISABLED`, +2.5% peremátfedés a fekete rácsvonalak ellen). Párhuzamos kamera-forgatás (orbitingkor minden tereptárgy és fal együtt fordul a kamerával, megszüntetve a fűrészfogas/domínó hatást). | ✅ |
+| 2 | **Interaktív 3D Tereptárgyak & Világítás**: Könyvtartók (OBJ_BOOKSTAND), ládák, szarkofágok, hordók, fali fáklyák, álló tüzek, szentélyek teljes bekötése és renderelése 3D-ben. | ✅ |
+| 3 | **Szintváltás & Teleport Isoláció (Barlang → Falu)**: Szint szerint kulcsozott gyorsítótárak (`floor_material_cache`, `base_floor_texture_cache`, `scenery_texture_cache`, `scenery_special_cache` kulcsa: `cur_level_piece_id`), megszüntetve a barlangi láva és falu földút azonosítók ütközését (GEMINI.md Rule #1). Azonnali szintváltás detektálás a `_process()`-ben és teljes jelenet-tisztítás (`_on_level_changed()`). Falu (L0) szigorúan védve dungeon PBR és CEL boltívek ellen (Rule #1 & Rule #2). | ✅ |
+| 4 | **C++ Crash / SIGSEGV Védelem Szintváltáskor**: `FreeMonsters()` és `FreeTownerGFX()` memóriafelszabadítás után explicite `std::nullopt`-ra nullázza a sprite mutatókat, kizárva a dangling pointereket. `GetMonsterSpriteRgba` és `GetActiveMonstersData` szigorú null/határ/transition védelmet kapott (`g_D1LevelTransitioning.load()`, `ownedAnim.has_value()`, `anim.has_value()`, `m.hitPoints > 0 || mode == Death`). | ✅ |
+| 5 | **Karakter- és Tárgyskálázás Finomhangolása**: Varázslás/skill cast közbeni miniatűr méret javítva (`sw > 120` téves HD flag törölve; live sprite mindig `PIXEL_SIZE_1X`). Hősies kiegyensúlyozott méret (`ENTITY_SCALE_MULT = 1.15`). Földön heverő loot 4X HD textúrával (`hd_sprites_x4plus/items/`, `hd_sprites/items/`), +75% méretbónusszal (`item_scale_boost = 1.75`) és 20pt lebegő címkével, kiváló olvashatóságot biztosítva az overhead kamerából. | ✅ |
+| 6 | **Automatizált Regressziós Tesztek**: `test_teleport_and_scaling_fixes.gd`, `test_5_user_fixes.gd`, `test_unified_3d_scenery.gd` és `test_town_and_modes.gd` mind 100% PASS! | ✅ |
 
 ---
 
@@ -198,7 +211,7 @@ Kész részek (mind natív Godot UI, bridge-adatból):
 | **Task 2 Step 3** (Normálmap + fények/árnyékok) | ✅ Kész – Teljes PBR csempekészlet, folytonos GPU fény, 2.5D árnyékok | 100% |
 | **Task 2 Step 4** (AI grafika + elemcsere) | ✅ Kész – 4x HD csempék, HD sprite pipeline, élő Options váltó | ~95% |
 | **Task 2 Step 5** (DevilutionX elhagyása) | ⬜ Nem kezdett el | 0% |
-| **Task 3** (Godot 3D – Sandbox) | ✅ Sandbox szinten kész, nem production-ready | ~80% (sandbox) |
+| **Task 3** (Godot 3D – Sandbox) | ✅ ~90% – Unifikált 4X PBR billboard scenery, interaktív 3D props, szintváltás-izoláció és hősies skálázás | ~90% (sandbox) |
 | **Task 4** (Minden átültetése 3D-be) | ⬜ Nem kezdett el – a legnagyobb maradvány | 0% |
 
 A fejlesztés jelenleg **Task 2 Step 5-re** fókuszál: a gameplay logika natív Godot-ba való átvitele. A Task 3/4 (production 3D) az utolsó nagy fázis.

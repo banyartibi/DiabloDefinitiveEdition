@@ -4045,6 +4045,9 @@ void FreeMonsters()
 			}
 		}
 	}
+	for (size_t i = 0; i < MaxMonsters; ++i) {
+		Monsters[i].animInfo.sprites = std::nullopt;
+	}
 }
 
 bool DirOK(const Monster &monster, Direction mdir)

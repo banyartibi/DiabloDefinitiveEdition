@@ -182,9 +182,6 @@ void LoadPalette(const char *pszFileName, bool blend /*= true*/)
 {
 	assert(pszFileName);
 
-	if (HeadlessMode)
-		return;
-
 	struct Color {
 		uint8_t r;
 		uint8_t g;
@@ -204,6 +201,9 @@ void LoadPalette(const char *pszFileName, bool blend /*= true*/)
 #endif
 	}
 
+	if (HeadlessMode)
+		return;
+
 	if (blend) {
 		if (leveltype == DTYPE_CAVES || leveltype == DTYPE_CRYPT) {
 			GenerateBlendedLookupTable(orig_palette, 1, 31);
@@ -217,8 +217,6 @@ void LoadPalette(const char *pszFileName, bool blend /*= true*/)
 
 void LoadRndLvlPal(dungeon_type l)
 {
-	if (HeadlessMode)
-		return;
 
 	if (l == DTYPE_TOWN) {
 		LoadPalette("levels\\towndata\\town.pal");

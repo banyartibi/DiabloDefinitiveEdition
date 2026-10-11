@@ -7,6 +7,7 @@ uniform float gamma : hint_range(0.4, 2.5) = 1.30;
 uniform int color_profile : hint_range(0, 4) = 0; // 0: Vanilla, 1: Dark Gothic, 2: Hellish Crimson, 3: Crypt Cyan, 4: Noir
 uniform int upscaler_mode : hint_range(0, 4) = 0;
 uniform float fsr_sharpness : hint_range(0.0, 1.0) = 0.50;
+uniform bool is_town = false;
 
 // Distinct, Rich Color Grading Profiles
 vec3 apply_color_grading(vec3 c, int profile) {
@@ -15,6 +16,14 @@ vec3 apply_color_grading(vec3 c, int profile) {
     }
 
     if (profile == 1) {
+        if (is_town) {
+            // In Town, preserve bright open-air daytime sunlit ambiance instead of dark dungeon crushing
+            vec3 col = c;
+            col.r = pow(col.r, 0.98) * 1.02; // Warm sunlight golden tint
+            col.g = pow(col.g, 0.99) * 1.01;
+            col.b = pow(col.b, 1.02) * 0.96; // Tame excessive cold cyan/blue
+            return clamp(col, 0.0, 1.0);
+        }
         // Dark Gothic: True grimdark dungeon contrast, deep inky shadows, rich torchlit highlights
         vec3 col = c;
         col = (col * (2.8 * col + 0.15)) / (col * (2.8 * col + 0.85) + 0.12);
@@ -23,6 +32,11 @@ vec3 apply_color_grading(vec3 c, int profile) {
         col.b = pow(col.b, 0.95) * 1.07;
         return clamp(col, 0.0, 1.0);
     } else if (profile == 2) {
+        if (is_town) {
+            vec3 col = c;
+            col.r = pow(col.r, 0.98) * 1.02;
+            return clamp(col, 0.0, 1.0);
+        }
         // Hellish Crimson - Warm, rich blood-dungeon ambiance
         vec3 graded = c;
         graded.r = pow(graded.r, 0.91) * 1.12;
@@ -30,6 +44,9 @@ vec3 apply_color_grading(vec3 c, int profile) {
         graded.b = pow(graded.b, 1.09) * 0.84;
         return clamp(graded, 0.0, 1.0);
     } else if (profile == 3) {
+        if (is_town) {
+            return c; // In Town, never freeze Tristram daylight into chilling crypt cyan!
+        }
         // Crypt Cyan - Chilling, eerie spectral cold dungeon ambiance
         vec3 graded = c;
         graded.r = pow(graded.r, 1.10) * 0.84;
@@ -37,6 +54,9 @@ vec3 apply_color_grading(vec3 c, int profile) {
         graded.b = pow(graded.b, 0.91) * 1.18;
         return clamp(graded, 0.0, 1.0);
     } else if (profile == 4) {
+        if (is_town) {
+            return c;
+        }
         // Desaturated Noir - Dramatic, stark grimdark monochrome with subtle tint
         float l = dot(c, vec3(0.299, 0.587, 0.114));
         vec3 graded = mix(vec3(l), c, 0.28);

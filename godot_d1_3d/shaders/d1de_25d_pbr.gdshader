@@ -10,6 +10,7 @@ uniform vec3 light_tint = vec3(1.0, 0.95, 0.88);
 uniform float bump_scale : hint_range(0.0, 3.0) = 1.0;
 uniform float specular_gloss : hint_range(0.0, 2.0) = 0.50;
 uniform bool is_town = false;
+uniform bool is_lava_level = false; // Caves (L9-12) & Hell (L13-16) only
 uniform int relief_mode : hint_range(0, 4) = 0; // 0: Off, 1: Subtle, 2: Balanced, 3: Deep 3D, 4: Extreme
 uniform bool wet_floor = true; // Wet cobblestone PBR reflections & specular gloss
 
@@ -20,24 +21,21 @@ void vertex() {
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 	v_foot_pos = MODEL_MATRIX[3].xy;
 }
-
+ 
 void fragment() {
-	// Floor tiles have 2:1 aspect ratio (H / W <= 0.55 in both 1X and 4X).
-	// Walls, arches and scenery have H / W >= 1.0.
-	bool is_floor = (TEXTURE_PIXEL_SIZE.x / TEXTURE_PIXEL_SIZE.y <= 0.55);
-
-	// Isometric diamond edge distance for seamless tile boundaries:
-	// In 2:1 isometric UVs, (abs(UV.x - 0.5) + abs(UV.y - 0.5)) * 2.0 equals 1.0 exactly at the diamond perimeter.
-	float diamond_dist = 1.0 - 2.0 * (abs(UV.x - 0.5) + abs(UV.y - 0.5));
-	float edge_fade = is_floor ? clamp(diamond_dist * 10.0, 0.0, 1.0) : clamp(min(UV.x, 1.0 - UV.x) * 20.0, 0.0, 1.0);
+	// Universal 2:1 Isometric Diamond Geometry for ALL Pieces (Floors, Walls, Columns, Scenery):
+	// A standard floor row has aspect ratio height = width * 0.5 (2:1 diamond).
+	// In normalized UV coordinates:
+	float floor_row_h = clamp((TEXTURE_PIXEL_SIZE.y / TEXTURE_PIXEL_SIZE.x) * 0.5, 0.0, 1.0);
+	float floor_row_start = 1.0 - floor_row_h;
+	bool is_floor_piece = (floor_row_h >= 0.90);
+	bool in_floor_row = is_floor_piece || (UV.y >= (floor_row_start - 0.002));
 
 	vec2 final_uv = UV;
-	if (relief_mode >= 3 && edge_fade > 0.01) {
-		// Parallax Occlusion Mapping (POM)
-		// Isometric view vector (~35 deg slant towards South/down)
+	if (relief_mode >= 3 && !is_town) {
+		// Parallax Occlusion Mapping (POM) for high-resolution dungeon PBR surfaces
 		vec2 view_dir = vec2(0.0, 0.45);
-		// Scale height smoothly to 0 at the boundary so adjacent tiles never disconnect
-		float h_scale = (relief_mode == 4 ? 0.010 : 0.005) * bump_scale * edge_fade;
+		float h_scale = (relief_mode == 4 ? 0.008 : 0.004) * bump_scale;
 
 		const int pom_steps = 6;
 		float step_size = 1.0 / float(pom_steps);
@@ -52,8 +50,7 @@ void fragment() {
 				break;
 			}
 			vec2 next_uv = curr_uv + step_delta;
-			// Guard against POM raymarching outside the tile diamond
-			if (texture(TEXTURE, next_uv).a < 0.10) {
+			if (texture(TEXTURE, next_uv).a < 0.25) {
 				break;
 			}
 			curr_uv = next_uv;
@@ -63,24 +60,30 @@ void fragment() {
 		final_uv = curr_uv;
 	}
 
-	// A tile is in the floor row if it is a 1-row tile OR if this fragment is in the bottom 32 world pixels of a multi-row piece
-	bool in_floor_row = is_floor || (v_world_pos.y >= (v_foot_pos.y - 32.5));
-
 	vec4 tex = texture(TEXTURE, final_uv);
-	if (is_floor) {
-		// Exact mathematical diamond boundary with subpixel overlap margin (-0.015).
-		// Guaranteed 100% gapless and seamless across ALL zoom levels (0.75x, 1.0x, 1.25x, 1.5x, 2.0x, 2.5x)!
-		if (diamond_dist < -0.015) {
+
+	// Universal 2:1 Isometric Diamond Geometry in world coordinates
+	vec2 tile_center = v_foot_pos - vec2(0.0, 16.0);
+	float d_diamond = (abs(v_world_pos.x - tile_center.x) / 32.0) + (abs(v_world_pos.y - tile_center.y) / 16.0);
+
+	// Discard rules:
+	// - Floor pieces (both town & dungeon): allow slight subpixel overlap (d_diamond <= 1.045)
+	//   and only discard quad corners if tex.a is low, eliminating black grid lines between tiles.
+	// - Tall wall / scenery / tree pieces: preserve natural alpha cutouts (tex.a < 0.15)
+	if (is_floor_piece) {
+		if (d_diamond > 1.045 && tex.a < 0.50) {
+			discard;
+		}
+		if (tex.a < 0.15) {
 			discard;
 		}
 	} else {
-		// Upper walls, arches and scenery preserve natural alpha cutout
-		if (tex.a < 0.10) {
+		if (tex.a < 0.15) {
 			discard;
 		}
 	}
 
-	// Direct straight alpha RGB (textures have clean Voronoi color dilation into 0-alpha margins)
+	// Authentic un-altered surface color
 	vec3 base_rgb = tex.rgb;
 
 	// For floor rows: use per-pixel world_pos for seamless continuous lightmap interpolation.
@@ -88,10 +91,6 @@ void fragment() {
 	vec2 sample_pos = in_floor_row ? v_world_pos : (v_foot_pos - vec2(0.0, 16.0));
 
 	// Convert isometric world coordinates (wx, wy) -> tile grid coordinates (tx, ty):
-	// wx = (tx - ty) * 32.0
-	// wy = (tx + ty) * 16.0
-	// tx = wx / 64.0 + wy / 32.0
-	// ty = wy / 32.0 - wx / 64.0
 	vec2 tile_coord = vec2(sample_pos.x / 64.0 + sample_pos.y / 32.0, sample_pos.y / 32.0 - sample_pos.x / 64.0);
 	vec2 uv_light = (tile_coord + vec2(0.5, 0.5)) / 112.0;
 
@@ -99,39 +98,43 @@ void fragment() {
 
 	// For walls: keep bottom 32 world pixels solid when front wall fades transparently
 	float effective_a = COLOR.a;
-	if (!is_floor && v_world_pos.y >= (v_foot_pos.y - 32.0)) {
+	if (!is_floor_piece && v_world_pos.y >= (v_foot_pos.y - 32.0)) {
 		effective_a = 1.0;
 	}
 
-	// Floor rows are 100% solid stone (1.0) so ground never leaks black background gaps;
-	// Upper walls preserve natural texture alpha:
-	float final_a = in_floor_row ? 1.0 : (tex.a * effective_a);
+	// Floor pieces are 100% solid stone/earth so ground never leaks black background gaps across any zoom level;
+	// Upper walls, trees, roofs, fences preserve natural texture alpha:
+	float final_a = is_floor_piece ? effective_a : (tex.a * effective_a);
 
 	if (is_town) {
-		// Town in Diablo 1 is full clean daylight / ambient lighting:
-		vec3 daylight = vec3(1.65, 1.60, 1.48);
+		// Preserves authentic Tristram daytime sunlit ambiance with deep contrast
+		base_rgb = pow(clamp(base_rgb, 0.0, 1.0), vec3(0.95));
+		vec3 daylight = vec3(1.10, 1.08, 1.02); // Natural warm medieval sunshine
 
 		// Dynamic River Water Flow Simulation (Tristram river)
-		// Tristram water occurs on ground rows (in_floor_row) and has authentic slate-blue/cyan tones:
-		bool is_water = in_floor_row && (base_rgb.b > base_rgb.r * 1.15 && base_rgb.b > 0.05 && base_rgb.b > base_rgb.g * 0.88 && base_rgb.r < 0.22);
-		if (is_water) {
-			vec2 flow_dir = vec2(-0.7, 0.7); // Tristram river flow direction (NE to SW)
-			vec2 river_flow = (flow_dir * sin(TIME * 2.0 + (v_world_pos.x + v_world_pos.y) * 0.03) +
-			                   vec2(-flow_dir.y, flow_dir.x) * cos(TIME * 1.6 + (v_world_pos.x - v_world_pos.y) * 0.04)) * (0.016 * edge_fade);
-
-			vec4 flow_tex = texture(TEXTURE, UV + river_flow);
-			if (flow_tex.a > 0.10) {
-				base_rgb = flow_tex.rgb;
+		// Continuous water detection across riverbed & shoreline pieces
+		float water_factor = 0.0;
+		if (in_floor_row) {
+			float b_excess = base_rgb.b - base_rgb.r * 0.92;
+			if (b_excess > 0.005) {
+				water_factor = smoothstep(0.005, 0.06, b_excess) * smoothstep(0.04, 0.12, base_rgb.b);
 			}
+		}
 
-			// Gentle sun glint ripple and caustic wave on the water surface
-			float wave1 = sin(dot(v_world_pos, vec2(0.05, 0.04)) - TIME * 2.5);
-			float wave2 = cos(dot(v_world_pos, vec2(-0.04, 0.06)) + TIME * 2.0);
-			float wave3 = sin(dot(v_world_pos, vec2(0.08, -0.06)) - TIME * 3.0);
-			float caustic = clamp(wave1 * 0.4 + wave2 * 0.4 + wave3 * 0.2 + 0.35, 0.0, 1.0);
+		float flow_t = TIME * 2.0;
+		float wave1 = sin(dot(v_world_pos, vec2(0.05, 0.04)) - flow_t);
+		float wave2 = cos(dot(v_world_pos, vec2(-0.04, 0.06)) + flow_t * 0.85);
+
+		if (water_factor > 0.001) {
+			// Continuous world-pos water flow (flowing southwest along the riverbed)
+			float wave3 = sin(dot(v_world_pos, vec2(0.07, -0.05)) - flow_t * 1.3);
+			float caustic = clamp(wave1 * 0.35 + wave2 * 0.35 + wave3 * 0.30 + 0.35, 0.0, 1.0);
 			float shimmer = pow(caustic, 2.5);
-			vec3 water_shimmer = vec3(0.08, 0.16, 0.28) * shimmer;
-			base_rgb += water_shimmer * edge_fade;
+
+			// Lift deep riverbed color to natural mountain stream azure
+			vec3 stream_blue = vec3(0.12, 0.26, 0.45);
+			base_rgb = mix(base_rgb, max(base_rgb, stream_blue), water_factor * 0.65);
+			base_rgb += vec3(0.05, 0.11, 0.18) * shimmer * water_factor;
 		}
 
 		if (relief_mode > 0) {
@@ -140,95 +143,98 @@ void fragment() {
 			else if (relief_mode == 3) mult = 1.0;
 			else if (relief_mode == 4) mult = 1.5;
 
-			if (is_water) {
-				float w1 = sin(dot(v_world_pos, vec2(0.05, 0.04)) - TIME * 2.5);
-				float w2 = cos(dot(v_world_pos, vec2(-0.04, 0.06)) + TIME * 2.0);
-				NORMAL = normalize(vec3(vec2(w1, w2) * 0.45 * mult * edge_fade, 1.0));
+			if (water_factor > 0.20) {
+				vec2 water_n = vec2(wave1, wave2) * 0.25 * mult;
+				NORMAL = normalize(vec3(mix(NORMAL.xy, water_n, water_factor), 1.0));
 			} else if (length(NORMAL.xy) > 0.001) {
 				NORMAL = normalize(vec3(NORMAL.xy * mult * bump_scale, NORMAL.z));
 			} else {
 				vec2 texel = TEXTURE_PIXEL_SIZE;
 				const vec3 luma = vec3(0.299, 0.587, 0.114);
-				float l_tl = dot(texture(TEXTURE, UV + vec2(-1.0, -1.0) * texel).rgb, luma);
-				float l_tc = dot(texture(TEXTURE, UV + vec2( 0.0, -1.0) * texel).rgb, luma);
-				float l_tr = dot(texture(TEXTURE, UV + vec2( 1.0, -1.0) * texel).rgb, luma);
-				float l_ml = dot(texture(TEXTURE, UV + vec2(-1.0,  0.0) * texel).rgb, luma);
-				float l_mr = dot(texture(TEXTURE, UV + vec2( 1.0,  0.0) * texel).rgb, luma);
-				float l_bl = dot(texture(TEXTURE, UV + vec2(-1.0,  1.0) * texel).rgb, luma);
-				float l_bc = dot(texture(TEXTURE, UV + vec2( 0.0,  1.0) * texel).rgb, luma);
-				float l_br = dot(texture(TEXTURE, UV + vec2( 1.0,  1.0) * texel).rgb, luma);
+				float l_c = dot(tex.rgb, luma);
+
+				// Boundary-safe sampling: out-of-bounds or zero-alpha neighbors fall back to center luma (eliminates edge bevels!)
+				vec4 s_tl = texture(TEXTURE, final_uv + vec2(-1.0, -1.0) * texel);
+				vec4 s_tc = texture(TEXTURE, final_uv + vec2( 0.0, -1.0) * texel);
+				vec4 s_tr = texture(TEXTURE, final_uv + vec2( 1.0, -1.0) * texel);
+				vec4 s_ml = texture(TEXTURE, final_uv + vec2(-1.0,  0.0) * texel);
+				vec4 s_mr = texture(TEXTURE, final_uv + vec2( 1.0,  0.0) * texel);
+				vec4 s_bl = texture(TEXTURE, final_uv + vec2(-1.0,  1.0) * texel);
+				vec4 s_bc = texture(TEXTURE, final_uv + vec2( 0.0,  1.0) * texel);
+				vec4 s_br = texture(TEXTURE, final_uv + vec2( 1.0,  1.0) * texel);
+
+				float l_tl = (s_tl.a > 0.10) ? dot(s_tl.rgb, luma) : l_c;
+				float l_tc = (s_tc.a > 0.10) ? dot(s_tc.rgb, luma) : l_c;
+				float l_tr = (s_tr.a > 0.10) ? dot(s_tr.rgb, luma) : l_c;
+				float l_ml = (s_ml.a > 0.10) ? dot(s_ml.rgb, luma) : l_c;
+				float l_mr = (s_mr.a > 0.10) ? dot(s_mr.rgb, luma) : l_c;
+				float l_bl = (s_bl.a > 0.10) ? dot(s_bl.rgb, luma) : l_c;
+				float l_bc = (s_bc.a > 0.10) ? dot(s_bc.rgb, luma) : l_c;
+				float l_br = (s_br.a > 0.10) ? dot(s_br.rgb, luma) : l_c;
 
 				float gx = (l_tr + 2.0 * l_mr + l_br) - (l_tl + 2.0 * l_ml + l_bl);
 				float gy = (l_bl + 2.0 * l_bc + l_br) - (l_tl + 2.0 * l_tc + l_tr);
 
-				float strength = 1.2 * mult * bump_scale;
+				float strength = 1.0 * mult * bump_scale;
+				if (is_floor_piece) {
+					// Smoothly fade relief to 0 at the tile perimeter so adjacent floor tiles meet seamlessly with flat normal (0,0,1)
+					strength *= smoothstep(1.00, 0.90, d_diamond);
+				}
 				NORMAL = normalize(vec3(-gx * strength, -gy * strength, 1.0));
 			}
 
 			// Directional sunlight relief modulation across Tristram roofs, grass and cobbles
 			vec3 sun_dir = normalize(vec3(-0.35, -0.55, 0.75));
 			float sun_diff = dot(NORMAL, sun_dir);
-			vec3 sun_tint = daylight * (0.88 + 0.12 * sun_diff);
+			vec3 sun_tint = daylight * (0.90 + 0.10 * sun_diff);
 			COLOR = vec4(base_rgb * sun_tint, final_a);
 		} else {
 			NORMAL = vec3(0.0, 0.0, 1.0);
 			COLOR = vec4(base_rgb * daylight, final_a);
 		}
 	} else {
-		// Dungeon lighting: smooth continuous Hermite curve with minimum ambient visibility
-		float min_amb = 0.06;
+		// Dungeon lighting: smooth continuous Hermite curve with minimum ambient visibility (matches authentic D1 palette minimum ambient)
+		float min_amb = 0.18;
 		vec3 lit_tint = mix(vec3(min_amb), light_tint, l);
 
 		// Dynamic Liquid Simulation (Hell blood/lava + Caves molten magma)
-		// Caves magma: bright orange/yellow (r > 0.24, r > b * 1.7, g > b * 0.75)
-		// Hell magma/blood river: intense deep crimson (r > 0.18, r > g * 1.20, r > b * 1.20)
-		bool is_caves_lava = (base_rgb.r > 0.24 && base_rgb.r > base_rgb.b * 1.7 && base_rgb.g > base_rgb.b * 0.75);
-		bool is_hell_lava = (base_rgb.r > 0.18 && base_rgb.r > base_rgb.g * 1.20 && base_rgb.r > base_rgb.b * 1.20);
-		bool is_lava = (is_caves_lava || is_hell_lava);
+		// True incandescent molten lava: high red intensity and dominant over green/blue
+		bool is_caves_lava = (base_rgb.r > 0.28 && base_rgb.r > base_rgb.g * 1.10 && base_rgb.b < 0.22);
+		bool is_hell_lava = (base_rgb.r > 0.28 && base_rgb.r > base_rgb.g * 1.15 && base_rgb.r > base_rgb.b * 1.45 && base_rgb.b < 0.38);
+		bool is_lava = is_lava_level && (is_caves_lava || is_hell_lava);
 		if (is_lava) {
-			// Continuous fluid displacement: fade to 0 at perimeter so adjacent tiles stay seamless
-			vec2 lava_flow = vec2(
-				sin(v_world_pos.y * 0.05 + TIME * 2.2) + cos(v_world_pos.x * 0.04 + TIME * 1.5),
-				cos(v_world_pos.x * 0.04 + TIME * 1.8) + sin(v_world_pos.y * 0.04 + TIME * 2.0)
-			) * (0.016 * edge_fade);
+			// Continuous fluid convective UV churning (samples flowing liquid motion)
+			vec2 flow_a = vec2(sin(v_world_pos.y * 0.045 + TIME * 1.6), cos(v_world_pos.x * 0.045 + TIME * 1.2)) * 0.035;
+			vec2 flow_b = vec2(cos(v_world_pos.y * 0.035 - TIME * 1.1), sin(v_world_pos.x * 0.035 + TIME * 1.5)) * 0.035;
+			vec4 tex_flow_a = texture(TEXTURE, clamp(final_uv + flow_a, vec2(0.01), vec2(0.99)));
+			vec4 tex_flow_b = texture(TEXTURE, clamp(final_uv + flow_b, vec2(0.01), vec2(0.99)));
+			vec3 flowing_rgb = mix(tex_flow_a.rgb, tex_flow_b.rgb, 0.5 + 0.5 * sin(TIME * 2.0));
 
-			vec4 flow_tex = texture(TEXTURE, UV + lava_flow);
-			if (flow_tex.a > 0.10) {
-				base_rgb = flow_tex.rgb;
-			}
+			// Multi-octave convective thermal currents (world-space, 100% gapless across tiles)
+			float flow1 = sin(dot(v_world_pos, vec2(0.045, 0.025)) - TIME * 2.4);
+			float flow2 = cos(dot(v_world_pos, vec2(-0.035, 0.040)) + TIME * 1.8);
+			float flow3 = sin(dot(v_world_pos, vec2(0.020, -0.050)) - TIME * 3.1);
 
-			// --- HELL / CAVES BOILING & BUBBLING SIMULATION ("fortyog-bugyog") ---
-			// 1. Churning convective magma eddies:
-			float eddy1 = sin(dot(v_world_pos, vec2(0.06, 0.04)) - TIME * 3.2);
-			float eddy2 = cos(dot(v_world_pos, vec2(-0.05, 0.06)) + TIME * 2.6);
-			float eddy3 = sin(dot(v_world_pos, vec2(0.04, -0.05)) - TIME * 2.0);
-			float heat_cycle = clamp((eddy1 * 0.45 + eddy2 * 0.35 + eddy3 * 0.20) * 0.5 + 0.5, 0.0, 1.0);
+			// Combined convective heat flux: 0.0 (cooler basalt crust) to 1.0 (white-hot molten surge)
+			float flux = clamp((flow1 * 0.45 + flow2 * 0.35 + flow3 * 0.20) * 0.5 + 0.5, 0.0, 1.0);
 
-			// 2. High-frequency boiling bubbles and popping molten blisters ("bugyog"):
-			vec2 bpos1 = v_world_pos * 0.12 + vec2(sin(TIME * 2.2), cos(TIME * 1.8)) * 0.4;
-			vec2 bpos2 = v_world_pos * 0.22 - vec2(cos(TIME * 2.8), sin(TIME * 2.4)) * 0.6;
-			float b1 = sin(bpos1.x * 2.5 + sin(bpos1.y * 2.5 + TIME * 4.5));
-			float b2 = cos(bpos2.x * 3.2 + cos(bpos2.y * 3.2 - TIME * 4.0));
-			float bubble = clamp(b1 * b2, 0.0, 1.0);
-			float blister = pow(bubble, 3.5);
+			// Molten thermal color spectrum
+			vec3 cool_magma = is_hell_lava ? vec3(0.70, 0.08, 0.02) : vec3(0.75, 0.22, 0.02);
+			vec3 hot_magma  = is_hell_lava ? vec3(1.20, 0.30, 0.06) : vec3(1.25, 0.65, 0.10);
+			vec3 sear_magma = is_hell_lava ? vec3(1.55, 0.65, 0.20) : vec3(1.50, 1.10, 0.35);
 
-			// 3. Molten palette mapping:
-			// Hell: deep boiling crimson crust with searing incandescent golden-white popping blisters!
-			vec3 cool_lava = is_hell_lava ? vec3(0.55, 0.03, 0.02) : vec3(0.80, 0.18, 0.02);
-			vec3 warm_lava = is_hell_lava ? vec3(1.10, 0.20, 0.04) : vec3(1.15, 0.55, 0.06);
-			vec3 hot_lava  = is_hell_lava ? vec3(1.45, 0.50, 0.10) : vec3(1.38, 0.95, 0.22);
-			vec3 blister_core = is_hell_lava ? vec3(2.0, 1.25, 0.35) : vec3(1.90, 1.40, 0.50);
+			// Smooth two-phase interpolation across temperature gradient
+			vec3 thermal_color = (flux < 0.5)
+				? mix(cool_magma, hot_magma, flux * 2.0)
+				: mix(hot_magma, sear_magma, (flux - 0.5) * 2.0);
 
-			vec3 heat_color = (heat_cycle < 0.5)
-				? mix(cool_lava, warm_lava, heat_cycle * 2.0)
-				: mix(warm_lava, hot_lava, (heat_cycle - 0.5) * 2.0);
+			// Authentic texture modulation with visibly flowing fluid churning
+			float lava_intensity = clamp((flowing_rgb.r - flowing_rgb.b) * 1.6, 0.0, 1.0);
+			base_rgb = mix(flowing_rgb, flowing_rgb * thermal_color, 0.85 * lava_intensity);
 
-			heat_color += blister_core * (blister * 1.5);
-			base_rgb = mix(base_rgb, base_rgb * heat_color, 0.70);
-
-			// 4. Emissive ambient illumination:
-			lit_tint = max(lit_tint, is_hell_lava ? vec3(1.45, 0.60, 0.40) : vec3(1.30, 0.95, 0.70));
-			lit_tint += vec3(0.40, 0.25, 0.08) * blister;
+			// Luminous incandescent floor radiance (surges in sync with thermal waves)
+			vec3 min_radiance = is_hell_lava ? vec3(0.85, 0.28, 0.12) : vec3(0.80, 0.52, 0.18);
+			lit_tint = max(lit_tint, min_radiance * (0.90 + 0.35 * flux));
 		}
 
 		COLOR = vec4(base_rgb * lit_tint, final_a);
@@ -240,28 +246,38 @@ void fragment() {
 			else if (relief_mode == 4) mult = 1.5;
 
 			if (is_lava) {
-				// 3D boiling bubble domes catch specular light in real-time
-				vec2 bpos1 = v_world_pos * 0.12 + vec2(sin(TIME * 2.2), cos(TIME * 1.8)) * 0.4;
-				vec2 bpos2 = v_world_pos * 0.22 - vec2(cos(TIME * 2.8), sin(TIME * 2.4)) * 0.6;
-				float b1 = sin(bpos1.x * 2.5 + sin(bpos1.y * 2.5 + TIME * 4.5));
-				float b2 = cos(bpos2.x * 3.2 + cos(bpos2.y * 3.2 - TIME * 4.0));
-				vec2 boil_norm = vec2(b1, b2) * 0.75 * edge_fade;
-				NORMAL = normalize(vec3(NORMAL.xy + boil_norm * mult, 1.0));
+				// Dynamic undulating liquid surface normal waves
+				float lw1 = cos(dot(v_world_pos, vec2(0.045, 0.025)) - TIME * 2.4);
+				float lw2 = sin(dot(v_world_pos, vec2(-0.035, 0.040)) + TIME * 1.8);
+				vec2 liquid_norm = vec2(lw1 * 0.045 - lw2 * 0.035, lw1 * 0.025 + lw2 * 0.040) * 8.0 * mult;
+				NORMAL = normalize(vec3(NORMAL.xy + liquid_norm, 1.0));
 			} else if (length(NORMAL.xy) > 0.001) {
-				// Smoothly scale high-resolution pre-baked normal map from CanvasTexture
+				// Scale pre-baked normal map from CanvasTexture
 				NORMAL = normalize(vec3(NORMAL.xy * mult * bump_scale, NORMAL.z));
 			} else {
 				// Real-time procedural Sobel normal for levels without pre-baked PBR
 				vec2 texel = TEXTURE_PIXEL_SIZE;
 				const vec3 luma = vec3(0.299, 0.587, 0.114);
-				float l_tl = dot(texture(TEXTURE, UV + vec2(-1.0, -1.0) * texel).rgb, luma);
-				float l_tc = dot(texture(TEXTURE, UV + vec2( 0.0, -1.0) * texel).rgb, luma);
-				float l_tr = dot(texture(TEXTURE, UV + vec2( 1.0, -1.0) * texel).rgb, luma);
-				float l_ml = dot(texture(TEXTURE, UV + vec2(-1.0,  0.0) * texel).rgb, luma);
-				float l_mr = dot(texture(TEXTURE, UV + vec2( 1.0,  0.0) * texel).rgb, luma);
-				float l_bl = dot(texture(TEXTURE, UV + vec2(-1.0,  1.0) * texel).rgb, luma);
-				float l_bc = dot(texture(TEXTURE, UV + vec2( 0.0,  1.0) * texel).rgb, luma);
-				float l_br = dot(texture(TEXTURE, UV + vec2( 1.0,  1.0) * texel).rgb, luma);
+				float l_c = dot(tex.rgb, luma);
+
+				// Boundary-safe sampling: out-of-bounds or zero-alpha neighbors fall back to center luma (eliminates edge bevels!)
+				vec4 s_tl = texture(TEXTURE, final_uv + vec2(-1.0, -1.0) * texel);
+				vec4 s_tc = texture(TEXTURE, final_uv + vec2( 0.0, -1.0) * texel);
+				vec4 s_tr = texture(TEXTURE, final_uv + vec2( 1.0, -1.0) * texel);
+				vec4 s_ml = texture(TEXTURE, final_uv + vec2(-1.0,  0.0) * texel);
+				vec4 s_mr = texture(TEXTURE, final_uv + vec2( 1.0,  0.0) * texel);
+				vec4 s_bl = texture(TEXTURE, final_uv + vec2(-1.0,  1.0) * texel);
+				vec4 s_bc = texture(TEXTURE, final_uv + vec2( 0.0,  1.0) * texel);
+				vec4 s_br = texture(TEXTURE, final_uv + vec2( 1.0,  1.0) * texel);
+
+				float l_tl = (s_tl.a > 0.10) ? dot(s_tl.rgb, luma) : l_c;
+				float l_tc = (s_tc.a > 0.10) ? dot(s_tc.rgb, luma) : l_c;
+				float l_tr = (s_tr.a > 0.10) ? dot(s_tr.rgb, luma) : l_c;
+				float l_ml = (s_ml.a > 0.10) ? dot(s_ml.rgb, luma) : l_c;
+				float l_mr = (s_mr.a > 0.10) ? dot(s_mr.rgb, luma) : l_c;
+				float l_bl = (s_bl.a > 0.10) ? dot(s_bl.rgb, luma) : l_c;
+				float l_bc = (s_bc.a > 0.10) ? dot(s_bc.rgb, luma) : l_c;
+				float l_br = (s_br.a > 0.10) ? dot(s_br.rgb, luma) : l_c;
 
 				float gx = (l_tr + 2.0 * l_mr + l_br) - (l_tl + 2.0 * l_ml + l_bl);
 				float gy = (l_bl + 2.0 * l_bc + l_br) - (l_tl + 2.0 * l_tc + l_tr);
@@ -315,9 +331,9 @@ void light() {
 			pbr_specular = (D * F * 0.35) * light_color * NdotL * specular_gloss;
 		}
 
-		// Dynamic normal-map surface bump perturbation + warm torch diffuse (modulated by AO) + PBR specular
+		// Dynamic normal-map surface bump perturbation + warm torch diffuse + PBR specular
 		vec3 relief_perturbation = COLOR.rgb * ((relief_factor - 1.0) * 0.4);
-		vec3 torch_diffuse = COLOR.rgb * light_color * (0.70 * ao);
+		vec3 torch_diffuse = COLOR.rgb * light_color * 0.70;
 		LIGHT = vec4((relief_perturbation + torch_diffuse + pbr_specular) * attenuation, COLOR.a);
 	} else {
 		LIGHT = vec4(0.0);

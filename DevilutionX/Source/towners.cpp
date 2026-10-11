@@ -881,6 +881,7 @@ void FreeTownerGFX()
 {
 	for (Towner &towner : Towners) {
 		towner.ownedAnim = std::nullopt;
+		towner.anim = std::nullopt;
 	}
 	CowSprites = std::nullopt;
 }

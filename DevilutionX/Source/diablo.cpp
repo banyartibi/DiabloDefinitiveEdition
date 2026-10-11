@@ -1035,8 +1035,15 @@ void PrintFlagsRequiresArgument(string_view flag)
 }
 
 bool gbRemasterRequested = false;
+bool gbRemasterCoreRequested = false;
+bool gbRemasterMonstersRequested = false;
+bool gbRemasterTownersRequested = false;
+bool gbRemasterObjectsRequested = false;
+bool gbRemasterMissilesRequested = false;
 bool gbRemasterWarriorRequested = false;
+bool gbRemasterItemsRequested = false;
 bool gbPackClxRequested = false;
+std::string gsMonsterRemasterPrefix;
 
 void DiabloParseFlags(int argc, char **argv)
 {
@@ -1062,8 +1069,26 @@ void DiabloParseFlags(int argc, char **argv)
 			gbVulkanRequested = true;
 		} else if (arg == "--remaster-assets") {
 			gbRemasterRequested = true;
+		} else if (arg == "--remaster-core") {
+			gbRemasterCoreRequested = true;
+		} else if (arg == "--remaster-monsters") {
+			gbRemasterMonstersRequested = true;
+		} else if (arg == "--remaster-towners") {
+			gbRemasterTownersRequested = true;
+		} else if (arg == "--remaster-objects") {
+			gbRemasterObjectsRequested = true;
+		} else if (arg == "--remaster-missiles") {
+			gbRemasterMissilesRequested = true;
 		} else if (arg == "--remaster-warrior") {
 			gbRemasterWarriorRequested = true;
+		} else if (arg == "--remaster-items") {
+			gbRemasterItemsRequested = true;
+		} else if (arg == "--remaster-monster") {
+			if (i + 1 == argc) {
+				PrintFlagsRequiresArgument("--remaster-monster");
+				diablo_quit(64);
+			}
+			gsMonsterRemasterPrefix = argv[++i];
 		} else if (arg == "--pack-hd-clx") {
 			gbPackClxRequested = true;
 		} else if (arg == "--data-dir") {
@@ -1206,9 +1231,64 @@ void ApplicationInit()
 		LoadCoreArchives();
 		LoadLanguageArchive();
 		LoadGameArchives();
-		RunRemasterAssetPipeline();
 		InitPalette();
+		RunRemasterAssetPipeline();
 		RunPackHdClxPipeline();
+		diablo_quit(0);
+	}
+
+	if (gbRemasterCoreRequested) {
+		HeadlessMode = true;
+		SDL_Init(SDL_INIT_EVENTS);
+		LoadCoreArchives();
+		LoadLanguageArchive();
+		LoadGameArchives();
+		InitPalette();
+		RemasterAllCoreAssets();
+		diablo_quit(0);
+	}
+
+	if (gbRemasterMonstersRequested) {
+		HeadlessMode = true;
+		SDL_Init(SDL_INIT_EVENTS);
+		LoadCoreArchives();
+		LoadLanguageArchive();
+		LoadGameArchives();
+		InitPalette();
+		RemasterAllMonsters();
+		diablo_quit(0);
+	}
+
+	if (gbRemasterTownersRequested) {
+		HeadlessMode = true;
+		SDL_Init(SDL_INIT_EVENTS);
+		LoadCoreArchives();
+		LoadLanguageArchive();
+		LoadGameArchives();
+		InitPalette();
+		RemasterTowners();
+		diablo_quit(0);
+	}
+
+	if (gbRemasterObjectsRequested) {
+		HeadlessMode = true;
+		SDL_Init(SDL_INIT_EVENTS);
+		LoadCoreArchives();
+		LoadLanguageArchive();
+		LoadGameArchives();
+		InitPalette();
+		RemasterObjects();
+		diablo_quit(0);
+	}
+
+	if (gbRemasterMissilesRequested) {
+		HeadlessMode = true;
+		SDL_Init(SDL_INIT_EVENTS);
+		LoadCoreArchives();
+		LoadLanguageArchive();
+		LoadGameArchives();
+		InitPalette();
+		RemasterMissiles();
 		diablo_quit(0);
 	}
 
@@ -1218,9 +1298,19 @@ void ApplicationInit()
 		LoadCoreArchives();
 		LoadLanguageArchive();
 		LoadGameArchives();
-		RemasterWarriorClass();
 		InitPalette();
+		RemasterWarriorClass();
 		RunPackHdClxPipeline();
+		diablo_quit(0);
+	}
+
+	if (gbRemasterItemsRequested) {
+		HeadlessMode = true;
+		SDL_Init(SDL_INIT_EVENTS);
+		LoadCoreArchives();
+		LoadLanguageArchive();
+		LoadGameArchives();
+		RemasterDroppedItems();
 		diablo_quit(0);
 	}
 
@@ -1232,6 +1322,17 @@ void ApplicationInit()
 		LoadGameArchives();
 		InitPalette();
 		RunPackHdClxPipeline();
+		diablo_quit(0);
+	}
+
+	if (!gsMonsterRemasterPrefix.empty()) {
+		HeadlessMode = true;
+		SDL_Init(SDL_INIT_EVENTS);
+		LoadCoreArchives();
+		LoadLanguageArchive();
+		LoadGameArchives();
+		InitPalette();
+		RemasterSingleFamily(gsMonsterRemasterPrefix);
 		diablo_quit(0);
 	}
 

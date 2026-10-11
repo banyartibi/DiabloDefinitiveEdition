@@ -105,6 +105,15 @@ enum class ReliefMode : uint8_t {
 	Extreme_Sculpted = 4,
 };
 
+enum class TileModel : uint8_t {
+	UltraSharp = 0,
+	X4Plus = 1,
+	Nomos8k_HATS = 2,
+	HAT_L = 3,
+	NMKD_Superscale = 4,
+	Compact_OmniSR = 5,
+};
+
 enum class FloatingNumbers : uint8_t {
 	/** @brief Show no floating numbers. */
 	Off = 0,
@@ -658,6 +667,8 @@ struct ResurrectedOptions : OptionCategoryBase {
 	OptionEntryEnum<HDRGlowLevel> hdrLevel;
 	/** @brief Upscaler implementation. */
 	OptionEntryEnum<UpscalerMode> upscalerMode;
+	/** @brief AI Neural Upscaling model for 4X PBR tiles & HD sprites. */
+	OptionEntryEnum<TileModel> tileModel;
 	/** @brief 3D surface relief mode for Mode 0. */
 	OptionEntryEnum<ReliefMode> reliefMode;
 	/** @brief Wet & reflective cobblestone floor (glossy puddles). */

@@ -209,6 +209,8 @@ public:
 	int get_d1de_upscaler_mode() const;
 	int get_d1de_relief_mode() const;
 	bool get_d1de_wet_floor() const;
+	int get_d1de_tile_model() const;
+	void set_d1de_tile_model(int model);
 
 	// Backward-compatibility aliases
 	bool get_resurrected_torchlight() const;
@@ -218,10 +220,13 @@ public:
 	int get_resurrected_upscaler_mode() const;
 	int get_resurrected_relief_mode() const;
 	bool get_resurrected_wet_floor() const;
+	int get_resurrected_tile_model() const;
+	void set_resurrected_tile_model(int model);
 
 	// Direct 112x112 Dungeon Grid Access for Godot TileMap / GridMap
 	PackedInt32Array get_dungeon_grid() const;
 	int get_dungeon_tile(int x, int y) const;
+	int get_dungeon_piece_id(int x, int y) const;
 	PackedByteArray get_dungeon_solidity_grid() const;
 
 	// Native Godot 2.5D Tile Piece Extraction & Caching
@@ -271,6 +276,7 @@ public:
 	// Direct Input Routing (In-memory C++ event dispatch, no SHM!)
 	void send_input(int type, int code, int state, int x, int y);
 	void send_key_event(int keycode, bool pressed);
+	void send_click_to_tile(int tile_x, int tile_y, int button_mask = 1);
 
 	// Direct Video Frame Access (In-memory blit directly to Godot Image)
 	PackedByteArray get_frame_bytes();

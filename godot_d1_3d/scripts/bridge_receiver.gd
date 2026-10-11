@@ -1,5 +1,7 @@
 extends Node3D
 
+const UpscalerModelConfig = preload("res://scripts/upscaler_model_config.gd")
+
 @export var mesh_instance: MeshInstance3D
 @export var hero_light: OmniLight3D
 @export var camera: Camera3D
@@ -136,6 +138,10 @@ var upscaler_names = [
 	"Upscaler: Native 1:1 Direct Retro Pixel-Art"
 ]
 
+# Neural Upscale Model for pre-baked 4x tile & sprite assets (offline GPU pipeline)
+var current_tile_model: int = 0  # Default: 0 = Real-ESRGAN 4x-UltraSharp
+var tile_model_names: Array = UpscalerModelConfig.MODEL_NAMES
+
 var color_names = [
 	"Vanilla (1996 Classic 32-bit - UI Untouched - Default)",
 	"Dark Gothic (Deep OLED Slate Contrast)",
@@ -261,8 +267,53 @@ func _ready():
 	add_child(menu_layer)
 	main_menu_instance = main_menu_scene.instantiate()
 	menu_layer.add_child(main_menu_instance)
-	if diablo_bridge and main_menu_instance and main_menu_instance.has_method("set_bridge"):
-		main_menu_instance.set_bridge(diablo_bridge)
+	if diablo_bridge and main_menu_instance:
+		if main_menu_instance.has_method("set_bridge"):
+			main_menu_instance.set_bridge(diablo_bridge)
+		if main_menu_instance.has_signal("settings_saved"):
+			main_menu_instance.connect("settings_saved", _on_main_menu_settings_saved)
+
+	# Query initial D1DE & Resurrected settings from diablo.ini via bridge
+	if diablo_bridge:
+		if diablo_bridge.has_method("get_d1de_torchlight"):
+			hero_light_enabled = bool(diablo_bridge.get_d1de_torchlight())
+		elif diablo_bridge.has_method("get_resurrected_torchlight"):
+			hero_light_enabled = bool(diablo_bridge.get_resurrected_torchlight())
+
+		if diablo_bridge.has_method("get_d1de_fog_level"):
+			current_fog_mode = int(diablo_bridge.get_d1de_fog_level())
+		elif diablo_bridge.has_method("get_resurrected_fog_level"):
+			current_fog_mode = int(diablo_bridge.get_resurrected_fog_level())
+
+		if diablo_bridge.has_method("get_d1de_color_profile"):
+			current_color_profile = int(diablo_bridge.get_d1de_color_profile())
+		elif diablo_bridge.has_method("get_resurrected_color_profile"):
+			current_color_profile = int(diablo_bridge.get_resurrected_color_profile())
+
+		if diablo_bridge.has_method("get_d1de_hdr_level"):
+			current_hdr_level = int(diablo_bridge.get_d1de_hdr_level())
+		elif diablo_bridge.has_method("get_resurrected_hdr_level"):
+			current_hdr_level = int(diablo_bridge.get_resurrected_hdr_level())
+
+		if diablo_bridge.has_method("get_d1de_upscaler_mode"):
+			current_upscaler_mode = int(diablo_bridge.get_d1de_upscaler_mode())
+		elif diablo_bridge.has_method("get_resurrected_upscaler_mode"):
+			current_upscaler_mode = int(diablo_bridge.get_resurrected_upscaler_mode())
+
+		if diablo_bridge.has_method("get_d1de_relief_mode"):
+			current_relief_mode = int(diablo_bridge.get_d1de_relief_mode())
+		elif diablo_bridge.has_method("get_resurrected_relief_mode"):
+			current_relief_mode = int(diablo_bridge.get_resurrected_relief_mode())
+
+		if diablo_bridge.has_method("get_d1de_wet_floor"):
+			wet_floor = bool(diablo_bridge.get_d1de_wet_floor())
+		elif diablo_bridge.has_method("get_resurrected_wet_floor"):
+			wet_floor = bool(diablo_bridge.get_resurrected_wet_floor())
+
+		if diablo_bridge.has_method("get_d1de_tile_model"):
+			current_tile_model = int(diablo_bridge.get_d1de_tile_model())
+		elif diablo_bridge.has_method("get_resurrected_tile_model"):
+			current_tile_model = int(diablo_bridge.get_resurrected_tile_model())
 
 	# Initialize Native Godot 2.5D View (Mode 1)
 	native_25d_instance = native_25d_scene.instantiate()
@@ -275,7 +326,8 @@ func _ready():
 			current_upscaler_mode,
 			current_relief_mode,
 			wet_floor,
-			current_hdr_level
+			current_hdr_level,
+			current_tile_model
 		)
 	elif native_25d_instance.has_method("apply_all_resurrected_settings"):
 		native_25d_instance.apply_all_resurrected_settings(
@@ -284,7 +336,8 @@ func _ready():
 			current_upscaler_mode,
 			current_relief_mode,
 			wet_floor,
-			current_hdr_level
+			current_hdr_level,
+			current_tile_model
 		)
 	native_25d_instance.deactivate()
 
@@ -533,6 +586,25 @@ func toggle_hd_graphics() -> bool:
 	set_hd_graphics_enabled(not get_hd_graphics_enabled())
 	return get_hd_graphics_enabled()
 
+func get_tile_model_index() -> int:
+	if native_25d_instance and native_25d_instance.has_method("get_tile_model"):
+		return int(native_25d_instance.get_tile_model())
+	return current_tile_model
+
+func set_tile_model(model_id: int) -> void:
+	current_tile_model = clampi(model_id, 0, UpscalerModelConfig.get_model_count() - 1)
+	if diablo_bridge and diablo_bridge.has_method("set_d1de_tile_model"):
+		diablo_bridge.set_d1de_tile_model(current_tile_model)
+		if diablo_bridge.has_method("save_settings"):
+			diablo_bridge.save_settings()
+	elif diablo_bridge and diablo_bridge.has_method("set_resurrected_tile_model"):
+		diablo_bridge.set_resurrected_tile_model(current_tile_model)
+		if diablo_bridge.has_method("save_settings"):
+			diablo_bridge.save_settings()
+	if native_25d_instance and native_25d_instance.has_method("set_tile_model"):
+		native_25d_instance.set_tile_model(current_tile_model)
+	show_osd("Tile Model: " + UpscalerModelConfig.get_model_display_name(current_tile_model), 2.5)
+
 func _apply_environment_glow():
 	if not world_env or not world_env.environment:
 		return
@@ -597,6 +669,8 @@ func update_shader_params():
 	if brightness_material:
 		brightness_material.set_shader_parameter("color_profile", current_color_profile if current_display_mode != DisplayMode.ORIGINAL_25D else 0)
 		brightness_material.set_shader_parameter("upscaler_mode", current_upscaler_mode)
+		var is_town = (last_level_idx == 0) if last_level_idx != -999 else (diablo_bridge != null and diablo_bridge.has_method("get_current_level") and diablo_bridge.get_current_level() == 0)
+		brightness_material.set_shader_parameter("is_town", is_town)
 		_apply_brightness()
 		_apply_gamma()
 
@@ -789,6 +863,17 @@ func _process(delta: float):
 				wet_floor = new_wet
 				update_shader_params()
 
+			# Poll tile model (neural upscale model for pre-baked 4x assets)
+			var new_tile_model = current_tile_model
+			if diablo_bridge.has_method("get_d1de_tile_model"):
+				new_tile_model = int(diablo_bridge.get_d1de_tile_model())
+			elif diablo_bridge.has_method("get_resurrected_tile_model"):
+				new_tile_model = int(diablo_bridge.get_resurrected_tile_model())
+			if new_tile_model != current_tile_model and new_tile_model >= 0 and new_tile_model < tile_model_names.size():
+				current_tile_model = new_tile_model
+				if native_25d_instance and native_25d_instance.has_method("set_tile_model"):
+					native_25d_instance.set_tile_model(current_tile_model)
+				show_osd("Tile Model: " + tile_model_names[current_tile_model], 2.5)
 	if osd_timer > 0.0:
 		osd_timer -= delta
 		if osd_timer <= 0.0 and osd_label:
@@ -880,6 +965,8 @@ func _process(delta: float):
 				var cur_lvl = diablo_bridge.get_current_level()
 				if cur_lvl != last_level_idx:
 					last_level_idx = cur_lvl
+					if brightness_material:
+						brightness_material.set_shader_parameter("is_town", cur_lvl == 0)
 					if dungeon_embers and current_display_mode == DisplayMode.ORIGINAL_25D:
 						var is_dungeon = (cur_lvl > 0 and is_ingame)
 						dungeon_embers.emitting = is_dungeon
@@ -1085,6 +1172,8 @@ func apply_display_mode():
 
 	elif current_display_mode == DisplayMode.NATIVE_25D:
 		# Mode 1: Native Godot 2.5D Engine (Smooth 144Hz Camera, Y-Sorted Sprites, PointLight2D)
+		if camera:
+			camera.current = false
 		if mesh_instance:
 			mesh_instance.visible = false
 		if hero_light:
@@ -1116,6 +1205,8 @@ func apply_display_mode():
 		if modal_layer and diablo_bridge and diablo_bridge.has_method("is_modal_active"):
 			modal_layer.visible = diablo_bridge.is_modal_active()
 		if native_25d_instance:
+			if diablo_bridge and diablo_bridge.has_method("get_d1de_tile_model"):
+				current_tile_model = int(diablo_bridge.get_d1de_tile_model())
 			if native_25d_instance.has_method("apply_all_d1de_settings"):
 				native_25d_instance.apply_all_d1de_settings(
 					hero_light_enabled,
@@ -1123,7 +1214,8 @@ func apply_display_mode():
 					current_upscaler_mode,
 					current_relief_mode,
 					wet_floor,
-					current_hdr_level
+					current_hdr_level,
+					current_tile_model
 				)
 			elif native_25d_instance.has_method("apply_all_resurrected_settings"):
 				native_25d_instance.apply_all_resurrected_settings(
@@ -1132,13 +1224,16 @@ func apply_display_mode():
 					current_upscaler_mode,
 					current_relief_mode,
 					wet_floor,
-					current_hdr_level
+					current_hdr_level,
+					current_tile_model
 				)
 			native_25d_instance.activate()
 		show_osd("Display Mode 2/3: Native Godot 2.5D Engine (144Hz Smooth Camera, Y-Sorted Sprites, PointLight2D)", 3.5)
 
 	elif current_display_mode == DisplayMode.NATIVE_3D:
 		# Mode 2: Native 3D Sandbox (Real 3D Geometry, Billboard Sprites, Q/E Orbit, PgUp/PgDn Tilt)
+		if camera:
+			camera.current = false
 		if mesh_instance:
 			mesh_instance.visible = false
 		if hero_light:
@@ -1159,8 +1254,7 @@ func apply_display_mode():
 		if world_env and world_env.environment:
 			world_env.environment.volumetric_fog_enabled = false
 			world_env.environment.glow_enabled = false
-		if brightness_material:
-			brightness_material.set_shader_parameter("color_profile", current_color_profile)
+		update_shader_params()
 		if modal_layer and diablo_bridge and diablo_bridge.has_method("is_modal_active"):
 			modal_layer.visible = diablo_bridge.is_modal_active()
 		if sandbox_instance:
@@ -1492,4 +1586,61 @@ func process_visual_events() -> void:
 				extra_bones.position = ev_pos + Vector3(randf_range(-0.10, 0.10), randf_range(-0.06, 0.06), 0.05)
 				extra_bones.scale = Vector3(s * 1.1, s * 1.1, s * 1.1)
 				effects_container.add_child(extra_bones)
+
+func _on_main_menu_settings_saved() -> void:
+	if diablo_bridge:
+		if diablo_bridge.has_method("get_d1de_torchlight"):
+			hero_light_enabled = bool(diablo_bridge.get_d1de_torchlight())
+		elif diablo_bridge.has_method("get_resurrected_torchlight"):
+			hero_light_enabled = bool(diablo_bridge.get_resurrected_torchlight())
+
+		if diablo_bridge.has_method("get_d1de_fog_level"):
+			current_fog_mode = int(diablo_bridge.get_d1de_fog_level())
+		elif diablo_bridge.has_method("get_resurrected_fog_level"):
+			current_fog_mode = int(diablo_bridge.get_resurrected_fog_level())
+
+		if diablo_bridge.has_method("get_d1de_color_profile"):
+			current_color_profile = int(diablo_bridge.get_d1de_color_profile())
+		elif diablo_bridge.has_method("get_resurrected_color_profile"):
+			current_color_profile = int(diablo_bridge.get_resurrected_color_profile())
+
+		if diablo_bridge.has_method("get_d1de_hdr_level"):
+			current_hdr_level = int(diablo_bridge.get_d1de_hdr_level())
+		elif diablo_bridge.has_method("get_resurrected_hdr_level"):
+			current_hdr_level = int(diablo_bridge.get_resurrected_hdr_level())
+
+		if diablo_bridge.has_method("get_d1de_upscaler_mode"):
+			current_upscaler_mode = int(diablo_bridge.get_d1de_upscaler_mode())
+		elif diablo_bridge.has_method("get_resurrected_upscaler_mode"):
+			current_upscaler_mode = int(diablo_bridge.get_resurrected_upscaler_mode())
+
+		if diablo_bridge.has_method("get_d1de_relief_mode"):
+			current_relief_mode = int(diablo_bridge.get_d1de_relief_mode())
+		elif diablo_bridge.has_method("get_resurrected_relief_mode"):
+			current_relief_mode = int(diablo_bridge.get_resurrected_relief_mode())
+
+		if diablo_bridge.has_method("get_d1de_wet_floor"):
+			wet_floor = bool(diablo_bridge.get_d1de_wet_floor())
+		elif diablo_bridge.has_method("get_resurrected_wet_floor"):
+			wet_floor = bool(diablo_bridge.get_resurrected_wet_floor())
+
+		if diablo_bridge.has_method("get_d1de_tile_model"):
+			current_tile_model = int(diablo_bridge.get_d1de_tile_model())
+		elif diablo_bridge.has_method("get_resurrected_tile_model"):
+			current_tile_model = int(diablo_bridge.get_resurrected_tile_model())
+
+		if native_25d_instance and native_25d_instance.has_method("apply_all_d1de_settings"):
+			native_25d_instance.apply_all_d1de_settings(
+				hero_light_enabled,
+				current_fog_mode,
+				current_upscaler_mode,
+				current_relief_mode,
+				wet_floor,
+				current_hdr_level,
+				current_tile_model
+			)
+		update_torch_light()
+		update_fog_mode()
+		apply_upscaler_mode()
+		update_shader_params()
 

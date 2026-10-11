@@ -42,7 +42,8 @@ void ExportAndUpscaleCl2(const std::string &assetPath, uint16_t widthHint = 128)
 	}
 
 	std::string hdDir = "/home/biti/antigravity/magical-bell/scratch/hd_sprites/" + baseName;
-	if (fs::exists(hdDir) && !fs::is_empty(hdDir)) {
+	bool force = (std::getenv("D1DE_FORCE_REMASTER") != nullptr);
+	if (!force && fs::exists(hdDir) && !fs::is_empty(hdDir)) {
 		return;
 	}
 
@@ -139,7 +140,8 @@ void ExportAndUpscaleCel(const std::string &assetPath, uint16_t widthHint = 128)
 	}
 
 	std::string hdDir = "/home/biti/antigravity/magical-bell/scratch/hd_sprites/" + baseName;
-	if (fs::exists(hdDir) && !fs::is_empty(hdDir)) {
+	bool force = (std::getenv("D1DE_FORCE_REMASTER") != nullptr);
+	if (!force && fs::exists(hdDir) && !fs::is_empty(hdDir)) {
 		return;
 	}
 
@@ -233,7 +235,8 @@ void ExportAndUpscaleCelWidths(const std::string &assetPath, const uint16_t *wid
 	}
 
 	std::string hdDir = "/home/biti/antigravity/magical-bell/scratch/hd_sprites/" + baseName;
-	if (fs::exists(hdDir) && !fs::is_empty(hdDir)) {
+	bool force = (std::getenv("D1DE_FORCE_REMASTER") != nullptr);
+	if (!force && fs::exists(hdDir) && !fs::is_empty(hdDir)) {
 		return;
 	}
 
@@ -318,8 +321,11 @@ void ExportAndUpscaleCelWidths(const std::string &assetPath, const uint16_t *wid
 	}
 }
 
-void ExportMonsterFamily(const std::string &basePrefix, uint16_t widthHint)
+void ExportMonsterFamily(const std::string &basePrefix, uint16_t widthHint, const char *palPath = "levels\\l1data\\l1_1.pal")
 {
+	if (palPath != nullptr) {
+		LoadPalette(palPath);
+	}
 	const char *actions[] = { "a", "d", "h", "s", "w", "t" };
 	for (const char *act : actions) {
 		ExportAndUpscaleCl2("monsters\\" + basePrefix + act, widthHint);
@@ -350,26 +356,24 @@ void RemasterWarriorClass()
 	Log("========================================================");
 	Log("   Starting 4x-UltraSharp Warrior HD Remastering        ");
 	Log("========================================================");
+	LoadPalette("levels\\towndata\\town.pal");
 	ExportPlayerClass("warrior", 'w');
 }
 
-void RunRemasterAssetPipeline()
+void RemasterSingleFamily(const std::string &familyPrefix, uint16_t widthHint, const char *pal)
 {
 	Log("========================================================");
-	Log("   Starting 4x-UltraSharp Full Master AI Remastering    ");
+	Log("   Starting Remastering for Single Monster: {}          ", familyPrefix);
 	Log("========================================================");
+	ExportMonsterFamily(familyPrefix, widthHint, pal);
+}
 
-	// 1. ALL PLAYER CLASSES (Warrior, Rogue, Sorcerer, Monk, Barbarian, Bard)
-	Log("--- Remastering Player Classes ---");
-	ExportPlayerClass("warrior", 'w');
-	ExportPlayerClass("rogue", 'r');
-	ExportPlayerClass("sorceror", 's'); // Diablo 1 MPQ directory is 'sorceror'
-	ExportPlayerClass("monk", 'm');
-	ExportPlayerClass("barbarian", 'a');
-	ExportPlayerClass("bard", 'b');
-
-	// 2. ALL TRISTRAM TOWN RESIDENTS & ANIMALS
-	Log("--- Remastering Town Residents ---");
+void RemasterTowners()
+{
+	Log("========================================================");
+	Log("   Starting Remastering for Town Residents & Animals    ");
+	Log("========================================================");
+	LoadPalette("levels\\towndata\\town.pal");
 	ExportAndUpscaleCel("towners\\smith\\smithn", 96);
 	ExportAndUpscaleCel("towners\\twnf\\twnfn", 96);
 	ExportAndUpscaleCel("towners\\butch\\deadguy", 96);
@@ -384,78 +388,104 @@ void RunRemasterAssetPipeline()
 	ExportAndUpscaleCel("towners\\girl\\girls1", 96);
 	ExportAndUpscaleCel("towners\\farmer\\mfrmrn2", 96);
 	ExportAndUpscaleCel("towners\\animals\\cow", 128);
+}
 
-	// 3. ALL 57 MONSTER FAMILIES
-	Log("--- Remastering Monster Families ---");
-	ExportMonsterFamily("acid\\acid", 128);
-	ExportMonsterFamily("antworm\\worm", 192);
-	ExportMonsterFamily("bat\\bat", 96);
-	ExportMonsterFamily("bigfall\\fallg", 128);
-	ExportMonsterFamily("black\\black", 160);
-	ExportMonsterFamily("bspidr\\bspidr", 148);
-	ExportMonsterFamily("bubba\\bubba", 154);
-	ExportMonsterFamily("byclps\\byclps", 180);
-	ExportMonsterFamily("clasp\\clasp", 176);
-	ExportMonsterFamily("darkmage\\dmage", 128);
-	ExportMonsterFamily("demskel\\demskl", 128);
-	ExportMonsterFamily("diablo\\diablo", 160);
-	ExportMonsterFamily("eye2\\eye2", 140);
-	ExportMonsterFamily("eye\\eye", 156);
-	ExportMonsterFamily("falspear\\phall", 128);
-	ExportMonsterFamily("falsword\\fall", 128);
-	ExportMonsterFamily("fat\\fat", 128);
-	ExportMonsterFamily("fatc\\fatc", 128);
-	ExportMonsterFamily("fireman\\firem", 128);
-	ExportMonsterFamily("flesh\\flesh", 164);
-	ExportMonsterFamily("fork\\fork", 188);
-	ExportMonsterFamily("gargoyle\\gargo", 160);
-	ExportMonsterFamily("goatbow\\goatb", 128);
-	ExportMonsterFamily("goatlord\\goatl", 160);
-	ExportMonsterFamily("goatmace\\goat", 128);
-	ExportMonsterFamily("golem\\golem", 96);
-	ExportMonsterFamily("gravdg\\gravdg", 124);
-	ExportMonsterFamily("hellbat2\\bhelbt", 96);
-	ExportMonsterFamily("hellbat\\helbat", 96);
-	ExportMonsterFamily("hellbug\\hellbg", 198);
-	ExportMonsterFamily("horkd\\horkd", 138);
-	ExportMonsterFamily("lich2\\lich2", 136);
-	ExportMonsterFamily("lich\\lich", 96);
-	ExportMonsterFamily("mage\\mage", 128);
-	ExportMonsterFamily("magma\\magma", 128);
-	ExportMonsterFamily("mega\\mega", 160);
-	ExportMonsterFamily("nkr\\nkr", 226);
-	ExportMonsterFamily("rat\\rat", 104);
-	ExportMonsterFamily("reaper\\reap", 180);
-	ExportMonsterFamily("rhino\\rhino", 160);
-	ExportMonsterFamily("scav\\scav", 128);
-	ExportMonsterFamily("scorp\\scorp", 64);
-	ExportMonsterFamily("skelaxe\\sklax", 128);
-	ExportMonsterFamily("skelbow\\sklbw", 128);
-	ExportMonsterFamily("skelsd\\sklsr", 128);
-	ExportMonsterFamily("sking\\sking", 160);
-	ExportMonsterFamily("snake\\snake", 160);
-	ExportMonsterFamily("sneak\\sneak", 128);
-	ExportMonsterFamily("spawn\\spawn", 164);
-	ExportMonsterFamily("spider\\spider", 148);
-	ExportMonsterFamily("succ\\scbs", 128);
-	ExportMonsterFamily("thin\\thin", 160);
-	ExportMonsterFamily("tsneak\\tsneak", 128);
-	ExportMonsterFamily("unrav\\unrav", 96);
-	ExportMonsterFamily("worm\\worm", 160);
-	ExportMonsterFamily("wscorp\\wscorp", 86);
-	ExportMonsterFamily("zombie\\zombie", 128);
+void RemasterAllMonsters()
+{
+	Log("========================================================");
+	Log("   Starting Remastering for All 57 Monster Families     ");
+	Log("========================================================");
 
-	// 4. INVENTORY ITEMS, WEAPONS & SPELLS
-	Log("--- Remastering Inventory Icons & Spells ---");
+	// Cathedral (L1) - Priority
+	Log("--- Remastering Cathedral (L1) Monsters ---");
+	ExportMonsterFamily("fatc\\fatc", 128, "levels\\l1data\\l1_1.pal"); // The Butcher
+	ExportMonsterFamily("sking\\sking", 160, "levels\\l1data\\l1_1.pal"); // King Leoric
+	ExportMonsterFamily("skelaxe\\sklax", 128, "levels\\l1data\\l1_1.pal");
+	ExportMonsterFamily("skelsd\\sklsr", 128, "levels\\l1data\\l1_1.pal");
+	ExportMonsterFamily("skelbow\\sklbw", 128, "levels\\l1data\\l1_1.pal");
+	ExportMonsterFamily("demskel\\demskl", 128, "levels\\l1data\\l1_1.pal");
+	ExportMonsterFamily("zombie\\zombie", 128, "levels\\l1data\\l1_1.pal");
+	ExportMonsterFamily("falspear\\phall", 128, "levels\\l1data\\l1_1.pal");
+	ExportMonsterFamily("falsword\\fall", 128, "levels\\l1data\\l1_1.pal");
+	ExportMonsterFamily("bigfall\\fallg", 128, "levels\\l1data\\l1_1.pal");
+	ExportMonsterFamily("scav\\scav", 128, "levels\\l1data\\l1_1.pal");
+	ExportMonsterFamily("rat\\rat", 104, "levels\\l1data\\l1_1.pal");
+
+	// Catacombs (L2)
+	Log("--- Remastering Catacombs (L2) Monsters ---");
+	ExportMonsterFamily("bat\\bat", 96, "levels\\l2data\\l2_1.pal");
+	ExportMonsterFamily("bspidr\\bspidr", 148, "levels\\l2data\\l2_1.pal");
+	ExportMonsterFamily("gargoyle\\gargo", 160, "levels\\l2data\\l2_1.pal");
+	ExportMonsterFamily("goatbow\\goatb", 128, "levels\\l2data\\l2_1.pal");
+	ExportMonsterFamily("goatlord\\goatl", 160, "levels\\l2data\\l2_1.pal");
+	ExportMonsterFamily("goatmace\\goat", 128, "levels\\l2data\\l2_1.pal");
+	ExportMonsterFamily("horkd\\horkd", 138, "levels\\l2data\\l2_1.pal");
+	ExportMonsterFamily("scorp\\scorp", 64, "levels\\l2data\\l2_1.pal");
+	ExportMonsterFamily("spider\\spider", 148, "levels\\l2data\\l2_1.pal");
+	ExportMonsterFamily("thin\\thin", 160, "levels\\l2data\\l2_1.pal");
+
+	// Caves (L3)
+	Log("--- Remastering Caves (L3) Monsters ---");
+	ExportMonsterFamily("acid\\acid", 128, "levels\\l3data\\l3_1.pal");
+	ExportMonsterFamily("antworm\\worm", 192, "levels\\l3data\\l3_1.pal");
+	ExportMonsterFamily("bubba\\bubba", 154, "levels\\l3data\\l3_1.pal");
+	ExportMonsterFamily("byclps\\byclps", 180, "levels\\l3data\\l3_1.pal");
+	ExportMonsterFamily("clasp\\clasp", 176, "levels\\l3data\\l3_1.pal");
+	ExportMonsterFamily("fork\\fork", 188, "levels\\l3data\\l3_1.pal");
+	ExportMonsterFamily("magma\\magma", 128, "levels\\l3data\\l3_1.pal");
+	ExportMonsterFamily("rhino\\rhino", 160, "levels\\l3data\\l3_1.pal");
+	ExportMonsterFamily("worm\\worm", 160, "levels\\l3data\\l3_1.pal");
+	ExportMonsterFamily("wscorp\\wscorp", 86, "levels\\l3data\\l3_1.pal");
+
+	// Hell (L4)
+	Log("--- Remastering Hell (L4) Monsters ---");
+	ExportMonsterFamily("black\\black", 160, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("darkmage\\dmage", 128, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("diablo\\diablo", 160, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("eye\\eye", 156, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("eye2\\eye2", 140, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("fat\\fat", 128, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("fireman\\firem", 128, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("flesh\\flesh", 164, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("golem\\golem", 96, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("gravdg\\gravdg", 124, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("hellbat\\helbat", 96, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("hellbat2\\bhelbt", 96, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("hellbug\\hellbg", 198, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("lich\\lich", 96, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("lich2\\lich2", 136, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("mage\\mage", 128, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("mega\\mega", 160, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("nkr\\nkr", 226, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("reaper\\reap", 180, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("snake\\snake", 160, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("sneak\\sneak", 128, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("spawn\\spawn", 164, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("succ\\scbs", 128, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("tsneak\\tsneak", 128, "levels\\l4data\\l4_1.pal");
+	ExportMonsterFamily("unrav\\unrav", 96, "levels\\l4data\\l4_1.pal");
+}
+
+void RemasterInventoryIcons()
+{
+	Log("========================================================");
+	Log("   Starting Remastering for Inventory Icons & Spells    ");
+	Log("========================================================");
+	LoadPalette("levels\\towndata\\town.pal");
 	ExportAndUpscaleCelWidths("data\\inv\\objcurs", InvItemWidth1);
 	ExportAndUpscaleCelWidths("data\\inv\\objcurs2", InvItemWidth2);
 	ExportAndUpscaleCel("data\\spelli2", 37);
 	ExportAndUpscaleCel("data\\spelicon", 56);
 	ExportAndUpscaleCel("data\\spellbk", 320);
 	ExportAndUpscaleCel("data\\spellbkb", 76);
+}
 
-	// 5. INTERACTIVE OBJECTS (Chests, Barrels, Torches, Doors, Shrines, Altars)
-	Log("--- Remastering Interactive Objects ---");
+void RemasterObjects()
+{
+	Log("========================================================");
+	Log("   Starting Remastering for Interactive Objects         ");
+	Log("========================================================");
+	LoadPalette("levels\\l1data\\l1_1.pal");
 	uint16_t objectWidths[65] = {};
 	for (const ObjectData &objectData : AllObjects) {
 		if (objectData.ofindex >= 0 && objectData.ofindex < 65 && objectData.animWidth > 0) {
@@ -468,9 +498,14 @@ void RunRemasterAssetPipeline()
 			ExportAndUpscaleCel(path, objectWidths[i]);
 		}
 	}
+}
 
-	// 6. MISSILES & PROJECTILES (Spells, Arrows, Fireballs, Lightning, Portals)
-	Log("--- Remastering Missiles & Projectiles ---");
+void RemasterMissiles()
+{
+	Log("========================================================");
+	Log("   Starting Remastering for Missiles & Projectiles      ");
+	Log("========================================================");
+	LoadPalette("levels\\l1data\\l1_1.pal");
 	for (size_t mi = 0; MissileSpriteData[mi].animFAmt != 0; mi++) {
 		const auto &ms = MissileSpriteData[mi];
 		if (ms.name[0] == '\0')
@@ -485,13 +520,77 @@ void RunRemasterAssetPipeline()
 			}
 		}
 	}
+}
 
-	// 7. LEVEL SPECIALS (Doors, Stairs, Traps)
-	Log("--- Remastering Level Specials ---");
+void RemasterLevelSpecials()
+{
+	Log("========================================================");
+	Log("   Starting Remastering for Level Specials              ");
+	Log("========================================================");
+	LoadPalette("levels\\towndata\\town.pal");
 	ExportAndUpscaleCel("levels\\towndata\\towns", 64);
+	LoadPalette("levels\\l1data\\l1_1.pal");
 	ExportAndUpscaleCel("levels\\l1data\\l1s", 64);
+	LoadPalette("levels\\l2data\\l2_1.pal");
 	ExportAndUpscaleCel("levels\\l2data\\l2s", 64);
+	LoadPalette("levels\\l1data\\l1_1.pal");
 	ExportAndUpscaleCel("nlevels\\l5data\\l5s", 64);
+}
+
+void RemasterDroppedItems()
+{
+	Log("========================================================");
+	Log("   Starting Dropped Ground Items Remastering            ");
+	Log("========================================================");
+	LoadPalette("levels\\towndata\\town.pal");
+	const char *const dropNames[] = {
+		"armor2", "axe", "fbttle", "bow", "goldflip", "helmut", "mace", "shield", "swrdflip",
+		"rock", "cleaver", "staff", "ring", "crownf", "larmor", "wshield", "scroll",
+		"fplatear", "fbook", "food", "fbttlebb", "fbttledy", "fbttleor", "fbttlebr",
+		"fbttlebl", "fbttleby", "fbttlewh", "fbttledb", "fear", "fbrain", "fmush",
+		"innsign", "bldstn", "fanvil", "flazstaf", "bombs1", "halfps1", "wholeps1",
+		"runes1", "teddys1", "cows1", "donkys1", "mooses1"
+	};
+	for (const char *name : dropNames) {
+		std::string path = "items\\" + std::string(name);
+		ExportAndUpscaleCel(path, 96);
+	}
+	Log("========================================================");
+	Log("   Dropped Ground Items Remastering Completed!          ");
+	Log("========================================================");
+}
+
+void RemasterAllCoreAssets()
+{
+	Log("========================================================");
+	Log("   Starting 4x-UltraSharp Core Gameplay Remastering     ");
+	Log("========================================================");
+	RemasterTowners();
+	RemasterInventoryIcons();
+	RemasterDroppedItems();
+	RemasterObjects();
+	RemasterMissiles();
+	RemasterLevelSpecials();
+	RemasterAllMonsters();
+}
+
+void RunRemasterAssetPipeline()
+{
+	Log("========================================================");
+	Log("   Starting 4x-UltraSharp Full Master AI Remastering    ");
+	Log("========================================================");
+
+	RemasterAllCoreAssets();
+
+	// Player classes
+	Log("--- Remastering Player Classes ---");
+	LoadPalette("levels\\towndata\\town.pal");
+	ExportPlayerClass("warrior", 'w');
+	ExportPlayerClass("rogue", 'r');
+	ExportPlayerClass("sorceror", 's'); // Diablo 1 MPQ directory is 'sorceror'
+	ExportPlayerClass("monk", 'm');
+	ExportPlayerClass("barbarian", 'a');
+	ExportPlayerClass("bard", 'b');
 
 	Log("========================================================");
 	Log("   4x-UltraSharp Full AI Remastering Completed!         ");

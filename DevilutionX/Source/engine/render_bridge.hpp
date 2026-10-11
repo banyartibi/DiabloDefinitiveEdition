@@ -605,6 +605,7 @@ struct D1CorpseInfo {
 	int frame;
 	int width;
 	int height;
+	char monsterName[64] = { 0 };
 };
 
 struct D1CorpseSpriteRgba {
@@ -747,6 +748,8 @@ int GetResurrectedHdrLevel();
 int GetResurrectedUpscalerMode();
 int GetResurrectedReliefMode();
 bool GetResurrectedWetFloor();
+int GetResurrectedTileModel();
+void SetResurrectedTileModel(int model);
 
 } // namespace devilution
 

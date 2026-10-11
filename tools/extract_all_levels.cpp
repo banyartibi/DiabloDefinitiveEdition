@@ -39,7 +39,11 @@ int main(int argc, char **argv) {
         "levels\\towndata\\town.cel",
         "levels\\towndata\\town.min",
         "levels\\towndata\\town.til",
-        "levels\\towndata\\town.pal"
+        "levels\\towndata\\town.pal",
+        "levels\\towndata\\sector1s.dun",
+        "levels\\towndata\\sector2s.dun",
+        "levels\\towndata\\sector3s.dun",
+        "levels\\towndata\\sector4s.dun"
     };
 
     fs::path base_out = "/home/biti/antigravity/magical-bell/extracted_assets";

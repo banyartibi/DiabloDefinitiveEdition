@@ -1150,6 +1150,15 @@ ResurrectedOptions::ResurrectedOptions()
               { UpscalerMode::FSR_FullScreen, N_("AMD FSR 1.0 (EASU + RCAS Full-Screen)") },
               { UpscalerMode::NativePixelArt, N_("Native 1:1 Direct Retro Pixel-Art") },
           })
+    , tileModel("AI Tile Upscaler", OptionEntryFlags::None, N_("AI Tile Upscale Model"), N_("Neural network model used for 4X PBR dungeon tiles and HD sprites."), TileModel::UltraSharp,
+          {
+              { TileModel::UltraSharp, N_("Real-ESRGAN 4x-UltraSharp (Default)") },
+              { TileModel::X4Plus, N_("Real-ESRGAN x4plus (General)") },
+              { TileModel::Nomos8k_HATS, N_("Nomos8k HAT-S (Hybrid Attention)") },
+              { TileModel::HAT_L, N_("HAT-L (Large Hybrid Attention)") },
+              { TileModel::NMKD_Superscale, N_("4x_NMKD_Superscale (Retro Gothic)") },
+              { TileModel::Compact_OmniSR, N_("Compact / OmniSR (Fast)") },
+          })
     , reliefMode("Surface Relief Mode", OptionEntryFlags::None, N_("3D Surface Relief"), N_("Bump-mapped surface relief for the playfield (Mode 0)."), ReliefMode::Flat_2D,
           {
               { ReliefMode::Flat_2D, N_("OFF (Flat 2D)") },
@@ -1173,6 +1182,7 @@ std::vector<OptionEntryBase *> ResurrectedOptions::GetEntries()
 		&colorProfile,
 		&hdrLevel,
 		&upscalerMode,
+		&tileModel,
 		&reliefMode,
 		&wetFloor,
 		&resurrectedEffects,

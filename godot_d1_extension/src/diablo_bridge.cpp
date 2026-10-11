@@ -174,6 +174,8 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_d1de_upscaler_mode"), &DiabloBridge::get_d1de_upscaler_mode);
 	ClassDB::bind_method(D_METHOD("get_d1de_relief_mode"), &DiabloBridge::get_d1de_relief_mode);
 	ClassDB::bind_method(D_METHOD("get_d1de_wet_floor"), &DiabloBridge::get_d1de_wet_floor);
+	ClassDB::bind_method(D_METHOD("get_d1de_tile_model"), &DiabloBridge::get_d1de_tile_model);
+	ClassDB::bind_method(D_METHOD("set_d1de_tile_model", "model"), &DiabloBridge::set_d1de_tile_model);
 
 	ClassDB::bind_method(D_METHOD("get_resurrected_torchlight"), &DiabloBridge::get_resurrected_torchlight);
 	ClassDB::bind_method(D_METHOD("get_resurrected_fog_level"), &DiabloBridge::get_resurrected_fog_level);
@@ -182,10 +184,13 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_resurrected_upscaler_mode"), &DiabloBridge::get_resurrected_upscaler_mode);
 	ClassDB::bind_method(D_METHOD("get_resurrected_relief_mode"), &DiabloBridge::get_resurrected_relief_mode);
 	ClassDB::bind_method(D_METHOD("get_resurrected_wet_floor"), &DiabloBridge::get_resurrected_wet_floor);
+	ClassDB::bind_method(D_METHOD("get_resurrected_tile_model"), &DiabloBridge::get_resurrected_tile_model);
+	ClassDB::bind_method(D_METHOD("set_resurrected_tile_model", "model"), &DiabloBridge::set_resurrected_tile_model);
 
 	// 112x112 Dungeon Grid
 	ClassDB::bind_method(D_METHOD("get_dungeon_grid"), &DiabloBridge::get_dungeon_grid);
 	ClassDB::bind_method(D_METHOD("get_dungeon_tile", "x", "y"), &DiabloBridge::get_dungeon_tile);
+	ClassDB::bind_method(D_METHOD("get_dungeon_piece_id", "x", "y"), &DiabloBridge::get_dungeon_piece_id);
 	ClassDB::bind_method(D_METHOD("get_dungeon_solidity_grid"), &DiabloBridge::get_dungeon_solidity_grid);
 	ClassDB::bind_method(D_METHOD("get_dungeon_piece_data", "piece_id"), &DiabloBridge::get_dungeon_piece_data);
 	ClassDB::bind_method(D_METHOD("get_dungeon_piece_texture", "piece_id"), &DiabloBridge::get_dungeon_piece_texture);
@@ -229,6 +234,7 @@ void DiabloBridge::_bind_methods() {
 	// Direct Input
 	ClassDB::bind_method(D_METHOD("send_input", "type", "code", "state", "x", "y"), &DiabloBridge::send_input);
 	ClassDB::bind_method(D_METHOD("send_key_event", "keycode", "pressed"), &DiabloBridge::send_key_event);
+	ClassDB::bind_method(D_METHOD("send_click_to_tile", "tile_x", "tile_y", "button_mask"), &DiabloBridge::send_click_to_tile, DEFVAL(1));
 
 	// Video Frame Blitting
 	ClassDB::bind_method(D_METHOD("get_frame_bytes"), &DiabloBridge::get_frame_bytes);
@@ -707,6 +713,10 @@ int DiabloBridge::get_dungeon_tile(int x, int y) const {
 	return temp[y * 112 + x];
 }
 
+int DiabloBridge::get_dungeon_piece_id(int x, int y) const {
+	return get_dungeon_tile(x, y);
+}
+
 PackedByteArray DiabloBridge::get_dungeon_solidity_grid() const {
 	PackedByteArray arr;
 	std::vector<uint8_t> grid = devilution::GetDungeonSolidityGrid();
@@ -942,6 +952,14 @@ void DiabloBridge::send_key_event(int keycode, bool pressed) {
 	else if (keycode >= 48 && keycode <= 57) sdl_key = keycode;      // '0'..'9'
 
 	send_input(3, sdl_key, pressed ? 1 : 0, sdl_key, 0);
+}
+
+void DiabloBridge::send_click_to_tile(int tile_x, int tile_y, int button_mask) {
+	Vector2 world_pos = Vector2(static_cast<float>(tile_x - tile_y) * 32.0f, static_cast<float>(tile_x + tile_y) * 16.0f);
+	Vector2i screen_pos = map_world_to_screen(world_pos);
+	int btn = (button_mask == 2) ? 3 : 1;
+	send_input(2, btn, 1, screen_pos.x, screen_pos.y);
+	send_input(2, btn, 0, screen_pos.x, screen_pos.y);
 }
 
 PackedByteArray DiabloBridge::get_frame_bytes() {
@@ -1486,6 +1504,7 @@ Array DiabloBridge::get_active_corpses() const {
 		d["frame"] = corpse.frame;
 		d["width"] = corpse.width;
 		d["height"] = corpse.height;
+		d["monster_name"] = String(corpse.monsterName);
 		arr.push_back(d);
 	}
 	return arr;
@@ -1860,5 +1879,21 @@ bool DiabloBridge::get_d1de_wet_floor() const {
 
 bool DiabloBridge::get_resurrected_wet_floor() const {
 	return devilution::GetResurrectedWetFloor();
+}
+
+int DiabloBridge::get_resurrected_tile_model() const {
+	return devilution::GetResurrectedTileModel();
+}
+
+void DiabloBridge::set_resurrected_tile_model(int model) {
+	devilution::SetResurrectedTileModel(model);
+}
+
+int DiabloBridge::get_d1de_tile_model() const {
+	return get_resurrected_tile_model();
+}
+
+void DiabloBridge::set_d1de_tile_model(int model) {
+	set_resurrected_tile_model(model);
 }
 

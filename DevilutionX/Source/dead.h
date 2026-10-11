@@ -30,7 +30,13 @@ struct Corpse {
 	 */
 	[[nodiscard]] ClxSpriteList spritesForDirection(Direction direction) const
 	{
-		return sprites->isSheet() ? sprites->sheet()[static_cast<size_t>(direction)] : sprites->list();
+		if (!sprites->isSheet())
+			return sprites->list();
+		size_t numLists = sprites->sheet().numLists();
+		if (numLists == 0)
+			return sprites->list();
+		size_t safeDir = std::min<size_t>(static_cast<size_t>(direction), numLists - 1);
+		return sprites->sheet()[safeDir];
 	}
 };
 

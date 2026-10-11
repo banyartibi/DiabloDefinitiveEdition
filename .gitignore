@@ -27,5 +27,23 @@ godot_d1_extension/build/
 *.tmp
 *~
 run.log
+crop_test.png
 extracted_assets/
 scratch/
+godot_d1_3d/logs/
+
+# Offline neural model packs & local sprite dumps (>100MB / multi-GB generated assets)
+assets/hd_sprites_x4plus/
+assets/hd_sprites_hat_*/
+assets/hd_sprites_hat_s
+assets/hd_sprites_nmkd/
+assets/hd_sprites_omnisr/
+assets/dungeon_pbr_*_x4plus/
+assets/dungeon_pbr_*_nmkd/
+assets/dungeon_pbr_*_omnisr/
+assets/hd_sprites/items/
+assets/hd_sprites/missiles/
+assets/hd_sprites/monsters/
+assets/hd_sprites/objects/
+assets/hd_sprites/player/
+assets/hd_sprites/towners/

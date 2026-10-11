@@ -2536,7 +2536,7 @@ std::vector<D1MonsterEntityData> GetActiveMonstersData()
 		// Town has Towners (Griswold, Pepin, Cain, Wirt, Ogden, Adria, Gillian, Farnham, Cows...)
 		for (int i = 0; i < NUM_TOWNERS; ++i) {
 			const auto &towner = Towners[i];
-			if (!towner.anim.has_value() || (towner.position.x == 0 && towner.position.y == 0))
+			if (!towner.ownedAnim.has_value() || !towner.anim.has_value() || static_cast<int>(towner._ttype) < 0 || towner._ttype >= NUM_TOWNER_TYPES || (towner.position.x == 0 && towner.position.y == 0))
 				continue;
 
 			D1MonsterEntityData med;
@@ -2573,6 +2573,8 @@ std::vector<D1MonsterEntityData> GetActiveMonstersData()
 			continue;
 
 		const Monster &m = Monsters[mIdx];
+		if (!m.animInfo.sprites.has_value() || (m.hitPoints <= 0 && m.mode != MonsterMode::Death))
+			continue;
 		D1MonsterEntityData med;
 		med.id = mIdx;
 		med.type = static_cast<int>(m.type().type);
@@ -2627,12 +2629,6 @@ std::vector<uint8_t> GetDungeonSolidityGrid()
 	if (!IsBridgeSafeToRead())
 		return grid;
 
-	// In dungeons (currlevel != 0), the uncarved rock outside rooms is filled with the 4 filler microtiles at (0, 0)
-	uint16_t f1 = (currlevel != 0) ? dPiece[0][0] : 0xFFFF;
-	uint16_t f2 = (currlevel != 0) ? dPiece[1][0] : 0xFFFF;
-	uint16_t f3 = (currlevel != 0) ? dPiece[0][1] : 0xFFFF;
-	uint16_t f4 = (currlevel != 0) ? dPiece[1][1] : 0xFFFF;
-
 	for (int y = 0; y < MAXDUNY; ++y) {
 		for (int x = 0; x < MAXDUNX; ++x) {
 			uint16_t piece = dPiece[x][y];
@@ -2647,13 +2643,9 @@ std::vector<uint8_t> GetDungeonSolidityGrid()
 				continue;
 			}
 
-			// In dungeons, tiles outside the generated bounds or matching the uncarved filler rock are TRULY EMPTY VOID
+			// In dungeons, tiles outside the generated bounds are TRULY EMPTY VOID
 			if (currlevel != 0) {
 				if (x < 16 || x >= 96 || y < 16 || y >= 96) {
-					grid[y * MAXDUNX + x] = 0;
-					continue;
-				}
-				if (piece == f1 || piece == f2 || piece == f3 || piece == f4) {
 					grid[y * MAXDUNX + x] = 0;
 					continue;
 				}
@@ -2686,82 +2678,34 @@ static void RasterizeClxSpriteRgba(const ClxSprite &sprite, int &outW, int &outH
 	outH = h;
 	outRgba.assign(w * h * 4, 0);
 
-	const auto &pal = sgbFadedIn.load() ? system_palette : orig_palette;
+	OwnedSurface surface(w, h);
+	std::memset(surface.begin(), 0, surface.pitch() * surface.h());
 
-	const uint8_t *src = sprite.pixelData();
-	const uint8_t *srcEnd = src + sprite.pixelDataSize();
+	if (trn != nullptr) {
+		ClxDrawTRN(surface, { 0, h - 1 }, sprite, trn);
+	} else {
+		ClxDraw(surface, { 0, h - 1 }, sprite);
+	}
 
-	int curY = h - 1;
-	int curX = 0;
+	// Ensure we use a valid non-black palette (system_palette if faded in and non-black, else orig_palette)
+	bool sys_has_color = (system_palette[1].r != 0 || system_palette[1].g != 0 || system_palette[1].b != 0 ||
+	                      system_palette[2].r != 0 || system_palette[2].g != 0 || system_palette[2].b != 0);
+	const auto &pal = (sgbFadedIn.load() && sys_has_color) ? system_palette : orig_palette;
 
-	while (src < srcEnd && curY >= 0) {
-		int remainingWidth = w - curX;
-		curX = 0;
-		while (remainingWidth > 0 && src < srcEnd) {
-			uint8_t v = *src++;
-			if (IsClxOpaque(v)) {
-				if (IsClxOpaqueFill(v)) {
-					uint8_t count = GetClxOpaqueFillWidth(v);
-					uint8_t color = *src++;
-					if (trn != nullptr) color = trn[color];
-					for (uint8_t i = 0; i < count; ++i) {
-						int px = (w - remainingWidth + i);
-						int lineSkip = px / w;
-						int actualX = px % w;
-						int actualY = curY - lineSkip;
-						if (actualX >= 0 && actualX < w && actualY >= 0 && actualY < h) {
-							int idx = (actualY * w + actualX) * 4;
-							if (color == 0) {
-								// Authentic Diablo 1 shadow pixel!
-								outRgba[idx + 0] = 0;
-								outRgba[idx + 1] = 0;
-								outRgba[idx + 2] = 0;
-								outRgba[idx + 3] = 160;
-							} else {
-								SDL_Color c = pal[color];
-								outRgba[idx + 0] = c.r;
-								outRgba[idx + 1] = c.g;
-								outRgba[idx + 2] = c.b;
-								outRgba[idx + 3] = 255;
-							}
-						}
-					}
-					remainingWidth -= count;
-				} else {
-					uint8_t count = GetClxOpaquePixelsWidth(v);
-					for (uint8_t i = 0; i < count; ++i) {
-						uint8_t color = *src++;
-						if (trn != nullptr) color = trn[color];
-						int px = (w - remainingWidth + i);
-						int lineSkip = px / w;
-						int actualX = px % w;
-						int actualY = curY - lineSkip;
-						if (actualX >= 0 && actualX < w && actualY >= 0 && actualY < h) {
-							int idx = (actualY * w + actualX) * 4;
-							if (color == 0) {
-								// Authentic Diablo 1 shadow pixel!
-								outRgba[idx + 0] = 0;
-								outRgba[idx + 1] = 0;
-								outRgba[idx + 2] = 0;
-								outRgba[idx + 3] = 160;
-							} else {
-								SDL_Color c = pal[color];
-								outRgba[idx + 0] = c.r;
-								outRgba[idx + 1] = c.g;
-								outRgba[idx + 2] = c.b;
-								outRgba[idx + 3] = 255;
-							}
-						}
-					}
-					remainingWidth -= count;
-				}
-			} else {
-				remainingWidth -= v;
+	uint8_t *dst = outRgba.data();
+	for (int y = 0; y < h; ++y) {
+		const uint8_t *src = surface.at(0, y);
+		for (int x = 0; x < w; ++x) {
+			uint8_t idx = src[x];
+			if (idx != 0) {
+				SDL_Color c = pal[idx];
+				int px = (y * w + x) * 4;
+				dst[px + 0] = c.r;
+				dst[px + 1] = c.g;
+				dst[px + 2] = c.b;
+				dst[px + 3] = 255;
 			}
 		}
-		const SkipSize skipSize = GetSkipSize(remainingWidth, static_cast<int_fast16_t>(w));
-		curX = skipSize.xOffset;
-		curY -= static_cast<int>(skipSize.wholeLines);
 	}
 }
 
@@ -2787,17 +2731,20 @@ D1SpriteFrameRgba GetMonsterSpriteRgba(int monsterId)
 {
 	std::lock_guard<std::mutex> lock(g_InventoryMutex);
 	D1SpriteFrameRgba result;
-	if (!IsBridgeSafeToRead() || monsterId < 0)
+	if (!IsBridgeSafeToRead() || g_D1LevelTransitioning.load() || monsterId < 0)
 		return result;
 
 	if (currlevel == 0) {
 		if (monsterId >= NUM_TOWNERS)
 			return result;
 		const auto &towner = Towners[monsterId];
-		if (!towner.anim.has_value())
+		if (!towner.ownedAnim.has_value() || !towner.anim.has_value() || static_cast<int>(towner._ttype) < 0 || towner._ttype >= NUM_TOWNER_TYPES || towner.anim->numSprites() == 0)
 			return result;
-		const ClxSprite sprite = towner.currentSprite();
-		result.frame = towner._tAnimFrame;
+		size_t frameIdx = static_cast<size_t>(towner._tAnimFrame);
+		if (frameIdx >= towner.anim->numSprites())
+			frameIdx = 0;
+		const ClxSprite sprite = (*towner.anim)[frameIdx];
+		result.frame = static_cast<int>(frameIdx);
 		result.dir = 0;
 		RasterizeClxSpriteRgba(sprite, result.width, result.height, result.rgba);
 		return result;
@@ -2807,11 +2754,16 @@ D1SpriteFrameRgba GetMonsterSpriteRgba(int monsterId)
 		return result;
 
 	const Monster &m = Monsters[monsterId];
-	if (!m.animInfo.sprites)
+	if (!m.animInfo.sprites.has_value() || m.animInfo.sprites->numSprites() == 0)
+		return result;
+	if (m.hitPoints <= 0 && m.mode != MonsterMode::Death)
 		return result;
 
-	const ClxSprite sprite = m.animInfo.currentSprite();
-	result.frame = m.animInfo.getFrameToUseForRendering();
+	size_t mFrame = static_cast<size_t>(m.animInfo.getFrameToUseForRendering());
+	if (mFrame >= m.animInfo.sprites->numSprites())
+		mFrame = 0;
+	const ClxSprite sprite = (*m.animInfo.sprites)[mFrame];
+	result.frame = static_cast<int>(mFrame);
 	result.dir = static_cast<int>(m.direction);
 
 	const uint8_t *trn = nullptr;
@@ -3178,6 +3130,29 @@ std::vector<D1CorpseInfo> GetActiveCorpsesList()
 			info.frame = corpse.frame;
 			info.width = corpse.width;
 			info.height = 0;
+
+			// Lookup monster name corresponding to this corpse
+			const char *mName = "";
+			if (corpse.translationPaletteIndex != 0 && static_cast<size_t>(corpse.translationPaletteIndex - 1) < MaxMonsters) {
+				auto nv = Monsters[corpse.translationPaletteIndex - 1].name();
+				size_t clen = std::min(nv.size(), sizeof(info.monsterName) - 1);
+				std::memcpy(info.monsterName, nv.data(), clen);
+				info.monsterName[clen] = '\0';
+			} else {
+				for (size_t i = 0; i < LevelMonsterTypeCount; ++i) {
+					if (LevelMonsterTypes[i].corpseId == (corpseIdx + 1)) {
+						if (LevelMonsterTypes[i].data != nullptr) {
+							mName = LevelMonsterTypes[i].data->name;
+						}
+						break;
+					}
+				}
+				if (mName != nullptr && mName[0] != '\0') {
+					strncpy(info.monsterName, mName, sizeof(info.monsterName) - 1);
+					info.monsterName[sizeof(info.monsterName) - 1] = '\0';
+				}
+			}
+
 			list.push_back(info);
 		}
 	}
@@ -3197,10 +3172,11 @@ D1CorpseSpriteRgba GetCorpseSpriteRgba(int corpseIdx, int dir)
 
 	Direction d = static_cast<Direction>(std::clamp(dir, 0, 7));
 	auto sprites = corpse.spritesForDirection(d);
-	if (corpse.frame < 0 || static_cast<size_t>(corpse.frame) >= sprites.numSprites())
+	if (sprites.numSprites() == 0)
 		return result;
 
-	const ClxSprite sprite = sprites[corpse.frame];
+	int frameIdx = std::clamp(corpse.frame, 0, static_cast<int>(sprites.numSprites()) - 1);
+	const ClxSprite sprite = sprites[frameIdx];
 	const uint8_t *trn = nullptr;
 	if (corpse.translationPaletteIndex != 0 && static_cast<size_t>(corpse.translationPaletteIndex - 1) < MaxMonsters) {
 		trn = Monsters[corpse.translationPaletteIndex - 1].uniqueMonsterTRN.get();
@@ -4174,6 +4150,18 @@ int GetResurrectedReliefMode()
 bool GetResurrectedWetFloor()
 {
 	return static_cast<bool>(*sgOptions.Resurrected.wetFloor);
+}
+
+int GetResurrectedTileModel()
+{
+	return static_cast<int>(*sgOptions.Resurrected.tileModel);
+}
+
+void SetResurrectedTileModel(int model)
+{
+	if (model >= 0 && model <= 5) {
+		sgOptions.Resurrected.tileModel.SetValue(static_cast<TileModel>(model));
+	}
 }
 
 bool IsHellfireMode()
