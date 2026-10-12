@@ -67,8 +67,13 @@ func _shadow_verify() -> void:
 	var after = _player_state()
 	var native_result = {"hp": pred["effects"]["hp"], "mana": pred["effects"]["mana"]}
 	var cpp_result = {"hp": after["hp"] - before["hp"], "mana": after["mana"] - before["mana"]}
-	logic_authority.record("inventory_item_use", native_result, cpp_result)
+	var ok = logic_authority.record("inventory_item_use", native_result, cpp_result)
+	print("[PARITY] %s  native=%s cpp=%s" % ["OK" if ok else "MISMATCH", native_result, cpp_result])
 	_pending_prediction = {}
+
+
+func _exit_tree() -> void:
+	print("[PARITY REPORT] ", logic_authority.report())
 
 # Equipment slot indices (matching DevilutionX inv_body_loc)
 const EQUIP_HEAD = 0

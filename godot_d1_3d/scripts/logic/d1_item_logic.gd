@@ -4,8 +4,8 @@ extends RefCounted
 ## Native Godot mirror of DevilutionX `UseItem()` (Source/items.cpp:4041).
 ## Pure and side-effect free: it only *predicts* the effect of using an item.
 ## The C++ engine remains the source of truth until parity is proven
-## (see D1LogicAuthority). Values use the C++ fixed-point convention
-## (HP/mana stored <<6).
+## (see D1LogicAuthority). Player state is in DISPLAY units, exactly as the bridge
+## getters expose it (g_D1EngineData.playerHp / playerMaxHp are already >> 6).
 
 # item_misc_id values, exactly as in Source/itemdat.h.
 const IMISC_NONE := 0
@@ -123,8 +123,8 @@ static func predict_use_item(item: Dictionary, player: Dictionary, rng, ctx: Dic
 			else:
 				result["actions"].append("restore_partial_life")
 				result["rng_dependent"] = true
-				var whole := max_hp >> 6
-				var gain: int = ((whole / 8) + rng.generate_rnd(whole / 4)) << 6
+				var whole: int = max_hp
+				var gain: int = (whole / 8) + rng.generate_rnd(whole / 4)
 				if int(player.get("class", 0)) in [CLASS_WARRIOR, CLASS_BARBARIAN]:
 					gain *= 2
 				elif int(player.get("class", 0)) in [CLASS_ROGUE, CLASS_MONK, CLASS_BARD]:
@@ -137,16 +137,16 @@ static func predict_use_item(item: Dictionary, player: Dictionary, rng, ctx: Dic
 				else:
 					result["actions"].append("restore_partial_mana")
 					result["rng_dependent"] = true
-					var whole_m := max_mana >> 6
-					var gain_m: int = ((whole_m / 8) + rng.generate_rnd(whole_m / 4)) << 6
+					var whole_m: int = max_mana
+					var gain_m: int = (whole_m / 8) + rng.generate_rnd(whole_m / 4)
 					if int(player.get("class", 0)) in [CLASS_ROGUE, CLASS_SORCERER, CLASS_BARD]:
 						gain_m *= 2
 					result["effects"]["mana"] = min(mana + gain_m, max_mana) - mana
 		IMISC_MANA:
 			result["actions"].append("restore_partial_mana")
 			result["rng_dependent"] = true
-			var whole_mana := max_mana >> 6
-			var gain_mana: int = ((whole_mana / 8) + rng.generate_rnd(whole_mana / 4)) << 6
+			var whole_mana: int = max_mana
+			var gain_mana: int = (whole_mana / 8) + rng.generate_rnd(whole_mana / 4)
 			if int(player.get("class", 0)) in [CLASS_ROGUE, CLASS_SORCERER, CLASS_BARD]:
 				gain_mana *= 2
 			result["effects"]["mana"] = min(mana + gain_mana, max_mana) - mana
@@ -185,7 +185,7 @@ static func predict_use_item(item: Dictionary, player: Dictionary, rng, ctx: Dic
 			if current + 1 <= MAX_SPELL_LEVEL:
 				result["effects"]["spell_level"] = 1
 			if not bool(ctx.get("no_mana_flag", false)):
-				var cost := int(ctx.get("spell_mana_cost", 0)) << 6
+				var cost: int = int(ctx.get("spell_mana_cost", 0))
 				result["effects"]["mana"] = min(mana + cost, max_mana) - mana
 		IMISC_MAPOFDOOM:
 			result["actions"].append("doom_init")

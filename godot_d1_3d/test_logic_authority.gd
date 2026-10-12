@@ -35,29 +35,29 @@ func _init() -> void:
 	check("RNG LCG stream", got, golden_rng)
 
 	# --- 2. Item logic golden fixtures ---
-	var warrior := {"hp": 50 << 6, "max_hp": 100 << 6, "mana": 40 << 6, "max_mana": 80 << 6,
+	var warrior := {"hp": 50, "max_hp": 100, "mana": 40, "max_mana": 80,
 		"str": 30, "mag": 20, "dex": 20, "vit": 30, "class": ItemLogic.CLASS_WARRIOR, "spell_levels": {}}
-	var rogue := {"hp": 40 << 6, "max_hp": 80 << 6, "mana": 40 << 6, "max_mana": 80 << 6,
+	var rogue := {"hp": 40, "max_hp": 80, "mana": 40, "max_mana": 80,
 		"str": 20, "mag": 20, "dex": 30, "vit": 20, "class": ItemLogic.CLASS_ROGUE, "spell_levels": {}}
 
 	var heal := {"misc_id": ItemLogic.IMISC_HEAL, "can_use": true, "spell_from": -1}
 	var r = RNG.new(0x12345678)
 	var p1 = ItemLogic.predict_use_item(heal, warrior, r)
-	check("HEAL warrior partial life delta", p1["effects"]["hp"], 3200)
+	check("HEAL warrior partial life delta", p1["effects"]["hp"], 50)
 	check("HEAL rng_dependent", p1["rng_dependent"], true)
 
 	var mana_item := {"misc_id": ItemLogic.IMISC_MANA, "can_use": true}
 	var p1b = ItemLogic.predict_use_item(mana_item, rogue, RNG.new(0x12345678))
-	check("MANA rogue partial mana delta", p1b["effects"]["mana"], 2560)
+	check("MANA rogue partial mana delta", p1b["effects"]["mana"], 40)
 
 	var fullheal := {"misc_id": ItemLogic.IMISC_FULLHEAL, "can_use": true}
 	var p2 = ItemLogic.predict_use_item(fullheal, warrior, RNG.new(1))
 	check("FULLHEAL deterministic", p2["rng_dependent"], false)
-	check("FULLHEAL delta", p2["effects"]["hp"], 3200)
+	check("FULLHEAL delta", p2["effects"]["hp"], 50)
 
 	var elixvit := {"misc_id": ItemLogic.IMISC_ELIXVIT, "can_use": true}
 	var p3 = ItemLogic.predict_use_item(elixvit, warrior, RNG.new(1), {"hellfire": true})
-	check("ELIXVIT hellfire grants full life", p3["effects"]["hp"], 3200)
+	check("ELIXVIT hellfire grants full life", p3["effects"]["hp"], 50)
 	check("ELIXVIT vit", p3["effects"]["vit"], 1)
 
 	var specelix := {"misc_id": ItemLogic.IMISC_SPECELIX, "can_use": true}
@@ -70,7 +70,7 @@ func _init() -> void:
 	var book := {"misc_id": ItemLogic.IMISC_BOOK, "can_use": true, "spell_id": 0, "spell_from": 0}
 	var p6 = ItemLogic.predict_use_item(book, rogue, RNG.new(1), {"spell_mana_cost": 15})
 	check("BOOK spell level up", p6["effects"]["spell_level"], 1)
-	check("BOOK mana gain (cost<<6)", p6["effects"]["mana"], 15 << 6)
+	check("BOOK mana gain (spell cost)", p6["effects"]["mana"], 15)
 
 	var oil := {"misc_id": ItemLogic.IMISC_OILACC, "can_use": true}
 	var p7 = ItemLogic.predict_use_item(oil, warrior, RNG.new(1), {"sbookflag": true, "invflag": false})
