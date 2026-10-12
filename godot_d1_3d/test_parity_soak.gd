@@ -76,22 +76,151 @@ func _wait_menu(bridge, mode: int, max_ms: int) -> int:
 ## Sample the engine's read-gate and compare it against the mirror's IsBridgeSafeToRead().
 ## Sampled during the load window (where the gate is false) and during steady play (where it is
 ## true), because the whole point of the contract is the transition window.
+var gate_stats := {"samples": 0, "bad": 0, "transitioning": 0}
+
+
+func _sample_gate(bridge, auth, mirror, tag: String) -> void:
+	var g = bridge.get_read_gate_state()
+	gate_stats["samples"] = int(gate_stats["samples"]) + 1
+	if bool(g.get("transitioning", false)):
+		gate_stats["transitioning"] = int(gate_stats["transitioning"]) + 1
+		if mirror.state != mirror.STATE_TRANSITIONING:
+			mirror.queue_transition()
+			mirror.begin()
+	elif mirror.state == mirror.STATE_TRANSITIONING:
+		mirror.complete(int(bridge.get_current_level()))
+	var native_verdict : bool = mirror.is_safe_to_read(g)
+	var cpp_verdict : bool = bool(g.get("safe", false))
+	var sig := "gate|%d|%d|%d|%d|%d|%d" % [
+		int(bool(g.get("game_running", false))), int(bool(g.get("transitioning", false))),
+		int(bool(g.get("faded_in", false))), int(bool(g.get("player_ready", false))),
+		int(g.get("pmode", -1)), int(bool(g.get("lvl_changing", false)))]
+	if not auth.record("level_transition", {"safe": native_verdict}, {"safe": cpp_verdict}, sig):
+		gate_stats["bad"] = int(gate_stats["bad"]) + 1
+		print("[SOAK] GATE MISMATCH %s %s native=%s cpp=%s" % [tag, sig, native_verdict, cpp_verdict])
+	# The mirror tracks the level through its own state machine. The comparison is only meaningful
+	# while reads are approved: during the load window the engine has already switched currlevel but
+	# the native layer must not adopt the new level until the gate is safe again, otherwise it would
+	# route caches for a level that is still being built.
+	if cpp_verdict:
+		# First sync: a mirror created mid-game has no level yet. It adopts the engine's level only
+		# once reads are approved - before that there is nothing to compare, and recording -1 against
+		# the engine would be a comparison the native layer never actually made.
+		if mirror.current_level < 0:
+			mirror.current_level = bridge.get_current_level()
+		else:
+			var eng_lvl : int = bridge.get_current_level()
+			auth.record("level_transition", {"level": mirror.current_level}, {"level": eng_lvl}, "lvl|%d" % eng_lvl)
+
+
 func _soak_level_gate(bridge, auth, samples: int, tag: String) -> void:
 	var mirror = TransitionLogic.new()
-	var bad := 0
+	var before := int(gate_stats["samples"])
 	for i in range(samples):
-		var g = bridge.get_read_gate_state()
-		var native_verdict : bool = mirror.is_safe_to_read(g)
-		var cpp_verdict : bool = bool(g.get("safe", false))
-		var sig := "gate|%d|%d|%d|%d|%d|%d" % [
-			int(bool(g.get("game_running", false))), int(bool(g.get("transitioning", false))),
-			int(bool(g.get("faded_in", false))), int(bool(g.get("player_ready", false))),
-			int(g.get("pmode", -1)), int(bool(g.get("lvl_changing", false)))]
-		if not auth.record("level_transition", {"safe": native_verdict}, {"safe": cpp_verdict}, sig):
-			bad += 1
-			print("[SOAK] GATE MISMATCH %s %s native=%s cpp=%s" % [tag, sig, native_verdict, cpp_verdict])
+		_sample_gate(bridge, auth, mirror, tag)
 		OS.delay_msec(20)
-	print("[SOAK] level gate (%s): %d samples, %d mismatched" % [tag, samples, bad])
+	print("[SOAK] level gate (%s): %d samples, %d mismatched" % [
+		tag, int(gate_stats["samples"]) - before, int(gate_stats["bad"])])
+
+
+## Drive a real level change. Sampling alone never reaches the transition window - the soak has to
+## walk the hero onto a level trigger. The clickable stairs piece is not the trigger tile itself:
+## ForceTownTrig/ForceL*Trig match a stairs *piece* under the cursor and snap cursPosition to the
+## trigger, so the neighbours of the trigger tile are probed as well.
+func _drive_transition(bridge, auth) -> bool:
+	var trigs = bridge.get_level_triggers()
+	if trigs.is_empty():
+		print("[SOAK] no level trigger here, cannot drive a transition")
+		return false
+	var pt = bridge.get_player_tile_pos()
+	var best = null
+	var best_d := 1 << 30
+	for t in trigs:
+		var dx : int = int(t["x"]) - int(pt.x)
+		var dy : int = int(t["y"]) - int(pt.y)
+		var d : int = dx * dx + dy * dy
+		if d < best_d:
+			best_d = d
+			best = t
+	var gx := int(best["x"])
+	var gy := int(best["y"])
+	var lvl0 : int = bridge.get_current_level()
+	print("[SOAK] driving transition: player=(%d,%d) trigger=(%d,%d) msg=%d level=%d" % [
+		int(pt.x), int(pt.y), gx, gy, int(best["msg"]), lvl0])
+
+	var mirror = TransitionLogic.new()
+	mirror.current_level = lvl0
+	mirror.state = mirror.STATE_LOADED
+
+	# Walk: short hops (a far click lands off screen and the engine drops it), with detours when a
+	# wall or building blocks the direct line.
+	var last := Vector2i(-999, -999)
+	var stuck := 0
+	var tried := {}
+	for step in range(300):
+		for slice in range(6):
+			_sample_gate(bridge, auth, mirror, "walk")
+			OS.delay_msec(20)
+		if bridge.get_current_level() != lvl0:
+			break
+		var cur = bridge.get_player_tile_pos()
+		var px := int(cur.x)
+		var py := int(cur.y)
+		if abs(px - gx) <= 1 and abs(py - gy) <= 1:
+			break
+		var dx := gx - px
+		var dy := gy - py
+		var dist : int = maxi(1, int(sqrt(float(dx * dx + dy * dy))))
+		if Vector2i(px, py) == last:
+			stuck += 1
+		else:
+			stuck = 0
+			tried.clear()
+		last = Vector2i(px, py)
+		if stuck > 12:
+			print("[SOAK] walk blocked at (%d,%d)" % [px, py])
+			break
+		var hop : int = mini(dist, 4)
+		var cands: Array = [Vector2i(px + int(round(float(dx) * float(hop) / float(dist))),
+			py + int(round(float(dy) * float(hop) / float(dist))))]
+		if stuck >= 1:
+			for d in [Vector2i(-dy, dx), Vector2i(dy, -dx), Vector2i(dx, -dy), Vector2i(-dx, dy)]:
+				var dl : float = sqrt(float(d.x * d.x + d.y * d.y))
+				if dl < 1.0:
+					continue
+				cands.append(Vector2i(px + int(round(float(d.x) * 4.0 / dl)),
+					py + int(round(float(d.y) * 4.0 / dl))))
+		var chosen = cands[0]
+		for c in cands:
+			if not tried.has(c):
+				chosen = c
+				break
+		tried[chosen] = true
+		bridge.send_click_to_tile(int(chosen.x), int(chosen.y), 1)
+
+	# Stand next to the stairs and probe the trigger tile plus its neighbours.
+	for ox in range(-1, 2):
+		for oy in range(-1, 2):
+			if bridge.get_current_level() != lvl0:
+				break
+			bridge.send_click_to_tile(gx + ox, gy + oy, 1)
+			for slice in range(40):
+				_sample_gate(bridge, auth, mirror, "stairs")
+				OS.delay_msec(20)
+			if bridge.get_current_level() != lvl0:
+				print("[SOAK] transition fired from click (%d,%d)" % [gx + ox, gy + oy])
+				break
+		if bridge.get_current_level() != lvl0:
+			break
+
+	# Keep sampling while the engine loads the new level: this is the window the contract guards.
+	for slice in range(120):
+		_sample_gate(bridge, auth, mirror, "load")
+		OS.delay_msec(20)
+	var lvl1 : int = bridge.get_current_level()
+	print("[SOAK] transition drive: level %d -> %d, gate samples %d, transitioning %d, mirror level %d" % [
+		lvl0, lvl1, int(gate_stats["samples"]), int(gate_stats["transitioning"]), mirror.current_level])
+	return lvl1 != lvl0
 
 
 func _soak_rng(bridge, auth) -> void:
@@ -192,8 +321,13 @@ func _init() -> void:
 		return
 	var need_items := not auth.can_promote("inventory_item_use")
 	var need_rng := not auth.can_promote("rng")
-	if not need_items and not need_rng:
-		print("[SOAK] inventory_item_use and rng already promotable, nothing to do")
+	# SOAK_TRANSITION=1 keeps driving level changes even after the subsystem is promotable, so the
+	# evidence keeps broadening (different levels, both directions) instead of freezing at the first
+	# passing sample.
+	var force_tr := String(OS.get_environment("SOAK_TRANSITION")) != ""
+	var need_level := not auth.can_promote("level_transition") or force_tr
+	if not need_items and not need_rng and not need_level:
+		print("[SOAK] all subsystems already promotable, nothing to do")
 		quit(0)
 		return
 
@@ -251,6 +385,9 @@ func _init() -> void:
 
 	if need_rng:
 		_soak_rng(bridge, auth)
+	# Last, because it changes the level and would invalidate the item/rng context of this save.
+	if need_level:
+		_drive_transition(bridge, auth)
 	_soak_level_gate(bridge, auth, 8, "steady")
 	if not auth.save_state(STATE_PATH):
 		print("[SOAK] WARN: could not write ", STATE_PATH)

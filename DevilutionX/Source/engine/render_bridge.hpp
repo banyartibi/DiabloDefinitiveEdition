@@ -522,6 +522,19 @@ struct D1ObjectSpriteRgba {
 };
 
 std::vector<D1ObjectInfo> GetActiveObjectsList();
+
+// Level transition triggers (Source/levels/trigs.h). Walking onto one of these tiles is what
+// makes the engine change level, so a soak can drive a real transition instead of only ever
+// observing the steady state.
+struct D1LevelTrigger
+{
+	int x = 0;
+	int y = 0;
+	int msg = 0;          // interface_mode (WM_DIABNEXTLVL = 0)
+	int targetLevel = 0;  // _tlvl
+};
+
+std::vector<D1LevelTrigger> GetLevelTriggers();
 D1ObjectSpriteRgba GetObjectSpriteRgba(int objectId);
 int GetModalType();
 bool IsModalActiveLive();

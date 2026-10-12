@@ -109,6 +109,19 @@ func _init() -> void:
 	transitioning["transitioning"] = true
 	check("unsafe while level is loading", tr.is_safe_to_read(transitioning), false)
 	tr.complete()
+	# The destination of a stairs trigger is not knowable when the transition is queued (trigs::_tlvl
+	# is unused for stairs). The mirror must not invent it: it adopts the level only when complete()
+	# reports what the engine loaded.
+	var tr2 = Transition.new()
+	tr2.current_level = 0
+	check("queue with unknown destination", tr2.queue_transition(), true)
+	check("rejects invalid destination", tr2.queue_transition(-2), false)
+	tr2.queue_transition()
+	tr2.begin()
+	check("level not adopted while engine is loading", tr2.current_level, 0)
+	check("reads blocked during transition", tr2.reads_blocked, true)
+	check("complete learns the loaded level", tr2.complete(1)["level"], 1)
+	check("reads unblocked after complete", tr2.reads_blocked, false)
 	var themes := {0: "town", 1: "cathedral", 5: "catacombs", 10: "caves", 16: "hell"}
 	check("town never resolves to cathedral (Rule #1)", tr.pbr_folder_for_level(0, themes), "res://assets/dungeon_pbr_town_4x")
 	check("cathedral level routing", tr.pbr_folder_for_level(1, themes), "res://assets/dungeon_pbr_cathedral_4x")

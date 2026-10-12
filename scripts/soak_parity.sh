@@ -9,6 +9,8 @@
 #
 # Usage: ./scripts/soak_parity.sh                 # 200 checks, up to 80 runs
 #        SOAK_TARGET=20 SOAK_RUNS=8 ./scripts/soak_parity.sh
+#        SOAK_TRANSITION=1 -> also drive real level changes (walk the hero onto a stairs
+#        trigger); slow, but it is the only way to cover the transition window.
 
 set -uo pipefail
 
@@ -33,10 +35,10 @@ first=1
 for run in $(seq 1 "$MAX_RUNS"); do
 	for slot in $SAVES; do
 		if [[ $first == 1 && -n "${SOAK_RESET:-}" ]]; then
-			out="$(SOAK_SAVE=$slot SOAK_RESET="$SOAK_RESET" "$GODOT" --headless --path "$REPO/godot_d1_3d" --script res://test_parity_soak.gd 2>&1 | grep -v 'Texture format not supported')"
+			out="$(SOAK_SAVE=$slot SOAK_RESET="$SOAK_RESET" SOAK_TRANSITION="$SOAK_TRANSITION" "$GODOT" --headless --path "$REPO/godot_d1_3d" --script res://test_parity_soak.gd 2>&1 | grep -v 'Texture format not supported')"
 			first=0
 		else
-			out="$(SOAK_SAVE=$slot "$GODOT" --headless --path "$REPO/godot_d1_3d" --script res://test_parity_soak.gd 2>&1 | grep -v 'Texture format not supported')"
+			out="$(SOAK_SAVE=$slot SOAK_TRANSITION="$SOAK_TRANSITION" "$GODOT" --headless --path "$REPO/godot_d1_3d" --script res://test_parity_soak.gd 2>&1 | grep -v 'Texture format not supported')"
 		fi
 		echo "$out" | grep -E '^\[PARITY\]|^\[SOAK\] (rng|level|save|RNG|GATE)'
 		if echo "$out" | grep -q 'MISMATCH'; then

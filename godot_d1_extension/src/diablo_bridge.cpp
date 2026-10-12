@@ -33,6 +33,7 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_player_max_mana_raw"), &DiabloBridge::get_player_max_mana_raw);
 	ClassDB::bind_method(D_METHOD("engine_generate_rnd", "bound"), &DiabloBridge::engine_generate_rnd);
 	ClassDB::bind_method(D_METHOD("get_read_gate_state"), &DiabloBridge::get_read_gate_state);
+	ClassDB::bind_method(D_METHOD("get_level_triggers"), &DiabloBridge::get_level_triggers);
 	ClassDB::bind_method(D_METHOD("get_player_gold"), &DiabloBridge::get_player_gold);
 	ClassDB::bind_method(D_METHOD("get_player_class"), &DiabloBridge::get_player_class);
 	ClassDB::bind_method(D_METHOD("get_current_level"), &DiabloBridge::get_current_level);
@@ -364,6 +365,19 @@ Dictionary DiabloBridge::get_read_gate_state() const {
 	d["faded_in"] = gate.fadedIn;
 	d["safe"] = gate.safe;
 	return d;
+}
+
+Array DiabloBridge::get_level_triggers() const {
+	Array arr;
+	for (const auto &t : devilution::GetLevelTriggers()) {
+		Dictionary d;
+		d["x"] = t.x;
+		d["y"] = t.y;
+		d["msg"] = t.msg;
+		d["target_level"] = t.targetLevel;
+		arr.push_back(d);
+	}
+	return arr;
 }
 
 int DiabloBridge::get_player_gold() const {

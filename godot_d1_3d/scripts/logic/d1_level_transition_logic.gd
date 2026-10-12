@@ -34,10 +34,14 @@ func is_cathedral_level(level_idx: int) -> bool:
 	return level_idx in CATHEDRAL_LEVELS
 
 
-func queue_transition(level_idx: int) -> bool:
+func queue_transition(level_idx: int = -1) -> bool:
+	## level_idx = -1 means "the engine has not decided yet". Walking onto a town stairs tile does
+	## not tell the native layer which level will be loaded (trigs::_tlvl is unused for stairs), so
+	## the destination can only be learned once the engine has loaded it. Assuming it earlier is how
+	## the mirror ended up tracking the wrong level.
 	if state == STATE_TRANSITIONING:
 		return false
-	if level_idx < 0 or level_idx > MAX_LEVEL:
+	if level_idx < -1 or level_idx > MAX_LEVEL:
 		return false
 	pending_level = level_idx
 	state = STATE_QUEUED
@@ -47,17 +51,24 @@ func queue_transition(level_idx: int) -> bool:
 func begin() -> Dictionary:
 	if state != STATE_QUEUED:
 		return {"ok": false, "reason": "not_queued"}
-	current_level = pending_level
-	pending_level = -1
+	# current_level deliberately stays on the old level: the engine is still rendering it and the
+	# PBR caches for it are the ones being dropped.
 	state = STATE_TRANSITIONING
 	reads_blocked = true
 	cache_generation += 1
-	return {"ok": true, "level": current_level, "invalidate": invalidated_caches()}
+	return {"ok": true, "level": current_level, "pending": pending_level, "invalidate": invalidated_caches()}
 
 
-func complete() -> Dictionary:
+func complete(level_idx: int = -1) -> Dictionary:
+	## level_idx: the level the engine actually loaded (read from the engine once its gate is safe
+	## again). If it was already known at queue time it is taken from there.
 	if state != STATE_TRANSITIONING:
 		return {"ok": false, "reason": "not_transitioning"}
+	if level_idx >= 0:
+		current_level = level_idx
+	elif pending_level >= 0:
+		current_level = pending_level
+	pending_level = -1
 	state = STATE_LOADED
 	reads_blocked = false
 	return {"ok": true, "level": current_level}

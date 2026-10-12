@@ -12,6 +12,7 @@
 #include "engine/dx.h"
 #include "engine/backbuffer_state.hpp"
 #include "engine/random.hpp"
+#include "levels/trigs.h"   // trigs[] / numtrigs: level transition trigger tiles
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -3036,6 +3037,21 @@ std::vector<uint8_t> GetTransList()
 		result[i] = TransList[i] ? 1 : 0;
 	}
 	return result;
+}
+
+std::vector<D1LevelTrigger> GetLevelTriggers()
+{
+	std::vector<D1LevelTrigger> list;
+	if (!IsBridgeSafeToRead()) return list;
+	for (int i = 0; i < numtrigs; ++i) {
+		D1LevelTrigger t;
+		t.x = trigs[i].position.x;
+		t.y = trigs[i].position.y;
+		t.msg = static_cast<int>(trigs[i]._tmsg);
+		t.targetLevel = trigs[i]._tlvl;
+		list.push_back(t);
+	}
+	return list;
 }
 
 std::vector<D1ObjectInfo> GetActiveObjectsList()

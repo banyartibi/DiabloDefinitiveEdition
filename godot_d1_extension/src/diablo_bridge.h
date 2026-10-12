@@ -62,6 +62,9 @@ public:
 	// Inputs and verdict of the engine's IsBridgeSafeToRead(), for parity-testing the native
 	// mirror of the level-transition safety contract.
 	Dictionary get_read_gate_state() const;
+	// Level transition trigger tiles (walking onto one changes level). Needed to drive a real
+	// transition from a soak instead of only sampling the steady state.
+	Array get_level_triggers() const;
 	int get_player_gold() const;
 	int get_player_class() const;
 	int get_current_level() const;
