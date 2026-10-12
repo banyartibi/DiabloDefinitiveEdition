@@ -63,12 +63,21 @@ func complete() -> Dictionary:
 	return {"ok": true, "level": current_level}
 
 
-func is_safe_to_read(pmode: int, lvl_changing: bool, game_running: bool, player_ready: bool) -> bool:
-	## Mirror of IsBridgeSafeToRead(): reads during the transition window are the
-	## known crash source, so the native layer must refuse them.
-	if not game_running or not player_ready or reads_blocked:
+func is_safe_to_read(state: Dictionary) -> bool:
+	## Mirror of IsBridgeSafeToRead() (Source/engine/render_bridge.cpp). Every conjunct of the C++
+	## expression is required. The faded-in term was missing here, which let the native layer
+	## approve reads during the fade window - the known crash source.
+	if not bool(state.get("game_running", false)):
 		return false
-	if pmode == PM_NEWLVL or lvl_changing:
+	if bool(state.get("transitioning", false)):
+		return false
+	if not bool(state.get("faded_in", false)):
+		return false
+	if not bool(state.get("player_ready", false)):
+		return false
+	if int(state.get("pmode", -1)) == PM_NEWLVL:
+		return false
+	if bool(state.get("lvl_changing", false)):
 		return false
 	return true
 

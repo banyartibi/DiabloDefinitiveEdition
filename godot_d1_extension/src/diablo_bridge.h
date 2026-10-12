@@ -52,6 +52,16 @@ public:
 	int get_player_mana() const;
 	int get_player_max_mana() const;
 	int get_player_item_flags() const;
+	int get_player_hp_raw() const;
+	int get_player_max_hp_raw() const;
+	int get_player_mana_raw() const;
+	int get_player_max_mana_raw() const;
+	// Draws one value from the engine's own RNG stream. Advances the stream exactly like gameplay
+	// does, so a native mirror can be compared draw-for-draw against the real generator.
+	int engine_generate_rnd(int bound);
+	// Inputs and verdict of the engine's IsBridgeSafeToRead(), for parity-testing the native
+	// mirror of the level-transition safety contract.
+	Dictionary get_read_gate_state() const;
 	int get_player_gold() const;
 	int get_player_class() const;
 	int get_current_level() const;

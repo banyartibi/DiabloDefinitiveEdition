@@ -90,10 +90,24 @@ func _init() -> void:
 	check("transition blocks reads", tr.reads_blocked, true)
 	check("caches invalidated", begin_res["invalidate"], tr.invalidated_caches())
 	check("complete clears block", tr.complete()["ok"], true)
-	check("safe read after load", tr.is_safe_to_read(0, false, true, true), true)
+	var ready_state := {
+		"game_running": true, "transitioning": false, "faded_in": true,
+		"player_ready": true, "pmode": 0, "lvl_changing": false,
+	}
+	check("safe read after load", tr.is_safe_to_read(ready_state), true)
 	tr.queue_transition(1)
 	tr.begin()
-	check("unsafe during PM_NEWLVL", tr.is_safe_to_read(Transition.PM_NEWLVL, false, true, true), false)
+	var newlvl_state := ready_state.duplicate()
+	newlvl_state["pmode"] = Transition.PM_NEWLVL
+	check("unsafe during PM_NEWLVL", tr.is_safe_to_read(newlvl_state), false)
+	# Regression: the mirror used to omit the sgbFadedIn conjunct and approved reads in the
+	# fade window, which is exactly the state IsBridgeSafeToRead() refuses.
+	var not_faded := ready_state.duplicate()
+	not_faded["faded_in"] = false
+	check("unsafe before fade-in completes", tr.is_safe_to_read(not_faded), false)
+	var transitioning := ready_state.duplicate()
+	transitioning["transitioning"] = true
+	check("unsafe while level is loading", tr.is_safe_to_read(transitioning), false)
 	tr.complete()
 	var themes := {0: "town", 1: "cathedral", 5: "catacombs", 10: "caves", 16: "hell"}
 	check("town never resolves to cathedral (Rule #1)", tr.pbr_folder_for_level(0, themes), "res://assets/dungeon_pbr_town_4x")

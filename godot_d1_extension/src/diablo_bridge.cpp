@@ -27,6 +27,12 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_player_mana"), &DiabloBridge::get_player_mana);
 	ClassDB::bind_method(D_METHOD("get_player_max_mana"), &DiabloBridge::get_player_max_mana);
 	ClassDB::bind_method(D_METHOD("get_player_item_flags"), &DiabloBridge::get_player_item_flags);
+	ClassDB::bind_method(D_METHOD("get_player_hp_raw"), &DiabloBridge::get_player_hp_raw);
+	ClassDB::bind_method(D_METHOD("get_player_max_hp_raw"), &DiabloBridge::get_player_max_hp_raw);
+	ClassDB::bind_method(D_METHOD("get_player_mana_raw"), &DiabloBridge::get_player_mana_raw);
+	ClassDB::bind_method(D_METHOD("get_player_max_mana_raw"), &DiabloBridge::get_player_max_mana_raw);
+	ClassDB::bind_method(D_METHOD("engine_generate_rnd", "bound"), &DiabloBridge::engine_generate_rnd);
+	ClassDB::bind_method(D_METHOD("get_read_gate_state"), &DiabloBridge::get_read_gate_state);
 	ClassDB::bind_method(D_METHOD("get_player_gold"), &DiabloBridge::get_player_gold);
 	ClassDB::bind_method(D_METHOD("get_player_class"), &DiabloBridge::get_player_class);
 	ClassDB::bind_method(D_METHOD("get_current_level"), &DiabloBridge::get_current_level);
@@ -325,6 +331,39 @@ int DiabloBridge::get_player_max_mana() const {
 
 int DiabloBridge::get_player_item_flags() const {
 	return static_cast<int>(devilution::g_D1EngineData.playerIFlags);
+}
+
+int DiabloBridge::get_player_hp_raw() const {
+	return devilution::g_D1EngineData.playerHpRaw;
+}
+
+int DiabloBridge::get_player_max_hp_raw() const {
+	return devilution::g_D1EngineData.playerMaxHpRaw;
+}
+
+int DiabloBridge::get_player_mana_raw() const {
+	return devilution::g_D1EngineData.playerManaRaw;
+}
+
+int DiabloBridge::get_player_max_mana_raw() const {
+	return devilution::g_D1EngineData.playerMaxManaRaw;
+}
+
+int DiabloBridge::engine_generate_rnd(int bound) {
+	return devilution::GenerateRnd(bound);
+}
+
+Dictionary DiabloBridge::get_read_gate_state() const {
+	const devilution::D1BridgeReadGate gate = devilution::GetBridgeReadGate();
+	Dictionary d;
+	d["game_running"] = gate.gameRunning;
+	d["player_ready"] = gate.playerReady;
+	d["pmode"] = gate.pmode;
+	d["lvl_changing"] = gate.lvlChanging;
+	d["transitioning"] = gate.transitioning;
+	d["faded_in"] = gate.fadedIn;
+	d["safe"] = gate.safe;
+	return d;
 }
 
 int DiabloBridge::get_player_gold() const {

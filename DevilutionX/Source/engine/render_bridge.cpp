@@ -80,6 +80,19 @@ bool IsBridgeSafeToRead()
 	return gbRunGame && !g_D1LevelTransitioning.load() && sgbFadedIn.load() && MyPlayer != nullptr && MyPlayer->_pmode != PM_NEWLVL && !MyPlayer->_pLvlChanging;
 }
 
+D1BridgeReadGate GetBridgeReadGate()
+{
+	D1BridgeReadGate gate;
+	gate.gameRunning = gbRunGame;
+	gate.playerReady = MyPlayer != nullptr;
+	gate.pmode = MyPlayer != nullptr ? static_cast<int>(MyPlayer->_pmode) : -1;
+	gate.lvlChanging = MyPlayer != nullptr && MyPlayer->_pLvlChanging;
+	gate.transitioning = g_D1LevelTransitioning.load();
+	gate.fadedIn = sgbFadedIn.load();
+	gate.safe = IsBridgeSafeToRead();
+	return gate;
+}
+
 void SetVanillaHUDHidden(bool hidden)
 {
 	gbHideVanillaHUD = hidden;
@@ -212,6 +225,10 @@ void ExportGodotFrame(const SDL_Surface *surface)
 			g_D1EngineData.playerMaxHp = MyPlayer->_pMaxHP >> 6;
 			g_D1EngineData.playerMana = MyPlayer->_pMana >> 6;
 			g_D1EngineData.playerMaxMana = MyPlayer->_pMaxMana >> 6;
+			g_D1EngineData.playerHpRaw = MyPlayer->_pHitPoints;
+			g_D1EngineData.playerMaxHpRaw = MyPlayer->_pMaxHP;
+			g_D1EngineData.playerManaRaw = MyPlayer->_pMana;
+			g_D1EngineData.playerMaxManaRaw = MyPlayer->_pMaxMana;
 			g_D1EngineData.playerIFlags = static_cast<uint32_t>(MyPlayer->_pIFlags);
 			g_D1EngineData.playerGold = MyPlayer->_pGold;
 			g_D1EngineData.playerClass = static_cast<int>(MyPlayer->_pClass);

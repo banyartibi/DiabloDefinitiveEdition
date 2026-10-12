@@ -9,6 +9,7 @@ extends RefCounted
 
 # item_misc_id values, exactly as in Source/itemdat.h.
 const IMISC_NONE := 0
+const FP_SHIFT := 6                  # HP/mana are stored in 64ths
 const ITEM_FLAG_NO_MANA := 1 << 27  # ItemSpecialEffect::NoMana (itemdat.h)
 const IMISC_USEFIRST := 1
 const IMISC_FULLHEAL := 2
@@ -111,53 +112,49 @@ static func predict_use_item(item: Dictionary, player: Dictionary, rng, ctx: Dic
 	result["reason"] = "applied"
 
 	var hellfire := bool(ctx.get("hellfire", false))
-	var hp := int(player.get("hp", 0))
-	var max_hp := int(player.get("max_hp", 0))
-	var mana := int(player.get("mana", 0))
-	var max_mana := int(player.get("max_mana", 0))
+	# The engine keeps HP/mana in 64ths and only the display value is raw >> 6. Predicting in
+	# display units loses the remainder and is off by one whenever the remainder is non-zero, so
+	# the mirror works on the raw values and converts back at the end.
+	var hp_raw := _raw(player, "hp", "hp_raw")
+	var max_hp_raw := _raw(player, "max_hp", "max_hp_raw")
+	var mana_raw := _raw(player, "mana", "mana_raw")
+	var max_mana_raw := _raw(player, "max_mana", "max_mana_raw")
 
 	match misc:
 		IMISC_HEAL, IMISC_FULLHEAL, IMISC_REJUV, IMISC_FULLREJUV, IMISC_ARENAPOT:
 			if misc == IMISC_FULLHEAL or misc == IMISC_FULLREJUV or misc == IMISC_ARENAPOT:
 				result["actions"].append("restore_full_life")
-				result["effects"]["hp"] = max_hp - hp
+				result["effects"]["hp"] = (max_hp_raw >> FP_SHIFT) - (hp_raw >> FP_SHIFT)
 			else:
 				result["actions"].append("restore_partial_life")
 				result["rng_dependent"] = true
-				var whole: int = max_hp
-				var gain: int = (whole / 8) + rng.generate_rnd(whole / 4)
-				if int(player.get("class", 0)) in [CLASS_WARRIOR, CLASS_BARBARIAN]:
-					gain *= 2
-				elif int(player.get("class", 0)) in [CLASS_ROGUE, CLASS_MONK, CLASS_BARD]:
-					gain += gain / 2
-				result["effects"]["hp"] = min(hp + gain, max_hp) - hp
+				var l_life := _partial_life_gain64(rng, max_hp_raw, int(player.get("class", 0)))
+				result["effects"]["hp"] = (min(hp_raw + l_life, max_hp_raw) >> FP_SHIFT) - (hp_raw >> FP_SHIFT)
 			if misc == IMISC_REJUV or misc == IMISC_FULLREJUV or misc == IMISC_ARENAPOT:
 				if misc == IMISC_FULLREJUV or misc == IMISC_ARENAPOT:
 					result["actions"].append("restore_full_mana")
-					result["effects"]["mana"] = max_mana - mana
+					result["effects"]["mana"] = (max_mana_raw >> FP_SHIFT) - (mana_raw >> FP_SHIFT)
 				else:
 					result["actions"].append("restore_partial_mana")
 					result["rng_dependent"] = true
-					var whole_m: int = max_mana
-					var gain_m: int = _partial_mana_gain(rng, whole_m, int(player.get("class", 0)))
+					var l_mana_r := _partial_mana_gain64(rng, max_mana_raw, int(player.get("class", 0)))
 					# The RNG draw happens even when the player cannot use magic; only the effect is
 					# suppressed. Skipping the draw here would desync the rest of the RNG stream.
 					if int(player.get("item_flags", 0)) & ITEM_FLAG_NO_MANA != 0:
 						result["effects"]["mana"] = 0
 					else:
-						result["effects"]["mana"] = min(mana + gain_m, max_mana) - mana
+						result["effects"]["mana"] = (min(mana_raw + l_mana_r, max_mana_raw) >> FP_SHIFT) - (mana_raw >> FP_SHIFT)
 		IMISC_MANA:
 			result["actions"].append("restore_partial_mana")
 			result["rng_dependent"] = true
-			var whole_mana: int = max_mana
-			var gain_mana: int = _partial_mana_gain(rng, whole_mana, int(player.get("class", 0)))
+			var l_mana := _partial_mana_gain64(rng, max_mana_raw, int(player.get("class", 0)))
 			if int(player.get("item_flags", 0)) & ITEM_FLAG_NO_MANA != 0:
 				result["effects"]["mana"] = 0
 			else:
-				result["effects"]["mana"] = min(mana + gain_mana, max_mana) - mana
+				result["effects"]["mana"] = (min(mana_raw + l_mana, max_mana_raw) >> FP_SHIFT) - (mana_raw >> FP_SHIFT)
 		IMISC_FULLMANA:
 			result["actions"].append("restore_full_mana")
-			result["effects"]["mana"] = max_mana - mana
+			result["effects"]["mana"] = (max_mana_raw >> FP_SHIFT) - (mana_raw >> FP_SHIFT)
 		IMISC_ELIXSTR:
 			result["actions"].append("modify_str")
 			result["effects"]["str"] = 1
@@ -166,7 +163,7 @@ static func predict_use_item(item: Dictionary, player: Dictionary, rng, ctx: Dic
 			result["effects"]["mag"] = 1
 			if hellfire:
 				result["actions"].append("restore_full_mana")
-				result["effects"]["mana"] = max_mana - mana
+				result["effects"]["mana"] = (max_mana_raw >> FP_SHIFT) - (mana_raw >> FP_SHIFT)
 		IMISC_ELIXDEX:
 			result["actions"].append("modify_dex")
 			result["effects"]["dex"] = 1
@@ -175,7 +172,7 @@ static func predict_use_item(item: Dictionary, player: Dictionary, rng, ctx: Dic
 			result["effects"]["vit"] = 1
 			if hellfire:
 				result["actions"].append("restore_full_life")
-				result["effects"]["hp"] = max_hp - hp
+				result["effects"]["hp"] = (max_hp_raw >> FP_SHIFT) - (hp_raw >> FP_SHIFT)
 		IMISC_SPECELIX:
 			result["actions"].append("modify_all_stats")
 			result["effects"]["str"] = 3
@@ -189,9 +186,10 @@ static func predict_use_item(item: Dictionary, player: Dictionary, rng, ctx: Dic
 			var current := int(levels.get(spell_id, 0))
 			if current + 1 <= MAX_SPELL_LEVEL:
 				result["effects"]["spell_level"] = 1
-			if not bool(ctx.get("no_mana_flag", false)):
-				var cost: int = int(ctx.get("spell_mana_cost", 0))
-				result["effects"]["mana"] = min(mana + cost, max_mana) - mana
+			if int(player.get("item_flags", 0)) & ITEM_FLAG_NO_MANA == 0:
+				# UseItem / IMISC_BOOK: _pMana += sManaCost << 6, clamped to _pMaxMana.
+				var cost_raw := int(ctx.get("spell_mana_cost", 0)) << FP_SHIFT
+				result["effects"]["mana"] = (min(mana_raw + cost_raw, max_mana_raw) >> FP_SHIFT) - (mana_raw >> FP_SHIFT)
 		IMISC_MAPOFDOOM:
 			result["actions"].append("doom_init")
 		IMISC_OILFIRST:
@@ -218,10 +216,28 @@ static func predict_use_item(item: Dictionary, player: Dictionary, rng, ctx: Dic
 
 	return result
 
-static func _partial_mana_gain(rng, whole_mana: int, hero_class: int) -> int:
-	var gain: int = (whole_mana / 8) + rng.generate_rnd(whole_mana / 4)
-	if hero_class == CLASS_SORCERER:
-		gain *= 2
+static func _raw(player: Dictionary, display_key: String, raw_key: String) -> int:
+	if player.has(raw_key):
+		return int(player[raw_key])
+	return int(player.get(display_key, 0)) << FP_SHIFT
+
+## Player::RestorePartialLife (player.cpp): the << 6 happens BEFORE the class bonus, and the two
+## bonus tests are separate ifs (not else-if). Mirrored exactly.
+static func _partial_life_gain64(rng, max_hp_raw: int, hero_class: int) -> int:
+	var whole: int = max_hp_raw >> FP_SHIFT
+	var l: int = ((whole / 8) + rng.generate_rnd(whole / 4)) << FP_SHIFT
+	if hero_class in [CLASS_WARRIOR, CLASS_BARBARIAN]:
+		l *= 2
 	if hero_class in [CLASS_ROGUE, CLASS_MONK, CLASS_BARD]:
-		gain += gain / 2
-	return gain
+		l += l / 2
+	return l
+
+## Player::RestorePartialMana (player.cpp).
+static func _partial_mana_gain64(rng, max_mana_raw: int, hero_class: int) -> int:
+	var whole: int = max_mana_raw >> FP_SHIFT
+	var l: int = ((whole / 8) + rng.generate_rnd(whole / 4)) << FP_SHIFT
+	if hero_class == CLASS_SORCERER:
+		l *= 2
+	if hero_class in [CLASS_ROGUE, CLASS_MONK, CLASS_BARD]:
+		l += l / 2
+	return l

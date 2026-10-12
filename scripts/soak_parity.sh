@@ -27,20 +27,40 @@ fi
 echo "[SOAK] target=$TARGET runs<=${MAX_RUNS} saves=(${SAVES}) state=$STATE"
 
 pass=0
+# Reset is opt-in: SOAK_RESET=all re-measures from zero, which is required whenever the mirror
+# itself changed (evidence recorded against old code describes code that no longer exists).
+first=1
 for run in $(seq 1 "$MAX_RUNS"); do
 	for slot in $SAVES; do
-		out="$(SOAK_SAVE=$slot "$GODOT" --headless --path "$REPO/godot_d1_3d" --script res://test_parity_soak.gd 2>&1 | grep -v 'Texture format not supported')"
-		echo "$out" | grep -E '^\[PARITY\]|^\[SOAK\]'
-		if echo "$out" | grep -q '"promotable": true'; then
-			echo "[SOAK] target reached after $run pass(es)"
-			exit 0
+		if [[ $first == 1 && -n "${SOAK_RESET:-}" ]]; then
+			out="$(SOAK_SAVE=$slot SOAK_RESET="$SOAK_RESET" "$GODOT" --headless --path "$REPO/godot_d1_3d" --script res://test_parity_soak.gd 2>&1 | grep -v 'Texture format not supported')"
+			first=0
+		else
+			out="$(SOAK_SAVE=$slot "$GODOT" --headless --path "$REPO/godot_d1_3d" --script res://test_parity_soak.gd 2>&1 | grep -v 'Texture format not supported')"
 		fi
+		echo "$out" | grep -E '^\[PARITY\]|^\[SOAK\] (rng|level|save|RNG|GATE)'
 		if echo "$out" | grep -q 'MISMATCH'; then
 			echo "[SOAK] mismatch recorded — stopping (a mismatch invalidates promotion)"
 			exit 1
 		fi
 	done
 	pass=$((pass + 1))
+	report="$(python3 - "$STATE" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+rep = {s: (d["checks"].get(s, 0), len(d.get("seen", {}).get(s, {})), d["mismatches"].get(s, 0), d["authority"].get(s)) for s in d["checks"]}
+print(" ".join(f"{s}:checks={v[0]} distinct={v[1]} bad={v[2]}" for s, v in rep.items()))
+done = all(d["mismatches"].get(s, 0) == 0 and d["checks"].get(s, 0) >= 200 and len(d.get("seen", {}).get(s, {})) >= 12
+           for s in ("inventory_item_use", "rng"))
+sys.exit(0 if done else 7)
+PY
+)"
+	rc=$?
+	echo "[SOAK] pass $pass -> $report"
+	if [[ $rc == 0 ]]; then
+		echo "[SOAK] inventory_item_use and rng reached the gate after $pass pass(es)"
+		break
+	fi
 done
 
 echo "[SOAK] final state:"

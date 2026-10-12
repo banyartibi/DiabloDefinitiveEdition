@@ -70,6 +70,13 @@ struct D1EngineData {
 	int playerMaxHp = 100;
 	int playerMana = 50;
 	int playerMaxMana = 50;
+	// HP/mana are stored in 64ths internally. The display values above are raw >> 6, which throws
+	// away the remainder; a native mirror that predicts gains must see the raw values or it will
+	// be off by one display unit whenever the remainder is non-zero.
+	int playerHpRaw = 6400;
+	int playerMaxHpRaw = 6400;
+	int playerManaRaw = 3200;
+	int playerMaxManaRaw = 3200;
 	uint32_t playerIFlags = 0;   // accumulated ItemSpecialEffect flags from equipment
 	int playerGold = 0;
 	int playerClass = 0;
@@ -654,6 +661,21 @@ std::vector<D1MissileInfo> GetActiveMissilesList();
 D1MissileSpriteRgba GetMissileSpriteRgba(int missileId);
 
 bool IsBridgeSafeToRead();
+
+// The individual inputs of IsBridgeSafeToRead(), exposed so a native mirror of the safety
+// contract can be compared against the engine's own answer state by state.
+struct D1BridgeReadGate
+{
+	bool gameRunning = false;
+	bool playerReady = false;
+	int pmode = 0;
+	bool lvlChanging = false;
+	bool transitioning = false;
+	bool fadedIn = false;
+	bool safe = false;
+};
+
+D1BridgeReadGate GetBridgeReadGate();
 
 // Native Godot Menu Bridge (Main Menu, Character Select, New Hero)
 enum class D1MenuMode : int32_t {

@@ -79,6 +79,26 @@ func can_promote(subsystem: String) -> bool:
 		and int(checks.get(subsystem, 0)) >= PROMOTION_THRESHOLD \
 		and distinct(subsystem) >= MIN_DISTINCT
 
+## Hand a subsystem over to the native layer. Refuses unless the evidence gate is met, so the
+## gate cannot be bypassed by calling set_authority() by accident.
+func promote(subsystem: String) -> bool:
+	if not can_promote(subsystem):
+		return false
+	authority[subsystem] = AUTH_NATIVE
+	return true
+
+## Wipe the accumulated evidence for one subsystem (or all of them when subsystem == "").
+## Counters are sticky and a single mismatch invalidates promotion forever, so after fixing a
+## mirror bug the baseline has to be re-measured — otherwise the numbers describe the old code.
+## Authority is deliberately NOT reset: handing back is an explicit decision.
+func reset_counters(subsystem: String) -> void:
+	var targets := SUBSYSTEMS if subsystem == "" else [subsystem]
+	for s in targets:
+		checks[s] = 0
+		mismatches[s] = 0
+		seen[s] = {}
+	log.clear()
+
 
 func total_checks() -> int:
 	var t := 0
