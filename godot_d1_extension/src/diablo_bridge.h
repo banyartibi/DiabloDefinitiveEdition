@@ -51,6 +51,7 @@ public:
 	int get_player_max_hp() const;
 	int get_player_mana() const;
 	int get_player_max_mana() const;
+	int get_player_item_flags() const;
 	int get_player_gold() const;
 	int get_player_class() const;
 	int get_current_level() const;

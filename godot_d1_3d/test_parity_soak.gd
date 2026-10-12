@@ -39,6 +39,7 @@ func state(bridge) -> Dictionary:
 		"mana": bridge.get_player_mana(),
 		"max_mana": bridge.get_player_max_mana(),
 		"class": bridge.get_player_class(),
+		"item_flags": bridge.get_player_item_flags(),
 	}
 
 

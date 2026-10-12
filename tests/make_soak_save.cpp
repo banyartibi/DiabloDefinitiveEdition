@@ -141,10 +141,13 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	wr32(name + OFF_HP_BASE, rd32(name + OFF_MAX_HP_BASE) / div);
-	wr32(name + OFF_HIT_POINTS, rd32(name + OFF_MAX_HP) / div);
-	wr32(name + OFF_MANA_BASE, rd32(name + OFF_MAX_MANA_BASE) / div);
-	wr32(name + OFF_MANA, rd32(name + OFF_MAX_MANA) / div);
+	// HP/mana are stored in 64ths. Write exact multiples of 64 so the display value the bridge
+	// reports (raw >> 6) maps back to the raw value with no remainder — otherwise the engine can
+	// gain a display unit that the native mirror cannot see (the mirror works in display units).
+	wr32(name + OFF_HP_BASE, ((rd32(name + OFF_MAX_HP_BASE) >> 6) / div) * 64);
+	wr32(name + OFF_HIT_POINTS, ((rd32(name + OFF_MAX_HP) >> 6) / div) * 64);
+	wr32(name + OFF_MANA_BASE, ((rd32(name + OFF_MAX_MANA_BASE) >> 6) / div) * 64);
+	wr32(name + OFF_MANA, ((rd32(name + OFF_MAX_MANA) >> 6) / div) * 64);
 
 	// Belt potions: make sure every potion record is a plain partial potion (misc id) so the
 	// engine takes the RNG path. Records are found by their 64-byte _iName field.

@@ -27,3 +27,23 @@ g++ -std=c++17 $INC "$root/tests/make_soak_save.cpp" \
   -o "$root/tools/make_soak_save"
 
 echo "built: $root/tools/make_soak_save"
+
+# Fixture slots: copies of a real hero with low HP/mana so the checks exercise real effects instead
+# of trivial 0 == 0. The sources are chosen to cover every class-bonus branch in
+# RestorePartialLife/RestorePartialMana (Warrior/Barbarian *2, Rogue/Monk/Bard +1/2, Sorcerer *2),
+# so each fixture is a genuinely distinct parity case, not padding.
+SAVE_DIR="${SAVE_DIR:-$HOME/.local/share/diasurgical/devilution}"
+# slot source div
+FIXTURE_SPECS="${FIXTURE_SPECS:-8 0 8  9 2 4  10 3 2  11 4 16  12 1 8}"
+if [[ "${FIXTURES:-1}" == "1" ]]; then
+  read -ra specs <<< "$FIXTURE_SPECS"
+  i=0
+  while (( i + 2 < ${#specs[@]} )); do
+    slot=${specs[i]}; src_slot=${specs[i+1]}; div=${specs[i+2]}
+    i=$((i + 3))
+    src="$SAVE_DIR/single_$src_slot.hsv"
+    [[ -f "$src" ]] || { echo "no source save: $src" >&2; continue; }
+    cp "$src" "$SAVE_DIR/single_$slot.hsv"
+    "$root/tools/make_soak_save" "$SAVE_DIR" "$slot" "$div"
+  done
+fi

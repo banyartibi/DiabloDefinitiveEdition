@@ -16,7 +16,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GODOT="${GODOT:-$REPO/tools/godot4/godot4}"
 TARGET="${SOAK_TARGET:-200}"
 MAX_RUNS="${SOAK_RUNS:-80}"
-SAVES="${SOAK_SAVES:-0 1 2 3 4 5 6 7}"
+SAVES="${SOAK_SAVES:-0 1 2 3 4 5 6 7 8 9 10 11 12}"
 STATE="$REPO/godot_d1_3d/logs/parity_state.json"
 
 if [[ ! -x "$GODOT" ]]; then

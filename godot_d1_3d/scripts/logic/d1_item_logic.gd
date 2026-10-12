@@ -9,6 +9,7 @@ extends RefCounted
 
 # item_misc_id values, exactly as in Source/itemdat.h.
 const IMISC_NONE := 0
+const ITEM_FLAG_NO_MANA := 1 << 27  # ItemSpecialEffect::NoMana (itemdat.h)
 const IMISC_USEFIRST := 1
 const IMISC_FULLHEAL := 2
 const IMISC_HEAL := 3
@@ -139,13 +140,21 @@ static func predict_use_item(item: Dictionary, player: Dictionary, rng, ctx: Dic
 					result["rng_dependent"] = true
 					var whole_m: int = max_mana
 					var gain_m: int = _partial_mana_gain(rng, whole_m, int(player.get("class", 0)))
-					result["effects"]["mana"] = min(mana + gain_m, max_mana) - mana
+					# The RNG draw happens even when the player cannot use magic; only the effect is
+					# suppressed. Skipping the draw here would desync the rest of the RNG stream.
+					if int(player.get("item_flags", 0)) & ITEM_FLAG_NO_MANA != 0:
+						result["effects"]["mana"] = 0
+					else:
+						result["effects"]["mana"] = min(mana + gain_m, max_mana) - mana
 		IMISC_MANA:
 			result["actions"].append("restore_partial_mana")
 			result["rng_dependent"] = true
 			var whole_mana: int = max_mana
 			var gain_mana: int = _partial_mana_gain(rng, whole_mana, int(player.get("class", 0)))
-			result["effects"]["mana"] = min(mana + gain_mana, max_mana) - mana
+			if int(player.get("item_flags", 0)) & ITEM_FLAG_NO_MANA != 0:
+				result["effects"]["mana"] = 0
+			else:
+				result["effects"]["mana"] = min(mana + gain_mana, max_mana) - mana
 		IMISC_FULLMANA:
 			result["actions"].append("restore_full_mana")
 			result["effects"]["mana"] = max_mana - mana

@@ -70,6 +70,7 @@ struct D1EngineData {
 	int playerMaxHp = 100;
 	int playerMana = 50;
 	int playerMaxMana = 50;
+	uint32_t playerIFlags = 0;   // accumulated ItemSpecialEffect flags from equipment
 	int playerGold = 0;
 	int playerClass = 0;
 	int currentLevel = 0;

@@ -212,6 +212,7 @@ void ExportGodotFrame(const SDL_Surface *surface)
 			g_D1EngineData.playerMaxHp = MyPlayer->_pMaxHP >> 6;
 			g_D1EngineData.playerMana = MyPlayer->_pMana >> 6;
 			g_D1EngineData.playerMaxMana = MyPlayer->_pMaxMana >> 6;
+			g_D1EngineData.playerIFlags = static_cast<uint32_t>(MyPlayer->_pIFlags);
 			g_D1EngineData.playerGold = MyPlayer->_pGold;
 			g_D1EngineData.playerClass = static_cast<int>(MyPlayer->_pClass);
 			g_D1EngineData.playerLevel = MyPlayer->_pLevel;

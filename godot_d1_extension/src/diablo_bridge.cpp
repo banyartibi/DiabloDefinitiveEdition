@@ -26,6 +26,7 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_player_max_hp"), &DiabloBridge::get_player_max_hp);
 	ClassDB::bind_method(D_METHOD("get_player_mana"), &DiabloBridge::get_player_mana);
 	ClassDB::bind_method(D_METHOD("get_player_max_mana"), &DiabloBridge::get_player_max_mana);
+	ClassDB::bind_method(D_METHOD("get_player_item_flags"), &DiabloBridge::get_player_item_flags);
 	ClassDB::bind_method(D_METHOD("get_player_gold"), &DiabloBridge::get_player_gold);
 	ClassDB::bind_method(D_METHOD("get_player_class"), &DiabloBridge::get_player_class);
 	ClassDB::bind_method(D_METHOD("get_current_level"), &DiabloBridge::get_current_level);
@@ -320,6 +321,10 @@ int DiabloBridge::get_player_mana() const {
 
 int DiabloBridge::get_player_max_mana() const {
 	return devilution::g_D1EngineData.playerMaxMana;
+}
+
+int DiabloBridge::get_player_item_flags() const {
+	return static_cast<int>(devilution::g_D1EngineData.playerIFlags);
 }
 
 int DiabloBridge::get_player_gold() const {
