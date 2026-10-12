@@ -1,6 +1,9 @@
 extends Control
 
 var diablo_bridge = null
+# Explicit HUD wiring (set by the scene that owns both). Falls back to the "d1de_hud" group, which
+# is how it is found at runtime; the direct reference keeps the wiring testable without a tree.
+var hud: Node = null
 
 # --- Task 2 Step 5: native logic authority (shadow mode) ---
 # C++ still executes; the native layer predicts and compares. Nothing is handed
@@ -53,6 +56,15 @@ func _belt_item_at(belt_idx: int) -> Dictionary:
 	return items[belt_idx]
 
 
+func _find_hud() -> Node:
+	if hud != null:
+		return hud
+	var tree = get_tree()
+	if tree == null:
+		return null
+	return tree.get_first_node_in_group("d1de_hud")
+
+
 func _shadow_use(item: Dictionary) -> void:
 	if diablo_bridge == null or item.is_empty():
 		return
@@ -70,6 +82,21 @@ func _shadow_use(item: Dictionary) -> void:
 		"seq_before": diablo_bridge.get_last_action_seq(),
 		"deadline": Time.get_ticks_msec() + 2000,
 	}
+	# AUTH_NATIVE handover: the mirror's prediction is trusted, so the HUD reacts on the click
+	# instead of waiting for the engine thread to drain the queued action. This does not replace the
+	# drain-time comparison in _shadow_verify(), which stays the parity record: if the two disagree,
+	# the sequence has already advanced, the offset is dropped, and the engine value takes over.
+	# The seed here is the push-time seed, not the execution-time seed, so the optimistic number can
+	# be off; that is exactly what the drain check measures.
+	if logic_authority.get_authority("inventory_item_use") == logic_authority.AUTH_NATIVE:
+		var pred_now = item_logic.predict_use_item(
+			item, _pending_prediction["before"], rng_class.new(diablo_bridge.get_rng_seed()), ctx)
+		var d_hp := int(pred_now.get("effects", {}).get("hp", 0))
+		var d_mana := int(pred_now.get("effects", {}).get("mana", 0))
+		if d_hp != 0 or d_mana != 0:
+			var target = _find_hud()
+			if target != null and target.has_method("apply_optimistic_item_delta"):
+				target.apply_optimistic_item_delta(d_hp, d_mana, int(_pending_prediction["seq_before"]))
 
 
 func _shadow_verify() -> void:

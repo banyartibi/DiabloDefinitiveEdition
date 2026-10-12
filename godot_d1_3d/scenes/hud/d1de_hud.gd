@@ -120,6 +120,26 @@ var mana_mat: ShaderMaterial
 var display_hp: float = 100.0
 var display_mana: float = 50.0
 
+# Optimistic (native-predicted) item effect, shown while the engine action is still queued.
+# Only applied when D1LogicAuthority reports AUTH_NATIVE for inventory_item_use.
+var _optimistic: Dictionary = {}
+const OPTIMISTIC_TTL_MS := 1500
+
+
+## AUTH_NATIVE consumer: the native mirror predicted the item effect, so the globes react on the
+## click instead of waiting for the engine thread to drain the queued action. The offset is dropped
+## as soon as the engine's action sequence advances - from that frame on the engine value already
+## contains the change, so keeping the offset would double count it.
+func apply_optimistic_item_delta(hp_delta: int, mana_delta: int, seq_at_push: int) -> void:
+	if hp_delta == 0 and mana_delta == 0:
+		return
+	_optimistic = {
+		"hp": hp_delta,
+		"mana": mana_delta,
+		"seq": seq_at_push,
+		"until": Time.get_ticks_msec() + OPTIMISTIC_TTL_MS,
+	}
+
 const SPELL_NAMES = {
 	0: "Attack / Skill",
 	1: "Firebolt",
@@ -190,6 +210,7 @@ const SPELL_TYPE_COLORS = {
 }
 
 func _ready():
+	add_to_group("d1de_hud")
 	if life_globe and life_globe.material is ShaderMaterial:
 		life_mat = life_globe.material as ShaderMaterial
 	if mana_globe and mana_globe.material is ShaderMaterial:
@@ -803,6 +824,16 @@ func update_health_and_mana(delta: float):
 
 	if max_hp <= 0: max_hp = 1
 	if max_mana <= 0: max_mana = 1
+
+	if not _optimistic.is_empty():
+		if diablo_bridge != null and diablo_bridge.get_last_action_seq() > int(_optimistic.get("seq", 0)):
+			_optimistic = {}
+		elif Time.get_ticks_msec() > int(_optimistic.get("until", 0)):
+			_optimistic = {}
+			print("[HUD] optimistic item prediction expired without engine confirmation")
+		else:
+			hp = clampi(hp + int(_optimistic.get("hp", 0)), 0, max_hp)
+			mana = clampi(mana + int(_optimistic.get("mana", 0)), 0, max_mana)
 
 	# Smooth lerp
 	display_hp = lerpf(display_hp, float(hp), clamp(delta * 12.0, 0.0, 1.0))
