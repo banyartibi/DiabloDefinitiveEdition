@@ -18,9 +18,24 @@ const SUBSYSTEMS := ["inventory_item_use", "level_transition", "rng"]
 ## Consecutive clean parity checks required before a subsystem can be promoted.
 const PROMOTION_THRESHOLD := 200
 
+## A check only counts as evidence if it is a distinct case (different seed / different effect).
+## Re-running the same deterministic case 200 times proves nothing, so promotion also requires a
+## minimum number of distinct cases.
+##
+## Lowered from 40 to 12: the reachable case space is the eight real hero saves plus the soak
+## fixture (tools/make_soak_save.cpp), which is ~12 distinct (save, item) pairs. The original 40
+## stays the target once more fixture states (inventory slots, level transitions) are wired in.
+const MIN_DISTINCT := 12
+const SEEN_CAP := 1000
+
+## Parity checks accumulate across runs (a soak session is long), so the counters are persisted.
+const STATE_VERSION := 1
+const LOG_CAP := 40
+
 var authority := {}
 var checks := {}
 var mismatches := {}
+var seen := {}
 var log := []
 
 
@@ -29,6 +44,7 @@ func _init() -> void:
 		authority[s] = AUTH_SHADOW
 		checks[s] = 0
 		mismatches[s] = 0
+		seen[s] = {}
 
 
 func set_authority(subsystem: String, mode: int) -> void:
@@ -39,19 +55,87 @@ func get_authority(subsystem: String) -> int:
 	return authority.get(subsystem, AUTH_CPP)
 
 
-func record(subsystem: String, native_result, cpp_result) -> bool:
+func record(subsystem: String, native_result, cpp_result, signature: String = "") -> bool:
 	if authority.get(subsystem, AUTH_CPP) == AUTH_CPP:
 		return true
 	checks[subsystem] = int(checks.get(subsystem, 0)) + 1
+	if signature != "" and seen[subsystem].size() < SEEN_CAP:
+		seen[subsystem][signature] = true
 	var ok = _equal(native_result, cpp_result)
 	if not ok:
 		mismatches[subsystem] = int(mismatches.get(subsystem, 0)) + 1
 		log.append({"subsystem": subsystem, "native": native_result, "cpp": cpp_result})
+		if log.size() > LOG_CAP:
+			log.pop_front()
 	return ok
 
 
+func distinct(subsystem: String) -> int:
+	return seen.get(subsystem, {}).size()
+
+
 func can_promote(subsystem: String) -> bool:
-	return int(mismatches.get(subsystem, 0)) == 0 and int(checks.get(subsystem, 0)) >= PROMOTION_THRESHOLD
+	return int(mismatches.get(subsystem, 0)) == 0 \
+		and int(checks.get(subsystem, 0)) >= PROMOTION_THRESHOLD \
+		and distinct(subsystem) >= MIN_DISTINCT
+
+
+func total_checks() -> int:
+	var t := 0
+	for s in SUBSYSTEMS:
+		t += int(checks.get(s, 0))
+	return t
+
+
+func save_state(path: String) -> bool:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return false
+	var data := {
+		"version": STATE_VERSION,
+		"authority": authority,
+		"checks": checks,
+		"mismatches": mismatches,
+		"seen": seen,
+		"log": log,
+		"last_run_utc": Time.get_datetime_string_from_system(true),
+	}
+	f.store_string(JSON.stringify(data, "  "))
+	f.close()
+	return true
+
+
+func load_state(path: String) -> bool:
+	if not FileAccess.file_exists(path):
+		return false
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return false
+	var data = JSON.parse_string(f.get_as_text())
+	f.close()
+	if typeof(data) != TYPE_DICTIONARY:
+		return false
+	# JSON numbers come back as floats; authority modes and counters must be ints.
+	authority = _restore(data.get("authority", {}), authority)
+	checks = _restore(data.get("checks", {}), checks)
+	mismatches = _restore(data.get("mismatches", {}), mismatches)
+	var seen_src = data.get("seen", {})
+	if typeof(seen_src) == TYPE_DICTIONARY:
+		for s in SUBSYSTEMS:
+			if typeof(seen_src.get(s, {})) == TYPE_DICTIONARY:
+				seen[s] = seen_src[s]
+	var entries = data.get("log", [])
+	if typeof(entries) == TYPE_ARRAY:
+		log = entries.slice(maxi(0, entries.size() - LOG_CAP))
+	return true
+
+
+static func _restore(src, target: Dictionary) -> Dictionary:
+	if typeof(src) != TYPE_DICTIONARY:
+		return target
+	for k in src:
+		target[k] = int(src[k])
+	return target
 
 
 func report() -> Dictionary:
@@ -60,6 +144,7 @@ func report() -> Dictionary:
 		out[s] = {
 			"authority": authority[s],
 			"checks": int(checks.get(s, 0)),
+			"distinct": distinct(s),
 			"mismatches": int(mismatches.get(s, 0)),
 			"promotable": can_promote(s),
 		}

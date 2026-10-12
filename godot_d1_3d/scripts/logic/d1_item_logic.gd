@@ -138,17 +138,13 @@ static func predict_use_item(item: Dictionary, player: Dictionary, rng, ctx: Dic
 					result["actions"].append("restore_partial_mana")
 					result["rng_dependent"] = true
 					var whole_m: int = max_mana
-					var gain_m: int = (whole_m / 8) + rng.generate_rnd(whole_m / 4)
-					if int(player.get("class", 0)) in [CLASS_ROGUE, CLASS_SORCERER, CLASS_BARD]:
-						gain_m *= 2
+					var gain_m: int = _partial_mana_gain(rng, whole_m, int(player.get("class", 0)))
 					result["effects"]["mana"] = min(mana + gain_m, max_mana) - mana
 		IMISC_MANA:
 			result["actions"].append("restore_partial_mana")
 			result["rng_dependent"] = true
 			var whole_mana: int = max_mana
-			var gain_mana: int = (whole_mana / 8) + rng.generate_rnd(whole_mana / 4)
-			if int(player.get("class", 0)) in [CLASS_ROGUE, CLASS_SORCERER, CLASS_BARD]:
-				gain_mana *= 2
+			var gain_mana: int = _partial_mana_gain(rng, whole_mana, int(player.get("class", 0)))
 			result["effects"]["mana"] = min(mana + gain_mana, max_mana) - mana
 		IMISC_FULLMANA:
 			result["actions"].append("restore_full_mana")
@@ -212,3 +208,11 @@ static func predict_use_item(item: Dictionary, player: Dictionary, rng, ctx: Dic
 			result["reason"] = "no_effect"
 
 	return result
+
+static func _partial_mana_gain(rng, whole_mana: int, hero_class: int) -> int:
+	var gain: int = (whole_mana / 8) + rng.generate_rnd(whole_mana / 4)
+	if hero_class == CLASS_SORCERER:
+		gain *= 2
+	if hero_class in [CLASS_ROGUE, CLASS_MONK, CLASS_BARD]:
+		gain += gain / 2
+	return gain
