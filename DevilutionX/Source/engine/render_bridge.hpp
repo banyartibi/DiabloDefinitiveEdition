@@ -229,6 +229,12 @@ enum class D1BridgeActionType : int {
 
 void PushBridgeAction(D1BridgeActionType type, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0);
 
+// Read-only parity helpers: LCG state captured at the moment the last queued job was executed
+// on the engine thread, and that job's type. Safe to call from Godot's main thread (atomics).
+uint32_t GetLastBridgeActionSeed();
+int GetLastBridgeActionType();
+uint64_t GetLastBridgeActionSeq();
+
 void SetActiveUiPanel(int panel);
 void CloseAllUiPanels();
 int GetActiveUiPanel();

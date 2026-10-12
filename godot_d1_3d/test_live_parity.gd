@@ -74,6 +74,9 @@ func _init() -> void:
 		bridge.get_player_class(), bridge.get_player_hp(), bridge.get_player_max_hp(),
 		bridge.get_player_mana(), bridge.get_player_max_mana(), bridge.get_current_level()])
 
+	# Settle: the engine must be past level load / PM_NEWLVL before queued actions are honoured.
+	OS.delay_msec(1500)
+
 	var checked = 0
 	for i in range(8):
 		var belt = bridge.get_belt_items()[i]
@@ -83,23 +86,34 @@ func _init() -> void:
 		var before = state(bridge)
 		var item = {"misc_id": BELT_TYPE_TO_MISC[t], "can_use": true}
 		var ctx = {"hellfire": bridge.is_hellfire()}
-		var pred = ItemLogic.predict_use_item(item, before, RNG.new(bridge.get_rng_seed()), ctx)
+		var seq_before = bridge.get_last_action_seq()
 		bridge.use_belt_slot(i)
-		OS.delay_msec(400)  # let the engine thread execute the queued action
+		# Wait for PROOF of execution on the engine thread (the drain counter moves), not a fixed
+		# sleep: a fixed sleep can read state before PollGodotBridgeInput() has drained the job.
+		var executed = false
+		var waited2 = 0
+		while not executed and waited2 < 2000:
+			OS.delay_msec(20)
+			waited2 += 20
+			if bridge.get_last_action_seq() > seq_before:
+				executed = true
+		if not executed:
+			print("[SKIP]   belt %d: action not executed within %d ms" % [i, waited2])
+			continue
 		var after = state(bridge)
+		# Predict with the seed the engine had AT EXECUTION TIME (snapshot taken inside
+		# PollGodotBridgeInput before the job ran), not with the seed read at push time.
+		# `before` is still valid because in town nothing consumes HP/mana between push and drain.
+		var seed_at_exec = bridge.get_last_action_rng_seed()
+		var pred = ItemLogic.predict_use_item(item, before, RNG.new(seed_at_exec), ctx)
 		var native_result = {"hp": pred["effects"]["hp"], "mana": pred["effects"]["mana"]}
 		var cpp_result = {"hp": after["hp"] - before["hp"], "mana": after["mana"] - before["mana"]}
-		if pred["rng_dependent"]:
-			# Cannot be recorded as parity: the engine may consume RNG between the
-			# prediction and the execution of the queued action. Informational only.
-			print("[INFO]   belt %d (%s) rng_dependent native=%s cpp=%s%s" % [
-				i, belt.get("name", ""), native_result, cpp_result,
-				"  MATCH" if native_result == cpp_result else "  (stream diverged)"])
-			continue
 		var ok = auth.record("inventory_item_use", native_result, cpp_result)
 		checked += 1
-		print("[PARITY] belt %d (%s) %s native=%s cpp=%s" % [
-			i, belt.get("name", ""), "OK" if ok else "MISMATCH", native_result, cpp_result])
+		print("[PARITY] belt %d (%s) %s native=%s cpp=%s seed=%d type=%d%s" % [
+			i, belt.get("name", ""), "OK" if ok else "MISMATCH", native_result, cpp_result, seed_at_exec,
+			bridge.get_last_action_type(),
+			"  [rng]" if pred["rng_dependent"] else "  [deterministic]"])
 
 	print("--------------------------------------------------")
 	print("checks recorded: ", checked)

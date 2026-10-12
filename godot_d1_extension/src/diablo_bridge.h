@@ -142,6 +142,14 @@ public:
 	void use_inventory_slot(int slot_type, int slot_idx);
 	int get_cursor_id() const;
 	int get_rng_seed() const; // vanilla LCG state (native logic parity harness)
+	// LCG state captured at the moment the last queued bridge action executed on the engine
+	// thread, plus that action's D1BridgeActionType. Needed for bit-exact parity predictions:
+	// the engine consumes RNG between a Godot-thread seed read and the drain.
+	int get_last_action_rng_seed() const;
+	int get_last_action_type() const;
+	// Execution counter of drained bridge jobs: proves a pushed job actually ran on the engine
+	// thread (poll until it increments instead of guessing with a fixed sleep).
+	int get_last_action_seq() const;
 	void cancel_targeting_cursor();
 	Ref<ImageTexture> get_cursor_texture(int curs_id);
 	Array get_player_durability_warnings() const;

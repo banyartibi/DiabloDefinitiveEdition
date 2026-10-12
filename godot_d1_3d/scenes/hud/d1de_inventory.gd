@@ -51,25 +51,50 @@ func _shadow_use(item: Dictionary) -> void:
 		return
 	if logic_authority.get_authority("inventory_item_use") == logic_authority.AUTH_CPP:
 		return
-	var before = _player_state()
 	var ctx = {"hellfire": diablo_bridge.is_hellfire()}
-	var pred = item_logic.predict_use_item(item, before, rng_class.new(diablo_bridge.get_rng_seed()), ctx)
-	if not pred["ok"] or pred["rng_dependent"]:
-		return  # not verifiable deterministically from the current RNG stream
-	_pending_prediction = {"pred": pred, "before": before}
+	if not item_logic.is_usable(item, ctx):
+		return
+	# The action is only QUEUED here (PushBridgeAction). The engine thread executes it on the
+	# next drain, so we cannot compare yet: store the baseline and verify in _process() once the
+	# drain counter moves.
+	_pending_prediction = {
+		"item": item,
+		"before": _player_state(),
+		"seq_before": diablo_bridge.get_last_action_seq(),
+		"deadline": Time.get_ticks_msec() + 2000,
+	}
 
 
 func _shadow_verify() -> void:
-	if _pending_prediction.is_empty():
+	if _pending_prediction.is_empty() or diablo_bridge == null:
 		return
-	var pred = _pending_prediction["pred"]
-	var before = _pending_prediction["before"]
+	var seq_before := int(_pending_prediction.get("seq_before", 0))
+	if diablo_bridge.get_last_action_seq() <= seq_before:
+		if Time.get_ticks_msec() > int(_pending_prediction.get("deadline", 0)):
+			_pending_prediction = {}  # action was dropped by the engine (not executed)
+		return  # still queued on the engine thread - do not compare state that has not changed
+	var item: Dictionary = _pending_prediction.get("item", {})
+	var before: Dictionary = _pending_prediction.get("before", {})
+	var ctx = {"hellfire": diablo_bridge.is_hellfire()}
+	# Predict with the seed the engine had AT EXECUTION TIME. Reading the seed at push time is not
+	# deterministic: the engine consumes RNG between the read and the drain.
+	# Caveat: in combat the player can be damaged between push and drain, which is outside the
+	# item-use model; those checks are only trustworthy in a quiescent state (town / no monsters).
+	var pred = item_logic.predict_use_item(item, before, rng_class.new(diablo_bridge.get_last_action_rng_seed()), ctx)
 	var after = _player_state()
 	var native_result = {"hp": pred["effects"]["hp"], "mana": pred["effects"]["mana"]}
 	var cpp_result = {"hp": after["hp"] - before["hp"], "mana": after["mana"] - before["mana"]}
 	var ok = logic_authority.record("inventory_item_use", native_result, cpp_result)
-	print("[PARITY] %s  native=%s cpp=%s" % ["OK" if ok else "MISMATCH", native_result, cpp_result])
+	print("[PARITY] %s  native=%s cpp=%s seed=%d%s" % [
+		"OK" if ok else "MISMATCH", native_result, cpp_result, diablo_bridge.get_last_action_rng_seed(),
+		"  [rng]" if pred["rng_dependent"] else "  [deterministic]"])
 	_pending_prediction = {}
+
+
+func _process(_delta: float) -> void:
+	# Deferred parity check: runs on the frame AFTER the engine thread drained the queued action.
+	if not _pending_prediction.is_empty():
+		_shadow_verify()
 
 
 func _exit_tree() -> void:

@@ -11,6 +11,7 @@
 #include "engine/render/dun_render.hpp"
 #include "engine/dx.h"
 #include "engine/backbuffer_state.hpp"
+#include "engine/random.hpp"
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -106,6 +107,18 @@ struct D1BridgeJob {
 };
 std::mutex g_BridgeJobMutex;
 std::vector<D1BridgeJob> g_BridgeJobs;
+
+// LCG state snapshot taken at the moment a queued job is executed on the engine thread.
+// The native logic layer must predict with the seed the C++ engine actually had when the action
+// ran. Reading GetLCGEngineState() from Godot's main thread at prediction time is NOT
+// deterministic: the engine consumes RNG between the read and the drain. Atomic so the Godot
+// thread can read it without a mutex (read-only getters are safe per the thread-safety rule).
+std::atomic<uint32_t> g_BridgeLastActionSeed{0};
+std::atomic<int> g_BridgeLastActionType{-1};
+// Monotonic execution counter: lets the caller prove that a specific pushed job actually ran on
+// the engine thread, instead of guessing with a fixed sleep (belt counts come from the frame
+// snapshot and are not reliable in headless mode).
+std::atomic<uint64_t> g_BridgeLastActionSeq{0};
 
 std::thread g_DiabloThread;
 } // namespace
@@ -365,6 +378,21 @@ void PushBridgeAction(D1BridgeActionType type, int arg1, int arg2, int arg3, int
 	g_BridgeJobs.push_back(job);
 }
 
+uint32_t GetLastBridgeActionSeed()
+{
+	return g_BridgeLastActionSeed.load(std::memory_order_relaxed);
+}
+
+int GetLastBridgeActionType()
+{
+	return g_BridgeLastActionType.load(std::memory_order_relaxed);
+}
+
+uint64_t GetLastBridgeActionSeq()
+{
+	return g_BridgeLastActionSeq.load(std::memory_order_acquire);
+}
+
 void PollGodotBridgeInput()
 {
 	// Drain queued high-level game actions on the ENGINE thread. This runs every frame from
@@ -382,6 +410,13 @@ void PollGodotBridgeInput()
 		drainedJobs.swap(g_BridgeJobs);
 	}
 	for (const auto &job : drainedJobs) {
+		// Snapshot the RNG state BEFORE the job runs. This is the seed the native logic layer
+		// must use for a bit-exact parity prediction of any RNG-dependent action.
+		g_BridgeLastActionSeed.store(GetLCGEngineState(), std::memory_order_relaxed);
+		g_BridgeLastActionType.store(static_cast<int>(job.type), std::memory_order_relaxed);
+		// Release ordering: a reader that sees the counter move is guaranteed to see the seed/type
+		// stores above (acquire in GetLastBridgeActionSeq()).
+		g_BridgeLastActionSeq.fetch_add(1, std::memory_order_release);
 		switch (job.type) {
 		case D1BridgeActionType::ActivateModal:       ActivateModalItem(job.a); break;
 		case D1BridgeActionType::SelectModal:         SelectModalItem(job.a); break;

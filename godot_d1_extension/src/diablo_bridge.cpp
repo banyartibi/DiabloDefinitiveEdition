@@ -113,6 +113,9 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("use_inventory_slot", "slot_type", "slot_idx"), &DiabloBridge::use_inventory_slot);
 	ClassDB::bind_method(D_METHOD("get_cursor_id"), &DiabloBridge::get_cursor_id);
 	ClassDB::bind_method(D_METHOD("get_rng_seed"), &DiabloBridge::get_rng_seed);
+	ClassDB::bind_method(D_METHOD("get_last_action_rng_seed"), &DiabloBridge::get_last_action_rng_seed);
+	ClassDB::bind_method(D_METHOD("get_last_action_type"), &DiabloBridge::get_last_action_type);
+	ClassDB::bind_method(D_METHOD("get_last_action_seq"), &DiabloBridge::get_last_action_seq);
 	ClassDB::bind_method(D_METHOD("cancel_targeting_cursor"), &DiabloBridge::cancel_targeting_cursor);
 	ClassDB::bind_method(D_METHOD("get_cursor_texture", "curs_id"), &DiabloBridge::get_cursor_texture);
 	ClassDB::bind_method(D_METHOD("get_player_durability_warnings"), &DiabloBridge::get_player_durability_warnings);
@@ -1323,6 +1326,20 @@ int DiabloBridge::get_cursor_id() const {
 int DiabloBridge::get_rng_seed() const {
 	// Read-only: the native logic layer must reproduce the C++ RNG stream exactly.
 	return static_cast<int>(devilution::GetLCGEngineState());
+}
+
+int DiabloBridge::get_last_action_rng_seed() const {
+	// Seed the engine had when the last queued action actually ran. Use this (not get_rng_seed())
+	// for parity predictions of RNG-dependent actions.
+	return static_cast<int>(devilution::GetLastBridgeActionSeed());
+}
+
+int DiabloBridge::get_last_action_type() const {
+	return devilution::GetLastBridgeActionType();
+}
+
+int DiabloBridge::get_last_action_seq() const {
+	return static_cast<int>(devilution::GetLastBridgeActionSeq());
 }
 
 void DiabloBridge::cancel_targeting_cursor() {
