@@ -74,6 +74,20 @@ func complete(level_idx: int = -1) -> Dictionary:
 	return {"ok": true, "level": current_level}
 
 
+func update_from_gate(gate: Dictionary, level_idx: int) -> bool:
+	## Drive the state machine from the engine-observed gate signals and return the native verdict
+	## (true = bridge/player state may be read this frame). This is the runtime entry point of the
+	## handover: the engine only reports facts, the decision of when it is safe to read is made here.
+	if bool(gate.get("transitioning", false)):
+		if state != STATE_TRANSITIONING:
+			queue_transition()
+			begin()
+	elif state == STATE_TRANSITIONING:
+		# The destination is only knowable once the engine finished loading it.
+		complete(level_idx)
+	return is_safe_to_read(gate)
+
+
 func is_safe_to_read(state: Dictionary) -> bool:
 	## Mirror of IsBridgeSafeToRead() (Source/engine/render_bridge.cpp). Every conjunct of the C++
 	## expression is required. The faded-in term was missing here, which let the native layer

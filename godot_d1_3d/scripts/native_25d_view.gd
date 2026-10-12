@@ -42,6 +42,13 @@ var _has_player_pos: bool = false
 var _has_current_level: bool = false
 var _has_gamma: bool = false
 var _has_level_loading: bool = false
+# Level-transition handover: once the soak proved the native gate against the engine, the decision
+# of "may I read bridge state this frame" is made by D1LevelTransitionLogic instead of polling the
+# single is_level_loading() bool. See _bridge_read_gate_open().
+var _gate_native: bool = false
+var _gate_canary: int = 0
+var logic_authority = null  # injected in tests; otherwise the /root/logic_authority autoload
+var transition_logic = preload("res://scripts/logic/d1_level_transition_logic.gd").new()
 var _has_game_running: bool = false
 var _has_dungeon_grid: bool = false
 var _has_player_sprite: bool = false
@@ -66,6 +73,23 @@ var _has_map_world: bool = false
 var _has_modal_active: bool = false
 var _has_text_input: bool = false
 
+func _bridge_read_gate_open() -> bool:
+	## False = the engine is tearing down or rebuilding level memory; do not read bridge state.
+	if not _gate_native:
+		return not (_has_level_loading and diablo_bridge.is_level_loading())
+	var g = diablo_bridge.get_read_gate_state()
+	var native_ok: bool = transition_logic.update_from_gate(g, int(diablo_bridge.get_current_level()))
+	# Canary, not a veto: the mirror is the decision maker, but a disagreement with the engine's own
+	# report means one of the two is wrong, and a wrong gate here is a use-after-free crash. Loud
+	# enough to notice, rate limited so a persistent disagreement cannot flood the log.
+	if native_ok != bool(g.get("safe", false)):
+		_gate_canary += 1
+		if _gate_canary <= 5 or _gate_canary % 300 == 0:
+			push_warning("gate disagreement #%d native=%s engine=%s mirror_state=%d" % [
+				_gate_canary, native_ok, g.get("safe", false), transition_logic.state])
+	return native_ok
+
+
 func _init_bridge_caps():
 	if not diablo_bridge:
 		return
@@ -80,6 +104,14 @@ func _init_bridge_caps():
 	_has_current_level = diablo_bridge.has_method("get_current_level")
 	_has_gamma = diablo_bridge.has_method("get_gamma")
 	_has_level_loading = diablo_bridge.has_method("is_level_loading")
+	var auth = logic_authority
+	if auth == null and is_inside_tree():
+		auth = get_node_or_null("/root/logic_authority")
+	_gate_native = auth != null \
+		and diablo_bridge.has_method("get_read_gate_state") \
+		and auth.get_authority("level_transition") == auth.AUTH_NATIVE
+	if _gate_native:
+		print("[25D] level_transition gate: AUTH_NATIVE (native decision)")
 	_has_game_running = diablo_bridge.has_method("is_game_running")
 	_has_dungeon_grid = diablo_bridge.has_method("get_dungeon_grid")
 	_has_player_sprite = diablo_bridge.has_method("get_player_sprite_data")
@@ -607,7 +639,7 @@ func _process(delta: float):
 
 	# During level transitions, DevilutionX is tearing down and rebuilding memory.
 	# Freeze rendering updates until the new level is 100% ready to eliminate race conditions.
-	if _has_level_loading and diablo_bridge.is_level_loading():
+	if not _bridge_read_gate_open():
 		return
 
 	if _has_game_running and not diablo_bridge.is_game_running():

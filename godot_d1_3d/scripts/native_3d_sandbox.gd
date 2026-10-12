@@ -11,6 +11,13 @@ extends Node3D
 # ==============================================================================
 
 var diablo_bridge = null
+# Level-transition handover (see native_25d_view.gd): under AUTH_NATIVE the mirror decides when
+# bridge state may be read. Resolved lazily because the bridge is injected after _ready().
+var _gate_native: bool = false
+var _gate_checked: bool = false
+var _gate_canary: int = 0
+var logic_authority = null  # injected in tests; otherwise the /root/logic_authority autoload
+var transition_logic = preload("res://scripts/logic/d1_level_transition_logic.gd").new()
 var main_receiver = null
 var is_sandbox_active: bool = false
 
@@ -110,6 +117,31 @@ var prop_last_frame: Dictionary = {}         # o_id (int) -> int (anim_frame)
 
 # --- Time accumulator for lighting & animations ---
 var time_accum: float = 0.0
+
+func _bridge_read_gate_open() -> bool:
+	if diablo_bridge == null:
+		return true
+	if not _gate_checked:
+		_gate_checked = true
+		var auth = logic_authority
+		if auth == null and is_inside_tree():
+			auth = get_node_or_null("/root/logic_authority")
+		_gate_native = auth != null \
+			and diablo_bridge.has_method("get_read_gate_state") \
+			and auth.get_authority("level_transition") == auth.AUTH_NATIVE
+		if _gate_native:
+			print("[3D] level_transition gate: AUTH_NATIVE (native decision)")
+	if not _gate_native:
+		return not diablo_bridge.is_level_loading()
+	var g = diablo_bridge.get_read_gate_state()
+	var native_ok: bool = transition_logic.update_from_gate(g, int(diablo_bridge.get_current_level()))
+	if native_ok != bool(g.get("safe", false)):
+		_gate_canary += 1
+		if _gate_canary <= 5 or _gate_canary % 300 == 0:
+			push_warning("gate disagreement #%d native=%s engine=%s mirror_state=%d" % [
+				_gate_canary, native_ok, g.get("safe", false), transition_logic.state])
+	return native_ok
+
 
 func _ready():
 	setup_scene_nodes()
@@ -992,7 +1024,7 @@ func _on_level_changed(new_lvl: int):
 func rebuild_dungeon_if_needed(force: bool = false):
 	if not diablo_bridge or not diablo_bridge.has_method("get_dungeon_solidity_grid"):
 		return
-	if diablo_bridge.has_method("is_level_loading") and diablo_bridge.is_level_loading():
+	if not _bridge_read_gate_open():
 		return
 
 	if wall_mmi == null:
@@ -2256,7 +2288,7 @@ func snap_camera_to_player():
 func _process(delta: float):
 	if not is_sandbox_active or not diablo_bridge:
 		return
-	if diablo_bridge.has_method("is_level_loading") and diablo_bridge.is_level_loading():
+	if not _bridge_read_gate_open():
 		return
 
 	# Instant level transition check (executed every frame, never waiting on 1.5s timer)

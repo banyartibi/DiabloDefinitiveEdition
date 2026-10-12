@@ -21,6 +21,9 @@ func _init():
 func get_current_level(): return 1
 func is_level_loading(): return false
 func is_game_running(): return true
+func get_read_gate_state():
+	return {"game_running": true, "transitioning": false, "faded_in": true, "player_ready": true,
+		"pmode": 1, "lvl_changing": false, "safe": true}
 func get_dungeon_solidity_grid(): return sol
 func get_dungeon_grid(): return grid
 func get_dungeon_light_grid(): return light
@@ -53,6 +56,13 @@ func get_gamma(): return 100
 	native_25d.set_script(native_25d_script)
 	root.add_child(native_25d)
 	native_25d.diablo_bridge = b_inst
+	# Drive the handover path: with the subsystem promoted, the views must decide the read gate
+	# themselves instead of polling is_level_loading(). Tiles still have to build, which is what
+	# proves the native gate actually opens.
+	var Authority = load("res://scripts/logic/d1_logic_authority.gd")
+	var auth = Authority.new()
+	auth.set_authority("level_transition", auth.AUTH_NATIVE)
+	native_25d.logic_authority = auth
 	native_25d._ready()
 
 	var sandbox_script = load("res://scripts/native_3d_sandbox.gd")
@@ -60,6 +70,7 @@ func get_gamma(): return 100
 	sandbox.set_script(sandbox_script)
 	root.add_child(sandbox)
 	sandbox.diablo_bridge = b_inst
+	sandbox.logic_authority = auth
 	sandbox.setup_scene_nodes()
 
 	print("[1] Initially in Mode 2 (3D Sandbox)...")
