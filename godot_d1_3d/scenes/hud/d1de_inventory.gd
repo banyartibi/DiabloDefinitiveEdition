@@ -8,7 +8,10 @@ var hud: Node = null
 # --- Task 2 Step 5: native logic authority (shadow mode) ---
 # C++ still executes; the native layer predicts and compares. Nothing is handed
 # over until D1LogicAuthority reports enough clean parity checks.
-var logic_authority = preload("res://scripts/logic/d1_logic_authority.gd").new()
+# Resolved lazily to the shared autoload (see project.godot). A per-node instance would restart the
+# parity count at zero on every scene load and never see the promotion the soak recorded, which is
+# exactly how the AUTH_NATIVE handover used to be invisible in the running game.
+var logic_authority = null
 var item_logic = preload("res://scripts/logic/d1_item_logic.gd")
 var rng_class = preload("res://scripts/logic/d1_rng.gd")
 var _pending_prediction: Dictionary = {}
@@ -56,6 +59,15 @@ func _belt_item_at(belt_idx: int) -> Dictionary:
 	return items[belt_idx]
 
 
+func _auth() -> Node:
+	if logic_authority == null:
+		if is_inside_tree():
+			logic_authority = get_node_or_null("/root/logic_authority")
+		if logic_authority == null:
+			logic_authority = preload("res://scripts/logic/d1_logic_authority.gd").new()
+	return logic_authority
+
+
 func _find_hud() -> Node:
 	if hud != null:
 		return hud
@@ -68,7 +80,7 @@ func _find_hud() -> Node:
 func _shadow_use(item: Dictionary) -> void:
 	if diablo_bridge == null or item.is_empty():
 		return
-	if logic_authority.get_authority("inventory_item_use") == logic_authority.AUTH_CPP:
+	if _auth().get_authority("inventory_item_use") == _auth().AUTH_CPP:
 		return
 	var ctx = {"hellfire": diablo_bridge.is_hellfire()}
 	if not item_logic.is_usable(item, ctx):
@@ -88,7 +100,7 @@ func _shadow_use(item: Dictionary) -> void:
 	# the sequence has already advanced, the offset is dropped, and the engine value takes over.
 	# The seed here is the push-time seed, not the execution-time seed, so the optimistic number can
 	# be off; that is exactly what the drain check measures.
-	if logic_authority.get_authority("inventory_item_use") == logic_authority.AUTH_NATIVE:
+	if _auth().get_authority("inventory_item_use") == _auth().AUTH_NATIVE:
 		var pred_now = item_logic.predict_use_item(
 			item, _pending_prediction["before"], rng_class.new(diablo_bridge.get_rng_seed()), ctx)
 		var d_hp := int(pred_now.get("effects", {}).get("hp", 0))
@@ -118,7 +130,7 @@ func _shadow_verify() -> void:
 	var after = _player_state()
 	var native_result = {"hp": pred["effects"]["hp"], "mana": pred["effects"]["mana"]}
 	var cpp_result = {"hp": after["hp"] - before["hp"], "mana": after["mana"] - before["mana"]}
-	var ok = logic_authority.record("inventory_item_use", native_result, cpp_result)
+	var ok = _auth().record("inventory_item_use", native_result, cpp_result)
 	print("[PARITY] %s  native=%s cpp=%s seed=%d%s" % [
 		"OK" if ok else "MISMATCH", native_result, cpp_result, diablo_bridge.get_last_action_rng_seed(),
 		"  [rng]" if pred["rng_dependent"] else "  [deterministic]"])
@@ -132,7 +144,7 @@ func _process(_delta: float) -> void:
 
 
 func _exit_tree() -> void:
-	print("[PARITY REPORT] ", logic_authority.report())
+	print("[PARITY REPORT] ", _auth().report())
 
 # Equipment slot indices (matching DevilutionX inv_body_loc)
 const EQUIP_HEAD = 0

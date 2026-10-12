@@ -1,5 +1,5 @@
 class_name D1LogicAuthority
-extends RefCounted
+extends Node
 
 ## Subsystem authority registry for the DevilutionX -> native Godot migration
 ## (Task 2 Step 5). Nothing is handed over until parity is proven.
@@ -30,6 +30,7 @@ const SEEN_CAP := 1000
 
 ## Parity checks accumulate across runs (a soak session is long), so the counters are persisted.
 const STATE_VERSION := 1
+const STATE_PATH := "res://logs/parity_state.json"
 const LOG_CAP := 40
 
 var authority := {}
@@ -37,6 +38,7 @@ var checks := {}
 var mismatches := {}
 var seen := {}
 var log := []
+var _dirty := false
 
 
 func _init() -> void:
@@ -47,8 +49,25 @@ func _init() -> void:
 		seen[s] = {}
 
 
+# The soak records its evidence to disk; the running game must start from that evidence, not from
+# zero. As an autoload this node is in the tree, so these run; a manually instantiated instance
+# (tests, soak) is never in the tree and stays pure logic with explicit load/save calls.
+func _ready() -> void:
+	if load_state(STATE_PATH):
+		print("[AUTHORITY] promotion state loaded: ", report())
+	else:
+		print("[AUTHORITY] no promotion state at ", STATE_PATH, ", starting in AUTH_SHADOW")
+
+
+func _exit_tree() -> void:
+	# Never write a pristine (never loaded, never used) instance over real evidence.
+	if _dirty:
+		save_state(STATE_PATH)
+
+
 func set_authority(subsystem: String, mode: int) -> void:
 	authority[subsystem] = mode
+	_dirty = true
 
 
 func get_authority(subsystem: String) -> int:
@@ -58,6 +77,7 @@ func get_authority(subsystem: String) -> int:
 func record(subsystem: String, native_result, cpp_result, signature: String = "") -> bool:
 	if authority.get(subsystem, AUTH_CPP) == AUTH_CPP:
 		return true
+	_dirty = true
 	checks[subsystem] = int(checks.get(subsystem, 0)) + 1
 	if signature != "" and seen[subsystem].size() < SEEN_CAP:
 		seen[subsystem][signature] = true

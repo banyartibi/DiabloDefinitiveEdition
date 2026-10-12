@@ -14,6 +14,13 @@ config/name="Diablo: Definitive Edition - Godot 4 3D Next-Gen"
 run/main_scene="res://scenes/main_3d.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 
+; Single shared authority instance: the soak writes its parity evidence to
+; logs/parity_state.json, and only a singleton lets the running game start from that evidence
+; instead of restarting the count at zero (AUTH_SHADOW) on every scene load.
+[autoload]
+
+logic_authority="*res://scripts/logic/d1_logic_authority.gd"
+
 [display]
 
 window/size/viewport_width=2560

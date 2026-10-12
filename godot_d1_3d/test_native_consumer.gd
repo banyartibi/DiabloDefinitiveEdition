@@ -5,6 +5,7 @@ extends SceneTree
 
 const InventoryScript = preload("res://scenes/hud/d1de_inventory.gd")
 const HudScript = preload("res://scenes/hud/d1de_hud.gd")
+const AuthorityScript = preload("res://scripts/logic/d1_logic_authority.gd")
 
 var failures := 0
 
@@ -65,15 +66,17 @@ func _init() -> void:
 	# --- 2. the inventory only pushes when the subsystem is AUTH_NATIVE ---
 	var probe = MockHud.new()
 	var inv = InventoryScript.new()
+	var auth = AuthorityScript.new()
 	inv.diablo_bridge = bridge
 	inv.hud = probe
+	inv.logic_authority = auth
 	var potion = {"misc_id": 2, "can_use": true}  # Potion of Full Healing
 
-	inv.logic_authority.set_authority("inventory_item_use", inv.logic_authority.AUTH_SHADOW)
+	auth.set_authority("inventory_item_use", auth.AUTH_SHADOW)
 	inv._shadow_use(potion)
 	check("shadow mode does not drive the HUD", probe.calls.size(), 0)
 
-	inv.logic_authority.set_authority("inventory_item_use", inv.logic_authority.AUTH_NATIVE)
+	auth.set_authority("inventory_item_use", auth.AUTH_NATIVE)
 	inv._pending_prediction = {}
 	inv._shadow_use(potion)
 	check("native mode drives the HUD", probe.calls.size(), 1)

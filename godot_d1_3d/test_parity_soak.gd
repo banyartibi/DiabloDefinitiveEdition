@@ -244,6 +244,54 @@ func _soak_rng(bridge, auth) -> void:
 		moduli.size(), bad, rng.seed, bridge.get_rng_seed()])
 
 
+## The backpack path goes through a different engine entry point than the belt: UseInventorySlot ->
+## UseInvItem(INVITEM_INV_FIRST + i) instead of the belt slot code. Same item, different caller, so
+## it has to be measured separately - a mirror can be right on one path and wrong on the other.
+## Potions only: scrolls leave the engine in a targeting cursor and the effect is not immediate.
+func use_inventory_and_verify(bridge, auth) -> bool:
+	var consumables := [ItemLogic.IMISC_HEAL, ItemLogic.IMISC_FULLHEAL, ItemLogic.IMISC_MANA,
+		ItemLogic.IMISC_FULLMANA, ItemLogic.IMISC_REJUV, ItemLogic.IMISC_FULLREJUV]
+	var chosen = null
+	for it in bridge.get_player_backpack():
+		if bool(it.get("can_use", false)) and consumables.has(int(it.get("misc_id", 0))) \
+				and int(it.get("inv_list_index", -1)) >= 0:
+			chosen = it
+			break
+	if chosen == null:
+		return false
+	var inv_idx := int(chosen.get("inv_list_index", -1))
+	var item = {"misc_id": int(chosen.get("misc_id", 0)), "can_use": true}
+	var ctx = {"hellfire": bridge.is_hellfire()}
+	var before = state(bridge)
+	var pred_before = ItemLogic.predict_use_item(item, before, RNG.new(bridge.get_rng_seed()), ctx)
+	if int(pred_before["effects"]["hp"]) == 0 and int(pred_before["effects"]["mana"]) == 0:
+		return false  # nothing to verify (hero already full)
+
+	var seq_before = bridge.get_last_action_seq()
+	bridge.use_inventory_slot(2, inv_idx)
+	var spin := 0
+	while spin < 2000 and bridge.get_last_action_seq() <= seq_before:
+		OS.delay_msec(20)
+		spin += 20
+	if bridge.get_last_action_seq() <= seq_before:
+		print("[SOAK]   inventory %d: action not executed within 2000 ms" % inv_idx)
+		return false
+
+	var after = state(bridge)
+	var seed_at_exec = bridge.get_last_action_rng_seed()
+	var pred = ItemLogic.predict_use_item(item, before, RNG.new(seed_at_exec), ctx)
+	var native_result = {"hp": int(pred["effects"]["hp"]), "mana": int(pred["effects"]["mana"])}
+	var cpp_result = {"hp": int(after["hp"]) - int(before["hp"]), "mana": int(after["mana"]) - int(before["mana"])}
+	var sig = "invu|%d|%d|%d|%d" % [seed_at_exec, native_result.hp, native_result.mana, int(item.misc_id)]
+	var is_new = not auth.seen["inventory_item_use"].has(sig)
+	var ok = auth.record("inventory_item_use", native_result, cpp_result, sig)
+	print("[PARITY] save %d backpack %d (%s) %s native=%s cpp=%s seed=%d%s%s" % [
+		save_num, inv_idx, chosen.get("name", ""), "OK" if ok else "MISMATCH", native_result, cpp_result, seed_at_exec,
+		"  [rng]" if pred["rng_dependent"] else "  [deterministic]",
+		"  [new]" if is_new else "  [repeat]"])
+	return true
+
+
 func use_and_verify(bridge, auth, belt_idx: int) -> bool:
 	var belt = bridge.get_belt_items()[belt_idx]
 	var t = int(belt.get("type", 0))
@@ -319,12 +367,13 @@ func _init() -> void:
 		auth.save_state(STATE_PATH)
 		quit(0)
 		return
-	var need_items := not auth.can_promote("inventory_item_use")
-	var need_rng := not auth.can_promote("rng")
 	# SOAK_TRANSITION=1 keeps driving level changes even after the subsystem is promotable, so the
 	# evidence keeps broadening (different levels, both directions) instead of freezing at the first
-	# passing sample.
+	# passing sample. SOAK_ITEMS=1 does the same for the belt/backpack item paths.
 	var force_tr := String(OS.get_environment("SOAK_TRANSITION")) != ""
+	var force_items := String(OS.get_environment("SOAK_ITEMS")) != ""
+	var need_items := not auth.can_promote("inventory_item_use") or force_items
+	var need_rng := not auth.can_promote("rng")
 	var need_level := not auth.can_promote("level_transition") or force_tr
 	if not need_items and not need_rng and not need_level:
 		print("[SOAK] all subsystems already promotable, nothing to do")
@@ -376,9 +425,19 @@ func _init() -> void:
 	print("[SOAK] save %d belt: %s" % [save_num, " ".join(names)])
 
 	var run_checks := 0
+	# A forced re-run must not be gated by the already-reached target, otherwise the loop breaks
+	# before trying anything and the new path (backpack) is never exercised.
+	var budget : int = target if not force_items else int(auth.checks["inventory_item_use"]) + 20
 	if need_items:
+		# Backpack first: the belt loop calls replenish_belt(), which moves backpack consumables into
+		# the belt, so running it first would empty the very path this loop is meant to cover.
+		for i in range(3):
+			if int(auth.checks["inventory_item_use"]) >= budget:
+				break
+			if not use_inventory_and_verify(bridge, auth):
+				break
 		for i in range(8):
-			if int(auth.checks["inventory_item_use"]) >= target:
+			if int(auth.checks["inventory_item_use"]) >= budget:
 				break
 			if use_and_verify(bridge, auth, i):
 				run_checks += 1
