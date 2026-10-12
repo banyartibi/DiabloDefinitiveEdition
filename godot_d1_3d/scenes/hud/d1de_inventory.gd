@@ -19,6 +19,13 @@ func _player_state() -> Dictionary:
 		"max_hp": diablo_bridge.get_player_max_hp(),
 		"mana": diablo_bridge.get_player_mana(),
 		"max_mana": diablo_bridge.get_player_max_mana(),
+		# The mirror predicts in 64ths; without the raw values it falls back to display units and
+		# is off by one whenever the sub-64th remainder is non-zero.
+		"hp_raw": diablo_bridge.get_player_hp_raw(),
+		"max_hp_raw": diablo_bridge.get_player_max_hp_raw(),
+		"mana_raw": diablo_bridge.get_player_mana_raw(),
+		"max_mana_raw": diablo_bridge.get_player_max_mana_raw(),
+		"item_flags": diablo_bridge.get_player_item_flags(),
 		"class": diablo_bridge.get_player_class(),
 		"spell_levels": {},
 	}

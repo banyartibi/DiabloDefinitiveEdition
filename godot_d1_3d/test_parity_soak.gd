@@ -175,6 +175,21 @@ func _init() -> void:
 	if env_reset != "":
 		auth.reset_counters("" if env_reset == "all" else env_reset)
 		print("[SOAK] counters reset for: ", env_reset)
+	# Handover is a pure state operation and needs no engine: SOAK_PROMOTE=1 (or a comma separated
+	# list) promotes only subsystems whose evidence passes the gate. promote() refuses otherwise,
+	# so this cannot hand over a subsystem that has not been proven.
+	var env_promote := String(OS.get_environment("SOAK_PROMOTE"))
+	if env_promote != "":
+		var targets: Array = ["inventory_item_use", "rng", "level_transition"] if env_promote == "all" \
+			else env_promote.split(",")
+		for s in targets:
+			if auth.promote(s):
+				print("[SOAK] PROMOTED %s -> AUTH_NATIVE" % s)
+			else:
+				print("[SOAK] NOT promotable: %s (%s)" % [s, auth.report()[s]])
+		auth.save_state(STATE_PATH)
+		quit(0)
+		return
 	var need_items := not auth.can_promote("inventory_item_use")
 	var need_rng := not auth.can_promote("rng")
 	if not need_items and not need_rng:
