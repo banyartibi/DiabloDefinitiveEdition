@@ -1650,6 +1650,7 @@ static D1InvItemData ConvertItemToInvData(const Item &item, int slotId, int cell
 	D1InvItemData data;
 	data.slotId = slotId;
 	data.type = static_cast<int>(item._itype);
+	data.miscId = static_cast<int>(item._iMiscId);
 	data.curs = item._iCurs;
 	data.cursId = item._iCurs + CURSOR_FIRSTITEM;
 	data.quality = static_cast<int>(item._iMagical);

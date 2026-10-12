@@ -7,6 +7,7 @@
 #include "engine/sound.h"    // sound_get_or_set_music_volume / sound_get_or_set_sound_volume
 #include "engine/palette.h"  // UpdateGamma (0 = read-only)
 #include "multi.h"           // sgGameInitInfo.nTickRate
+#include "engine/random.hpp"  // GetLCGEngineState (vanilla LCG, for native logic parity)
 
 using namespace godot;
 
@@ -111,6 +112,7 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("click_inventory_slot", "slot_type", "slot_idx", "is_shift", "is_ctrl"), &DiabloBridge::click_inventory_slot, DEFVAL(false), DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("use_inventory_slot", "slot_type", "slot_idx"), &DiabloBridge::use_inventory_slot);
 	ClassDB::bind_method(D_METHOD("get_cursor_id"), &DiabloBridge::get_cursor_id);
+	ClassDB::bind_method(D_METHOD("get_rng_seed"), &DiabloBridge::get_rng_seed);
 	ClassDB::bind_method(D_METHOD("cancel_targeting_cursor"), &DiabloBridge::cancel_targeting_cursor);
 	ClassDB::bind_method(D_METHOD("get_cursor_texture", "curs_id"), &DiabloBridge::get_cursor_texture);
 	ClassDB::bind_method(D_METHOD("get_player_durability_warnings"), &DiabloBridge::get_player_durability_warnings);
@@ -1229,6 +1231,7 @@ static Dictionary InvDataToDict(const devilution::D1InvItemData &item) {
 	Dictionary d;
 	d["slot_id"] = item.slotId;
 	d["type"] = item.type;
+	d["misc_id"] = item.miscId;
 	d["curs"] = item.curs;
 	d["curs_id"] = item.cursId;
 	d["quality"] = item.quality;
@@ -1315,6 +1318,11 @@ void DiabloBridge::use_inventory_slot(int slot_type, int slot_idx) {
 
 int DiabloBridge::get_cursor_id() const {
 	return devilution::GetCurrentCursorId();
+}
+
+int DiabloBridge::get_rng_seed() const {
+	// Read-only: the native logic layer must reproduce the C++ RNG stream exactly.
+	return static_cast<int>(devilution::GetLCGEngineState());
 }
 
 void DiabloBridge::cancel_targeting_cursor() {

@@ -371,6 +371,7 @@ void ToggleInventory();
 struct D1InvItemData {
 	int slotId = 0; // 0..6 for equipment (SLOTXY_HEAD..SLOTXY_CHEST), or 0..39 for backpack index
 	int type = 0;
+	int miscId = 0; // item_misc_id, needed by the native logic layer (D1ItemLogic)
 	int curs = 0;
 	int cursId = 0;
 	int quality = 0; // 0=normal, 1=magic, 2=unique

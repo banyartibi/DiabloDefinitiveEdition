@@ -2,6 +2,74 @@ extends Control
 
 var diablo_bridge = null
 
+# --- Task 2 Step 5: native logic authority (shadow mode) ---
+# C++ still executes; the native layer predicts and compares. Nothing is handed
+# over until D1LogicAuthority reports enough clean parity checks.
+var logic_authority = preload("res://scripts/logic/d1_logic_authority.gd").new()
+var item_logic = preload("res://scripts/logic/d1_item_logic.gd")
+var rng_class = preload("res://scripts/logic/d1_rng.gd")
+var _pending_prediction: Dictionary = {}
+
+
+func _player_state() -> Dictionary:
+	if diablo_bridge == null:
+		return {}
+	return {
+		"hp": diablo_bridge.get_player_hp(),
+		"max_hp": diablo_bridge.get_player_max_hp(),
+		"mana": diablo_bridge.get_player_mana(),
+		"max_mana": diablo_bridge.get_player_max_mana(),
+		"class": diablo_bridge.get_player_class(),
+		"spell_levels": {},
+	}
+
+
+func _item_at(slot_type: int, idx: int) -> Dictionary:
+	if diablo_bridge == null:
+		return {}
+	var items: Array = diablo_bridge.get_player_equipment() if slot_type == 0 else diablo_bridge.get_player_backpack()
+	for it in items:
+		if slot_type == 2:
+			if int(it.get("inv_list_index", -1)) == idx:
+				return it
+		elif int(it.get("slot_id", -1)) == idx:
+			return it
+	return {}
+
+
+func _belt_item_at(belt_idx: int) -> Dictionary:
+	if diablo_bridge == null:
+		return {}
+	var items: Array = diablo_bridge.get_belt_items()
+	if belt_idx < 0 or belt_idx >= items.size():
+		return {}
+	return items[belt_idx]
+
+
+func _shadow_use(item: Dictionary) -> void:
+	if diablo_bridge == null or item.is_empty():
+		return
+	if logic_authority.get_authority("inventory_item_use") == logic_authority.AUTH_CPP:
+		return
+	var before = _player_state()
+	var ctx = {"hellfire": diablo_bridge.is_hellfire()}
+	var pred = item_logic.predict_use_item(item, before, rng_class.new(diablo_bridge.get_rng_seed()), ctx)
+	if not pred["ok"] or pred["rng_dependent"]:
+		return  # not verifiable deterministically from the current RNG stream
+	_pending_prediction = {"pred": pred, "before": before}
+
+
+func _shadow_verify() -> void:
+	if _pending_prediction.is_empty():
+		return
+	var pred = _pending_prediction["pred"]
+	var before = _pending_prediction["before"]
+	var after = _player_state()
+	var native_result = {"hp": pred["effects"]["hp"], "mana": pred["effects"]["mana"]}
+	var cpp_result = {"hp": after["hp"] - before["hp"], "mana": after["mana"] - before["mana"]}
+	logic_authority.record("inventory_item_use", native_result, cpp_result)
+	_pending_prediction = {}
+
 # Equipment slot indices (matching DevilutionX inv_body_loc)
 const EQUIP_HEAD = 0
 const EQUIP_RING_LEFT = 1
@@ -509,8 +577,10 @@ func _on_equip_slot_gui_input(slot_idx: int, event: InputEvent):
 				_on_item_mouse_exited()
 				return
 		if diablo_bridge and diablo_bridge.has_method("use_inventory_slot"):
+			_shadow_use(_item_at(0, slot_idx))
 			diablo_bridge.use_inventory_slot(0, slot_idx)
 			update_inventory()
+			_shadow_verify()
 			_on_item_mouse_exited()
 
 func _on_backpack_cell_gui_input(cell_idx: int, event: InputEvent):
@@ -532,8 +602,10 @@ func _on_backpack_cell_gui_input(cell_idx: int, event: InputEvent):
 				_on_item_mouse_exited()
 				return
 		if diablo_bridge and diablo_bridge.has_method("use_inventory_slot"):
+			_shadow_use(_item_at(1, cell_idx))
 			diablo_bridge.use_inventory_slot(1, cell_idx)
 			update_inventory()
+			_shadow_verify()
 			_on_item_mouse_exited()
 
 func _on_backpack_item_gui_input(cell_idx: int, inv_list_idx: int, event: InputEvent):
@@ -556,10 +628,13 @@ func _on_backpack_item_gui_input(cell_idx: int, inv_list_idx: int, event: InputE
 				return
 		if diablo_bridge and diablo_bridge.has_method("use_inventory_slot"):
 			if inv_list_idx >= 0:
+				_shadow_use(_item_at(2, inv_list_idx))
 				diablo_bridge.use_inventory_slot(2, inv_list_idx)
 			else:
+				_shadow_use(_item_at(1, cell_idx))
 				diablo_bridge.use_inventory_slot(1, cell_idx)
 			update_inventory()
+			_shadow_verify()
 			_on_item_mouse_exited()
 
 func _on_belt_slot_gui_input(belt_idx: int, event: InputEvent):
@@ -581,8 +656,10 @@ func _on_belt_slot_gui_input(belt_idx: int, event: InputEvent):
 				_on_item_mouse_exited()
 				return
 		if diablo_bridge and diablo_bridge.has_method("use_belt_slot"):
+			_shadow_use(_belt_item_at(belt_idx))
 			diablo_bridge.use_belt_slot(belt_idx)
 			update_inventory()
+			_shadow_verify()
 			_on_item_mouse_exited()
 
 func _on_belt_slot_mouse_entered(belt_idx: int, pos: Vector2):

@@ -141,6 +141,7 @@ public:
 	void click_inventory_slot(int slot_type, int slot_idx, bool is_shift = false, bool is_ctrl = false);
 	void use_inventory_slot(int slot_type, int slot_idx);
 	int get_cursor_id() const;
+	int get_rng_seed() const; // vanilla LCG state (native logic parity harness)
 	void cancel_targeting_cursor();
 	Ref<ImageTexture> get_cursor_texture(int curs_id);
 	Array get_player_durability_warnings() const;
