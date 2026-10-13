@@ -128,9 +128,6 @@ func total_checks() -> int:
 
 
 func save_state(path: String) -> bool:
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f == null:
-		return false
 	var data := {
 		"version": STATE_VERSION,
 		"authority": authority,
@@ -140,14 +137,51 @@ func save_state(path: String) -> bool:
 		"log": log,
 		"last_run_utc": Time.get_datetime_string_from_system(true),
 	}
+	# Write to a temp file and rename over the target, keeping the previous file as .bak. A process
+	# killed mid-write otherwise leaves a truncated JSON; load_state() then fails and the soak
+	# silently restarts its counters from zero, so hours of evidence disappear without an error.
+	var tmp := path + ".tmp"
+	var f := FileAccess.open(tmp, FileAccess.WRITE)
+	if f == null:
+		return false
 	f.store_string(JSON.stringify(data, "  "))
+	f.flush()
 	f.close()
-	return true
+	var dir := DirAccess.open(path.get_base_dir())
+	if dir == null:
+		return false
+	var base := path.get_file()
+	# The previous copy is saved with FileAccess, not DirAccess.copy: under res:// DirAccess resolves
+	# relative names against the process cwd and fails with ERR_FILE_NOT_FOUND, while rename() does
+	# go through the resource path mapping.
+	if FileAccess.file_exists(path):
+		var prev := FileAccess.open(path, FileAccess.READ)
+		if prev != null:
+			var old := prev.get_as_text()
+			prev.close()
+			var bak := FileAccess.open(path + ".bak", FileAccess.WRITE)
+			if bak != null:
+				bak.store_string(old)
+				bak.close()
+	if dir.file_exists(base):
+		dir.remove(base)
+	return dir.rename(base + ".tmp", base) == OK
 
 
 func load_state(path: String) -> bool:
 	if not FileAccess.file_exists(path):
 		return false
+	if _read_state(path):
+		return true
+	# The live file is unreadable (truncated write). Fall back to the previous good copy instead of
+	# discarding the evidence.
+	if FileAccess.file_exists(path + ".bak") and _read_state(path + ".bak"):
+		push_warning("parity state %s unreadable, recovered from %s.bak" % [path, path])
+		return true
+	return false
+
+
+func _read_state(path: String) -> bool:
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		return false

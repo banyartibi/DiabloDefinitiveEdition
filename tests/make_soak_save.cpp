@@ -75,13 +75,34 @@ static void wr32(byte *p, int32_t v) {
 	memcpy(p, &v, 4);
 }
 
+// glSeedTbl inside the `game` entry: giNumberOfLevels entries of (BE seed, BE leveltype).
+// LoadGame restores the RNG stream with SetRndSeed(glSeedTbl[currlevel]) (diablo.cpp:2940), so
+// rewriting the current level's seed gives each soak pass a genuinely different RNG stream.
+// Without it every fixture run replays the same draws and contributes no new distinct case.
+// The table is located by its leveltype signature rather than by a fixed offset: the leveltype
+// sequence is fixed by the vanilla level order, while everything before it varies per save.
+static const uint8_t kVanillaLevelTypes[16] = { 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4 };
+
+static uint32_t rd32be(const byte *p) {
+	return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | (uint32_t)p[3];
+}
+
+static void wr32be(byte *p, uint32_t v) {
+	p[0] = static_cast<byte>(v >> 24);
+	p[1] = static_cast<byte>(v >> 16);
+	p[2] = static_cast<byte>(v >> 8);
+	p[3] = static_cast<byte>(v);
+}
+
 int main(int argc, char **argv) {
 	std::string save_dir = "/home/biti/.local/share/diasurgical/devilution";
 	int slot = 8;
 	int div = 8;
+	uint32_t seed = 0;
 	if (argc >= 2) save_dir = argv[1];
 	if (argc >= 3) slot = std::stoi(argv[2]);
 	if (argc >= 4) div = std::stoi(argv[3]);
+	if (argc >= 5) seed = static_cast<uint32_t>(std::stoul(argv[4]));
 
 	std::string path = save_dir + "/single_" + std::to_string(slot) + ".hsv";
 
@@ -108,7 +129,11 @@ int main(int argc, char **argv) {
 	memcpy(&pack, heroData.get(), sizeof(pack));
 	char origName[NAME_LEN];
 	memcpy(origName, pack.pName, NAME_LEN);
-	strncpy(pack.pName, "SoakFixture", sizeof(pack.pName) - 1);
+	// One name per slot: several fixture variants are loaded in the same session and the hero
+	// list keys on the name, so duplicates would be ambiguous in the logs.
+	char fixtureName[NAME_LEN];
+	snprintf(fixtureName, sizeof(fixtureName), "Soak%d", slot);
+	strncpy(pack.pName, fixtureName, sizeof(pack.pName) - 1);
 	for (int i = 0; i < MaxBeltItems; i++) {
 		ItemPack &it = pack.SpdList[i];
 		memset(&it, 0, sizeof(it));
@@ -141,7 +166,7 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	// HP/mana are stored in 64ths. Write exact multiples of 64 so the display value the bridge
+		// HP/mana are stored in 64ths. Write exact multiples of 64 so the display value the bridge
 	// reports (raw >> 6) maps back to the raw value with no remainder — otherwise the engine can
 	// gain a display unit that the native mirror cannot see (the mirror works in display units).
 	wr32(name + OFF_HP_BASE, ((rd32(name + OFF_MAX_HP_BASE) >> 6) / div) * 64);
@@ -161,10 +186,39 @@ int main(int argc, char **argv) {
 		potions++;
 	}
 
+	// Re-seed the level the hero is standing on. This is the only way the soak gets a different
+	// RNG stream from the same fixture: the draws (and therefore the effects and the distinct-case
+	// signatures) follow glSeedTbl[currlevel], not the HP/mana values.
+	uint32_t oldSeed = 0;
+	byte *seedTbl = nullptr;
+	for (size_t p = 0; p + 8 * 17 <= gameLen; p++) {
+		bool match = true;
+		for (int i = 0; i < 16; i++) {
+			if (rd32be(gameData.get() + p + 8 * i + 4) != kVanillaLevelTypes[i]) {
+				match = false;
+				break;
+			}
+		}
+		if (match) {
+			seedTbl = gameData.get() + p;
+			break;
+		}
+	}
+	if (seedTbl != nullptr) {
+		if (pack.plrlevel < 17) {
+			oldSeed = rd32be(seedTbl + 8 * pack.plrlevel);
+			if (seed != 0) wr32be(seedTbl + 8 * pack.plrlevel, seed);
+		}
+	} else if (seed != 0) {
+		std::cerr << "warning: glSeedTbl not found, seed left unchanged\n";
+	}
+
 	std::cout << "Soak fixture: slot=" << slot << " name=" << pack.pName
 		<< " class=" << heroClass
 		<< " hp=" << (rd32(name + OFF_HIT_POINTS) >> 6) << "/" << (rd32(name + OFF_MAX_HP) >> 6)
 		<< " mana=" << (rd32(name + OFF_MANA) >> 6) << "/" << (rd32(name + OFF_MAX_MANA) >> 6)
+		<< " level=" << static_cast<int>(pack.plrlevel)
+		<< " seed=" << oldSeed << (seed != 0 ? " -> " + std::to_string(seed) : "")
 		<< " potion records=" << potions << "\n";
 
 	SaveWriter writer(path);

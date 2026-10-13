@@ -289,6 +289,8 @@ func use_inventory_and_verify(bridge, auth) -> bool:
 		save_num, inv_idx, chosen.get("name", ""), "OK" if ok else "MISMATCH", native_result, cpp_result, seed_at_exec,
 		"  [rng]" if pred["rng_dependent"] else "  [deterministic]",
 		"  [new]" if is_new else "  [repeat]"])
+	if not ok:
+		print("[PARITY]   before=%s after=%s" % [before, after])
 	return true
 
 
@@ -332,6 +334,10 @@ func use_and_verify(bridge, auth, belt_idx: int) -> bool:
 		save_num, belt_idx, belt.get("name", ""), "OK" if ok else "MISMATCH", native_result, cpp_result, seed_at_exec,
 		"  [rng]" if pred["rng_dependent"] else "  [deterministic]",
 		"  [new]" if is_new else "  [repeat]"])
+	if not ok:
+		# The effect is a delta; a delta mismatch is undiagnosable without the endpoints. A gain
+		# clamped by max_mana looks like a wrong draw unless the raw states are visible.
+		print("[PARITY]   before=%s after=%s" % [before, after])
 	return true
 
 

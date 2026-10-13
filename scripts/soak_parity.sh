@@ -20,6 +20,11 @@ TARGET="${SOAK_TARGET:-200}"
 MAX_RUNS="${SOAK_RUNS:-80}"
 SAVES="${SOAK_SAVES:-0 1 2 3 4 5 6 7 8 9 10 11 12}"
 STATE="$REPO/godot_d1_3d/logs/parity_state.json"
+# Both are opt-in pass-throughs to the harness. They MUST have defaults: under `set -u` an
+# unset variable aborts the command line, which silently skipped every godot invocation and
+# left the counters frozen at whatever the previous manual run had recorded.
+SOAK_TRANSITION="${SOAK_TRANSITION:-}"
+SOAK_RESET="${SOAK_RESET:-}"
 
 if [[ ! -x "$GODOT" ]]; then
 	echo "Godot binary not found: $GODOT (set GODOT=...)" >&2
