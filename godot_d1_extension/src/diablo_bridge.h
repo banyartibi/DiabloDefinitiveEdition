@@ -160,6 +160,7 @@ public:
 	// thread, plus that action's D1BridgeActionType. Needed for bit-exact parity predictions:
 	// the engine consumes RNG between a Godot-thread seed read and the drain.
 	int get_last_action_rng_seed() const;
+	int get_last_action_end_seed() const;
 	int get_last_action_type() const;
 	// Execution counter of drained bridge jobs: proves a pushed job actually ran on the engine
 	// thread (poll until it increments instead of guessing with a fixed sleep).

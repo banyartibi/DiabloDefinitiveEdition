@@ -128,6 +128,10 @@ std::vector<D1BridgeJob> g_BridgeJobs;
 // deterministic: the engine consumes RNG between the read and the drain. Atomic so the Godot
 // thread can read it without a mutex (read-only getters are safe per the thread-safety rule).
 std::atomic<uint32_t> g_BridgeLastActionSeed{0};
+// LCG state immediately AFTER the job ran. The seed pair (before/after) is what lets the native
+// layer check the RNG *stream* itself, not just the outcome: if the mirror consumed the same draws
+// from the same start, its end state must equal this value bit for bit.
+std::atomic<uint32_t> g_BridgeLastActionEndSeed{0};
 std::atomic<int> g_BridgeLastActionType{-1};
 // Monotonic execution counter: lets the caller prove that a specific pushed job actually ran on
 // the engine thread, instead of guessing with a fixed sleep (belt counts come from the frame
@@ -402,6 +406,11 @@ uint32_t GetLastBridgeActionSeed()
 	return g_BridgeLastActionSeed.load(std::memory_order_relaxed);
 }
 
+uint32_t GetLastBridgeActionEndSeed()
+{
+	return g_BridgeLastActionEndSeed.load(std::memory_order_relaxed);
+}
+
 int GetLastBridgeActionType()
 {
 	return g_BridgeLastActionType.load(std::memory_order_relaxed);
@@ -516,6 +525,9 @@ void PollGodotBridgeInput()
 		case D1BridgeActionType::CancelTargetingCursor: CancelTargetingCursor(); break;
 		default: break;
 	}
+	// Captured on the engine thread, right after the job: no other code consumed RNG in between.
+	// Not consumed by the harness yet - see the note in GetLastBridgeActionEndSeed.
+	g_BridgeLastActionEndSeed.store(GetLCGEngineState(), std::memory_order_relaxed);
 	}
 
 	// 1. Process in-process GDExtension direct input queue

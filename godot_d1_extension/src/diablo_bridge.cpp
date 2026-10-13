@@ -122,6 +122,7 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_cursor_id"), &DiabloBridge::get_cursor_id);
 	ClassDB::bind_method(D_METHOD("get_rng_seed"), &DiabloBridge::get_rng_seed);
 	ClassDB::bind_method(D_METHOD("get_last_action_rng_seed"), &DiabloBridge::get_last_action_rng_seed);
+	ClassDB::bind_method(D_METHOD("get_last_action_end_seed"), &DiabloBridge::get_last_action_end_seed);
 	ClassDB::bind_method(D_METHOD("get_last_action_type"), &DiabloBridge::get_last_action_type);
 	ClassDB::bind_method(D_METHOD("get_last_action_seq"), &DiabloBridge::get_last_action_seq);
 	ClassDB::bind_method(D_METHOD("cancel_targeting_cursor"), &DiabloBridge::cancel_targeting_cursor);
@@ -1390,6 +1391,12 @@ int DiabloBridge::get_last_action_rng_seed() const {
 	// Seed the engine had when the last queued action actually ran. Use this (not get_rng_seed())
 	// for parity predictions of RNG-dependent actions.
 	return static_cast<int>(devilution::GetLastBridgeActionSeed());
+}
+
+int DiabloBridge::get_last_action_end_seed() const {
+	// LCG state right after the last queued action ran. The mirror replays its own draws from
+	// get_last_action_rng_seed(); if it consumed the same draws, this state matches exactly.
+	return static_cast<int>(devilution::GetLastBridgeActionEndSeed());
 }
 
 int DiabloBridge::get_last_action_type() const {
