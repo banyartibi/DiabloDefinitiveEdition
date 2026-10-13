@@ -29,7 +29,7 @@ const MIN_DISTINCT := 12
 const SEEN_CAP := 1000
 
 ## Parity checks accumulate across runs (a soak session is long), so the counters are persisted.
-const STATE_VERSION := 1
+const STATE_VERSION := 2
 const STATE_PATH := "res://logs/parity_state.json"
 const LOG_CAP := 40
 
@@ -38,6 +38,10 @@ var checks := {}
 var mismatches := {}
 var seen := {}
 var log := []
+# Monotonic writer counter. A process that loaded an older snapshot must not write over a newer
+# one: killing the soak driver leaves its godot child running, and that child later saved a
+# pre-promotion snapshot over the promoted state and silently reverted all three subsystems.
+var revision := 0
 var _dirty := false
 
 
@@ -128,15 +132,6 @@ func total_checks() -> int:
 
 
 func save_state(path: String) -> bool:
-	var data := {
-		"version": STATE_VERSION,
-		"authority": authority,
-		"checks": checks,
-		"mismatches": mismatches,
-		"seen": seen,
-		"log": log,
-		"last_run_utc": Time.get_datetime_string_from_system(true),
-	}
 	# Write to a temp file and rename over the target, keeping the previous file as .bak. A process
 	# killed mid-write otherwise leaves a truncated JSON; load_state() then fails and the soak
 	# silently restarts its counters from zero, so hours of evidence disappear without an error.
@@ -144,7 +139,26 @@ func save_state(path: String) -> bool:
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
 		return false
-	f.store_string(JSON.stringify(data, "  "))
+	# Refuse to clobber a newer snapshot. Authority changes are explicit decisions, so a writer that
+	# is holding stale evidence must never hand a promoted subsystem back by accident.
+	var live: Variant = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
+	if typeof(live) == TYPE_DICTIONARY and int(live.get("revision", 0)) > revision:
+		push_warning("parity state on disk is newer (revision %d > %d); this run's snapshot is stale, not writing"
+			% [int(live["revision"]), revision])
+		f.close()
+		DirAccess.open(path.get_base_dir()).remove(path.get_file() + ".tmp")
+		return false
+	revision = int(live.get("revision", 0)) + 1 if typeof(live) == TYPE_DICTIONARY else 1
+	f.store_string(JSON.stringify({
+		"version": STATE_VERSION,
+		"authority": authority,
+		"revision": revision,
+		"checks": checks,
+		"mismatches": mismatches,
+		"seen": seen,
+		"log": log,
+		"last_run_utc": Time.get_datetime_string_from_system(true),
+	}, "  "))
 	f.flush()
 	f.close()
 	var dir := DirAccess.open(path.get_base_dir())
@@ -191,6 +205,7 @@ func _read_state(path: String) -> bool:
 		return false
 	# JSON numbers come back as floats; authority modes and counters must be ints.
 	authority = _restore(data.get("authority", {}), authority)
+	revision = int(data.get("revision", 0))
 	checks = _restore(data.get("checks", {}), checks)
 	mismatches = _restore(data.get("mismatches", {}), mismatches)
 	var seen_src = data.get("seen", {})

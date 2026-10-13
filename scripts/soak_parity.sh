@@ -39,11 +39,13 @@ TRANSITION="${SOAK_TRANSITION:-}"; unset SOAK_TRANSITION
 unset SOAK_TARGET SOAK_SAVE
 
 # The fixture hero starts nearly empty so the item effects are non-zero (a full hero predicts a
-# zero effect, which the harness skips). The seed is varied per pass because the draws — and with
-# them the effects and the distinct-case signatures — follow glSeedTbl[currlevel], not the HP or
-# mana values: re-running the same fixture only ever replays the same three cases.
+# zero effect, which the harness skips). The HP/mana fraction is varied per pass so the recorded
+# cases differ (the signature carries the hero state). The save's level seed is deliberately NOT
+# varied: glSeedTbl[currlevel] also regenerates the saved level's objects, and re-seeding it made
+# the engine fail with "Unable to find object_graphic_id N ... level generation error", which
+# destroyed the fixture instead of broadening it. Diversity comes from the eight real saves plus
+# the fixture states.
 DIVISORS=(48 24 12 6 3 2)
-SEEDS=(987654321 123456789 2024010101 55512345 777777777 314159265 161803398 8675309)
 
 if [[ ! -x "$GODOT" ]]; then
 	echo "Godot binary not found: $GODOT (set GODOT=...)" >&2
@@ -54,6 +56,20 @@ echo "[SOAK] target=$TARGET runs<=${MAX_RUNS} saves=(${SAVES}) state=$STATE"
 
 pass=0
 first=1
+# A killed driver must not leave the harness running. An orphaned godot finishes its run and writes
+# its own (older) snapshot over the evidence store; that is exactly how a completed promotion got
+# reverted to AUTH_SHADOW after the driver was interrupted.
+RUNLOG="$(mktemp)"
+GODOT_PID=""
+cleanup() {
+	if [[ -n "$GODOT_PID" ]] && kill -0 "$GODOT_PID" 2>/dev/null; then
+		kill "$GODOT_PID" 2>/dev/null
+		wait "$GODOT_PID" 2>/dev/null
+	fi
+	rm -f "$RUNLOG"
+	exit 130
+}
+trap cleanup INT TERM
 for run in $(seq 1 "$MAX_RUNS"); do
 	for slot in $SAVES; do
 		env_args=(SOAK_SAVE="$slot" SOAK_TARGET="$TARGET")
@@ -66,14 +82,17 @@ for run in $(seq 1 "$MAX_RUNS"); do
 
 		if [[ "$slot" == "$FIXTURE_SLOT" && -x "$FIXTOOL" ]]; then
 			i=$(( (pass - 1) % ${#DIVISORS} ))
-			j=$(( ((pass - 1) * ${#SAVES} + run) % ${#SEEDS} ))
 			cp -f "$SAVE_DIR/single_${FIXTURE_SRC}.hsv" "$SAVE_DIR/single_${slot}.hsv" \
 				|| { echo "[SOAK] cannot copy fixture source single_${FIXTURE_SRC}.hsv" >&2; exit 1; }
-			"$FIXTOOL" "$SAVE_DIR" "$slot" "${DIVISORS[$i]}" "${SEEDS[$j]}" \
-				| sed 's/^/[SOAK] fixture: /'
+			"$FIXTOOL" "$SAVE_DIR" "$slot" "${DIVISORS[$i]}" | sed 's/^/[SOAK] fixture: /'
 		fi
 
-		out="$(env "${env_args[@]}" "$GODOT" --headless --path "$REPO/godot_d1_3d" --script res://test_parity_soak.gd 2>&1 | grep -v 'Texture format not supported')"
+		env "${env_args[@]}" "$GODOT" --headless --path "$REPO/godot_d1_3d" --script res://test_parity_soak.gd \
+			>"$RUNLOG" 2>&1 &
+		GODOT_PID=$!
+		wait "$GODOT_PID"
+		GODOT_PID=""
+		out="$(grep -v 'Texture format not supported' "$RUNLOG")"
 		echo "$out" | grep -E '^\[PARITY\]|^\[SOAK\] (rng|level|save|RNG|GATE|restored)'
 		if echo "$out" | grep -q 'MISMATCH'; then
 			echo "[SOAK] mismatch recorded — stopping (a mismatch invalidates promotion)"

@@ -251,21 +251,26 @@ func _soak_rng(bridge, auth) -> void:
 func use_inventory_and_verify(bridge, auth) -> bool:
 	var consumables := [ItemLogic.IMISC_HEAL, ItemLogic.IMISC_FULLHEAL, ItemLogic.IMISC_MANA,
 		ItemLogic.IMISC_FULLMANA, ItemLogic.IMISC_REJUV, ItemLogic.IMISC_FULLREJUV]
-	var chosen = null
-	for it in bridge.get_player_backpack():
-		if bool(it.get("can_use", false)) and consumables.has(int(it.get("misc_id", 0))) \
-				and int(it.get("inv_list_index", -1)) >= 0:
-			chosen = it
-			break
-	if chosen == null:
-		return false
-	var inv_idx := int(chosen.get("inv_list_index", -1))
-	var item = {"misc_id": int(chosen.get("misc_id", 0)), "can_use": true}
 	var ctx = {"hellfire": bridge.is_hellfire()}
 	var before = state(bridge)
-	var pred_before = ItemLogic.predict_use_item(item, before, RNG.new(bridge.get_rng_seed()), ctx)
-	if int(pred_before["effects"]["hp"]) == 0 and int(pred_before["effects"]["mana"]) == 0:
-		return false  # nothing to verify (hero already full)
+	# Pick the first consumable that can actually change this hero, not just the first consumable.
+	# A hero at full HP but empty mana must still be exercised: taking the first potion and giving
+	# up when it predicts zero silently dropped every mana case (and vice versa).
+	var chosen = null
+	for it in bridge.get_player_backpack():
+		if not bool(it.get("can_use", false)) or not consumables.has(int(it.get("misc_id", 0))) \
+				or int(it.get("inv_list_index", -1)) < 0:
+			continue
+		var cand = {"misc_id": int(it.get("misc_id", 0)), "can_use": true}
+		var pred = ItemLogic.predict_use_item(cand, before, RNG.new(bridge.get_rng_seed()), ctx)
+		if int(pred["effects"]["hp"]) == 0 and int(pred["effects"]["mana"]) == 0:
+			continue  # no-op for this state, try the next consumable
+		chosen = it
+		break
+	if chosen == null:
+		return false  # every consumable is a no-op for the current hero state
+	var inv_idx := int(chosen.get("inv_list_index", -1))
+	var item = {"misc_id": int(chosen.get("misc_id", 0)), "can_use": true}
 
 	var seq_before = bridge.get_last_action_seq()
 	bridge.use_inventory_slot(2, inv_idx)
@@ -436,8 +441,10 @@ func _init() -> void:
 	var budget : int = target if not force_items else int(auth.checks["inventory_item_use"]) + 20
 	if need_items:
 		# Backpack first: the belt loop calls replenish_belt(), which moves backpack consumables into
-		# the belt, so running it first would empty the very path this loop is meant to cover.
-		for i in range(3):
+		# the belt, so running it first would empty the very path this loop is meant to cover. Eight
+		# attempts, not three: the soak fixture carries a full backpack of potions and each use is a
+		# distinct (state, seed) case, so the old cap of three threw away most of the reachable space.
+		for i in range(8):
 			if int(auth.checks["inventory_item_use"]) >= budget:
 				break
 			if not use_inventory_and_verify(bridge, auth):

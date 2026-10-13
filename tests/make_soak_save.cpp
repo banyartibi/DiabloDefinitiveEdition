@@ -186,9 +186,10 @@ int main(int argc, char **argv) {
 		potions++;
 	}
 
-	// Re-seed the level the hero is standing on. This is the only way the soak gets a different
-	// RNG stream from the same fixture: the draws (and therefore the effects and the distinct-case
-	// signatures) follow glSeedTbl[currlevel], not the HP/mana values.
+	// Re-seed the level the hero is standing on. DANGEROUS and unused by the soak: glSeedTbl is not
+	// only the RNG stream, it also regenerates the saved level's objects, so a foreign seed makes
+	// the engine fail with "Unable to find object_graphic_id N ... level generation error". Kept
+	// only as a diagnostic (pass a seed to see the effect); the driver never passes one.
 	uint32_t oldSeed = 0;
 	byte *seedTbl = nullptr;
 	for (size_t p = 0; p + 8 * 17 <= gameLen; p++) {
