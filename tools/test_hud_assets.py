@@ -4,12 +4,14 @@ import sys
 from PIL import Image
 
 REQUIRED_ASSETS = [
-    ("assets/hud/frame_orb_stone.png", (256, 256)),
-    ("assets/hud/pillar_divider.png", (64, 192)),
-    ("assets/hud/slot_frame_gothic.png", (128, 128)),
-    ("assets/hud/hud_gothic_d3_frame.png", (1400, 220)),
-    ("assets/hud/xp_bar_frame.png", (800, 24)),
-    ("assets/hud/xp_bar_fill.png", (800, 16)),
+    ("assets/hud/hud_gothic_unified.png", (1400, 240)),
+    ("assets/hud/frame_orb_left_stone.png", (200, 200)),
+    ("assets/hud/frame_orb_right_stone.png", (200, 200)),
+    ("assets/hud/pillar_divider.png", (60, 200)),
+    ("assets/hud/slot_frame_gothic.png", (64, 64)),
+    ("assets/hud/badge_tab_gothic.png", (24, 14)),
+    ("assets/hud/xp_bar_frame.png", (800, 14)),
+    ("assets/hud/xp_bar_fill.png", (800, 10)),
 ]
 
 def main():

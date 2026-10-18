@@ -544,14 +544,9 @@ func _load_hd_texture(path: String) -> Texture2D:
 	return null
 
 func _apply_hd_hud_assets() -> void:
-	var stone_ring = _load_hd_texture("res://assets/hud/frame_orb_stone.png")
-	var life_frame = find_child("LifeFrame", true, false) as TextureRect
-	if life_frame and stone_ring:
-		life_frame.texture = stone_ring
-
-	var mana_frame = find_child("ManaFrame", true, false) as TextureRect
-	if mana_frame and stone_ring:
-		mana_frame.texture = stone_ring
+	var unified_bg = _load_hd_texture("res://assets/hud/hud_gothic_unified.png")
+	if center_gothic_frame and unified_bg:
+		center_gothic_frame.texture = unified_bg
 
 	var pillar = find_child("CenterPillar", true, false) as TextureRect
 	var pillar_tex = _load_hd_texture("res://assets/hud/pillar_divider.png")
@@ -573,10 +568,13 @@ func _apply_hd_hud_assets() -> void:
 				var f = s.get_node_or_null("Frame") as TextureRect
 				if f: f.texture = slot_tex
 
-	var d3_bg = _load_hd_texture("res://assets/hud/hud_gothic_d3_frame.png")
-	var void_bg = find_child("VoidBackground", true, false) as TextureRect
-	if void_bg and d3_bg:
-		void_bg.texture = d3_bg
+	var tab_tex = _load_hd_texture("res://assets/hud/badge_tab_gothic.png")
+	if tab_tex:
+		var all_slots = skill_slots + [hp_potion_slot, mana_potion_slot, rejuv_potion_slot, town_portal_slot] + belt_slots
+		for s in all_slots:
+			if s:
+				var tab = s.get_node_or_null("BadgeTab") as TextureRect
+				if tab: tab.texture = tab_tex
 
 func _input(event: InputEvent):
 	if not visible and not has_meta("test_inventory_open"):
@@ -1068,9 +1066,9 @@ func update_health_and_mana(delta: float):
 		mana_mat.set_shader_parameter("fill_amount", mana_ratio)
 
 	if life_label:
-		life_label.text = "%d / %d" % [int(round(display_hp)), max_hp]
+		life_label.text = "HP %d / %d" % [int(round(display_hp)), max_hp]
 	if mana_label:
-		mana_label.text = "%d / %d" % [int(round(display_mana)), max_mana]
+		mana_label.text = "MANA %d / %d" % [int(round(display_mana)), max_mana]
 
 	if life_tooltip:
 		life_tooltip.tooltip_text = "Life: %d / %d\nRight click or press potion 1-4 to heal." % [hp, max_hp]
