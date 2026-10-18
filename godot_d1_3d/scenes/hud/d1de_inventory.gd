@@ -288,90 +288,7 @@ func _init_equipment_slots():
 			)
 
 func _init_belt_cells():
-	if not belt_cells:
-		return
-	for child in belt_cells.get_children():
-		child.queue_free()
-	belt_slot_nodes.clear()
-
-	for col in range(10):
-		var cell = Control.new()
-		cell.custom_minimum_size = Vector2(CELL_SIZE, CELL_SIZE)
-		cell.size = Vector2(CELL_SIZE, CELL_SIZE)
-
-		if col == 0 or col == 9:
-			# Inactive / locked decorative sockets on outer edges
-			cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			var lock_tex = TextureRect.new()
-			lock_tex.set_anchors_preset(Control.PRESET_FULL_RECT)
-			lock_tex.texture = TEX_SOCKET_LOCKED
-			lock_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			lock_tex.stretch_mode = TextureRect.STRETCH_SCALE
-			lock_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			cell.add_child(lock_tex)
-		else:
-			# Active Belt slot 0..7
-			var belt_idx = col - 1
-			cell.mouse_filter = Control.MOUSE_FILTER_STOP
-			var frame_tex = TextureRect.new()
-			frame_tex.set_anchors_preset(Control.PRESET_FULL_RECT)
-			frame_tex.texture = TEX_SLOT_FRAME
-			frame_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			frame_tex.stretch_mode = TextureRect.STRETCH_SCALE
-			frame_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			cell.add_child(frame_tex)
-
-			# Slot number indicator badge (1..8)
-			var num_lbl = Label.new()
-			num_lbl.text = str(belt_idx + 1)
-			num_lbl.position = Vector2(4, 2)
-			num_lbl.add_theme_font_override("font", FONT_EXOCET)
-			num_lbl.add_theme_font_size_override("font_size", 10)
-			num_lbl.add_theme_color_override("font_color", Color(1.0, 0.88, 0.45, 1.0))
-			num_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1.0))
-			num_lbl.add_theme_constant_override("shadow_outline_size", 3)
-			num_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			cell.add_child(num_lbl)
-
-			# Item Icon TextureRect
-			var icon_rect = TextureRect.new()
-			icon_rect.name = "ItemIcon"
-			icon_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
-			icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			icon_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			icon_rect.visible = false
-			cell.add_child(icon_rect)
-
-			# Count Label
-			var count_lbl = Label.new()
-			count_lbl.name = "CountLabel"
-			count_lbl.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-			count_lbl.offset_left = -18.0
-			count_lbl.offset_top = -16.0
-			count_lbl.add_theme_font_override("font", FONT_EXOCET)
-			count_lbl.add_theme_font_size_override("font_size", 10)
-			count_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 1))
-			count_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1))
-			count_lbl.add_theme_constant_override("shadow_outline_size", 2)
-			count_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			count_lbl.visible = false
-			cell.add_child(count_lbl)
-
-			# Event handling
-			cell.gui_input.connect(func(event: InputEvent):
-				_on_belt_slot_gui_input(belt_idx, event)
-			)
-			cell.mouse_entered.connect(func():
-				_on_belt_slot_mouse_entered(belt_idx, cell.global_position)
-			)
-			cell.mouse_exited.connect(func():
-				_on_item_mouse_exited()
-			)
-
-			belt_slot_nodes.append(cell)
-
-		belt_cells.add_child(cell)
+	pass
 
 func _init_backpack_cells():
 	if not grid_cells:
@@ -428,47 +345,7 @@ func update_inventory():
 	_update_backpack()
 
 func _update_belt():
-	if not diablo_bridge or not diablo_bridge.has_method("get_belt_items"):
-		return
-	var belt = diablo_bridge.get_belt_items()
-	for i in range(min(belt_slot_nodes.size(), belt.size())):
-		var slot_node = belt_slot_nodes[i]
-		var item = belt[i]
-		var type = item.get("type", 0)
-		var count = item.get("count", 0)
-		var item_name = item.get("name", "")
-
-		var icon = slot_node.get_node_or_null("ItemIcon") as TextureRect
-		var count_lbl = slot_node.get_node_or_null("CountLabel") as Label
-
-		if type != 0 and item_name != "":
-			slot_node.set_meta("belt_item", item)
-			var slot_tex: Texture2D = null
-			if diablo_bridge.has_method("get_belt_item_texture"):
-				slot_tex = diablo_bridge.get_belt_item_texture(i)
-			if not slot_tex:
-				match type:
-					1, 2: slot_tex = TEX_HEAL
-					3, 4: slot_tex = TEX_MANA
-					5, 6, 7: slot_tex = TEX_REJUV
-					8: slot_tex = TEX_SCROLL
-					9: slot_tex = TEX_OIL
-			if icon:
-				icon.texture = slot_tex
-				icon.visible = (slot_tex != null)
-			if count_lbl:
-				if count > 1:
-					count_lbl.text = "x%d" % count
-					count_lbl.visible = true
-				else:
-					count_lbl.visible = false
-		else:
-			slot_node.remove_meta("belt_item")
-			if icon:
-				icon.texture = null
-				icon.visible = false
-			if count_lbl:
-				count_lbl.visible = false
+	pass
 
 func _update_equipment():
 	if not diablo_bridge or not diablo_bridge.has_method("get_player_equipment"):
