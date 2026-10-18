@@ -152,6 +152,82 @@ func apply_optimistic_item_delta(hp_delta: int, mana_delta: int, seq_at_push: in
 		"until": Time.get_ticks_msec() + OPTIMISTIC_TTL_MS,
 	}
 
+var logic_authority = null
+var item_logic = preload("res://scripts/logic/d1_item_logic.gd")
+var rng_class = preload("res://scripts/logic/d1_rng.gd")
+var _pending_prediction: Dictionary = {}
+
+func _player_state() -> Dictionary:
+	if diablo_bridge == null:
+		return {}
+	return {
+		"hp": diablo_bridge.get_player_hp() if diablo_bridge.has_method("get_player_hp") else 0,
+		"max_hp": diablo_bridge.get_player_max_hp() if diablo_bridge.has_method("get_player_max_hp") else 1,
+		"mana": diablo_bridge.get_player_mana() if diablo_bridge.has_method("get_player_mana") else 0,
+		"max_mana": diablo_bridge.get_player_max_mana() if diablo_bridge.has_method("get_player_max_mana") else 1,
+		"hp_raw": diablo_bridge.get_player_hp_raw() if diablo_bridge.has_method("get_player_hp_raw") else 0,
+		"max_hp_raw": diablo_bridge.get_player_max_hp_raw() if diablo_bridge.has_method("get_player_max_hp_raw") else 0,
+		"mana_raw": diablo_bridge.get_player_mana_raw() if diablo_bridge.has_method("get_player_mana_raw") else 0,
+		"max_mana_raw": diablo_bridge.get_player_max_mana_raw() if diablo_bridge.has_method("get_player_max_mana_raw") else 0,
+		"item_flags": diablo_bridge.get_player_item_flags() if diablo_bridge.has_method("get_player_item_flags") else 0,
+		"class": diablo_bridge.get_player_class() if diablo_bridge.has_method("get_player_class") else 0,
+		"spell_levels": {},
+	}
+
+func _auth() -> Node:
+	if logic_authority == null:
+		if is_inside_tree():
+			logic_authority = get_node_or_null("/root/logic_authority")
+		if logic_authority == null:
+			logic_authority = preload("res://scripts/logic/d1_logic_authority.gd").new()
+	return logic_authority
+
+func _shadow_use(item: Dictionary) -> void:
+	if diablo_bridge == null or item.is_empty():
+		return
+	if _auth().get_authority("inventory_item_use") == _auth().AUTH_CPP:
+		return
+	var ctx = {"hellfire": diablo_bridge.is_hellfire() if diablo_bridge.has_method("is_hellfire") else false}
+	if not item_logic.is_usable(item, ctx):
+		return
+	_pending_prediction = {
+		"item": item,
+		"before": _player_state(),
+		"seq_before": diablo_bridge.get_last_action_seq() if diablo_bridge.has_method("get_last_action_seq") else 0,
+		"deadline": Time.get_ticks_msec() + 2000,
+	}
+	if _auth().get_authority("inventory_item_use") == _auth().AUTH_NATIVE:
+		var seed_val = diablo_bridge.get_rng_seed() if diablo_bridge.has_method("get_rng_seed") else 12345
+		var pred_now = item_logic.predict_use_item(
+			item, _pending_prediction["before"], rng_class.new(seed_val), ctx)
+		var d_hp := int(pred_now.get("effects", {}).get("hp", 0))
+		var d_mana := int(pred_now.get("effects", {}).get("mana", 0))
+		if d_hp != 0 or d_mana != 0:
+			apply_optimistic_item_delta(d_hp, d_mana, int(_pending_prediction["seq_before"]))
+
+func _shadow_verify() -> void:
+	if _pending_prediction.is_empty() or diablo_bridge == null:
+		return
+	var seq_before := int(_pending_prediction.get("seq_before", 0))
+	var cur_seq = diablo_bridge.get_last_action_seq() if diablo_bridge.has_method("get_last_action_seq") else 0
+	if cur_seq <= seq_before:
+		if Time.get_ticks_msec() > int(_pending_prediction.get("deadline", 0)):
+			_pending_prediction = {}
+		return
+	var item: Dictionary = _pending_prediction.get("item", {})
+	var before: Dictionary = _pending_prediction.get("before", {})
+	var ctx = {"hellfire": diablo_bridge.is_hellfire() if diablo_bridge.has_method("is_hellfire") else false}
+	var act_seed = diablo_bridge.get_last_action_rng_seed() if diablo_bridge.has_method("get_last_action_rng_seed") else 12345
+	var pred = item_logic.predict_use_item(item, before, rng_class.new(act_seed), ctx)
+	var after = _player_state()
+	var native_result = {"hp": pred["effects"]["hp"], "mana": pred["effects"]["mana"]}
+	var cpp_result = {"hp": after["hp"] - before["hp"], "mana": after["mana"] - before["mana"]}
+	var ok = _auth().record("inventory_item_use", native_result, cpp_result)
+	print("[PARITY] %s  native=%s cpp=%s seed=%d%s" % [
+		"OK" if ok else "MISMATCH", native_result, cpp_result, act_seed,
+		"  [rng]" if pred["rng_dependent"] else "  [deterministic]"])
+	_pending_prediction = {}
+
 const SPELL_NAMES = {
 	0: "Attack / Skill",
 	1: "Firebolt",
@@ -265,6 +341,8 @@ func _ready():
 		_apply_font_recursive(enemy_health_bar)
 
 	setup_button_events()
+	_init_hud_belt_slots()
+	_apply_hd_hud_assets()
 
 func _apply_font_recursive(node: Node):
 	if node is Label:
@@ -287,6 +365,8 @@ func set_bridge(bridge):
 
 	if stash_frame and stash_frame.has_method("set_bridge"):
 		stash_frame.set_bridge(bridge)
+
+	update_belt_slots()
 
 
 
@@ -364,14 +444,148 @@ func setup_button_events():
 			)
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	_input(event)
+
+func _is_inventory_open() -> bool:
+	if has_meta("test_inventory_open") and bool(get_meta("test_inventory_open")):
+		return true
+	if tabbed_menu and tabbed_menu.visible and tabbed_menu.current_tab == 1:
+		return true
+	return false
+
+func _use_hud_belt_slot(idx: int) -> void:
+	if diablo_bridge == null or not diablo_bridge.has_method("use_belt_slot"):
+		return
+	var items: Array = diablo_bridge.get_belt_items() if diablo_bridge.has_method("get_belt_items") else []
+	if idx >= 0 and idx < items.size():
+		var item: Dictionary = items[idx]
+		_shadow_use(item)
+	diablo_bridge.use_belt_slot(idx)
+	update_belt_slots()
+	_shadow_verify()
+
+func _on_hud_belt_slot_gui_input(idx: int, event: InputEvent) -> void:
+	if not (event is InputEventMouseButton) or not event.pressed:
+		return
+	var mb = event as InputEventMouseButton
+	if mb.button_index == MOUSE_BUTTON_LEFT:
+		if _is_inventory_open():
+			if diablo_bridge and diablo_bridge.has_method("click_belt_slot"):
+				diablo_bridge.click_belt_slot(idx)
+				update_belt_slots()
+		else:
+			_use_hud_belt_slot(idx)
+	elif mb.button_index == MOUSE_BUTTON_RIGHT:
+		_use_hud_belt_slot(idx)
+
+func _init_hud_belt_slots() -> void:
+	for i in range(belt_slots.size()):
+		var slot_node = belt_slots[i]
+		if slot_node:
+			var idx = i
+			slot_node.gui_input.connect(func(event: InputEvent):
+				_on_hud_belt_slot_gui_input(idx, event)
+			)
+			slot_node.tooltip_text = "Belt Slot %d [F%d]\n(Empty)" % [i + 1, i + 1]
+
+func update_belt_slots() -> void:
+	if diablo_bridge == null or not diablo_bridge.has_method("get_belt_items"):
+		return
+	var items: Array = diablo_bridge.get_belt_items()
+	for i in range(min(belt_slots.size(), items.size())):
+		var slot_node = belt_slots[i]
+		if slot_node == null:
+			continue
+		var item: Dictionary = items[i]
+		var type = item.get("type", 0)
+		var count = item.get("count", 0)
+		var item_name = item.get("name", "")
+
+		var icon = slot_node.get_node_or_null("ItemIcon") as TextureRect
+		var count_lbl = slot_node.get_node_or_null("CountLabel") as Label
+
+		if type != 0 and item_name != "":
+			slot_node.set_meta("belt_item", item)
+			slot_node.tooltip_text = "%s\n[LMB] Drink / Move\n[RMB] Drink\n[F%d] Hotkey" % [item_name, i + 1]
+			var slot_tex: Texture2D = null
+			if diablo_bridge.has_method("get_belt_item_texture"):
+				slot_tex = diablo_bridge.get_belt_item_texture(i)
+			if not slot_tex:
+				match type:
+					1, 2: slot_tex = TEX_HEAL
+					3, 4: slot_tex = TEX_MANA
+					5, 6, 7: slot_tex = TEX_REJUV
+					8: slot_tex = TEX_SCROLL
+					9: slot_tex = TEX_OIL
+			if icon:
+				icon.texture = slot_tex
+				icon.visible = (slot_tex != null)
+			if count_lbl:
+				if count > 1:
+					count_lbl.text = "x%d" % count
+					count_lbl.visible = true
+				else:
+					count_lbl.visible = false
+		else:
+			slot_node.remove_meta("belt_item")
+			slot_node.tooltip_text = "Belt Slot %d [F%d]\n(Empty)" % [i + 1, i + 1]
+			if icon:
+				icon.texture = null
+				icon.visible = false
+			if count_lbl:
+				count_lbl.visible = false
+
+func _load_hd_texture(path: String) -> Texture2D:
+	if FileAccess.file_exists(path):
+		var img = Image.load_from_file(ProjectSettings.globalize_path(path))
+		if img and not img.is_empty():
+			return ImageTexture.create_from_image(img)
+	return null
+
+func _apply_hd_hud_assets() -> void:
+	var stone_ring = _load_hd_texture("res://assets/hud/frame_orb_stone.png")
+	var life_frame = find_child("LifeFrame", true, false) as TextureRect
+	if life_frame and stone_ring:
+		life_frame.texture = stone_ring
+
+	var mana_frame = find_child("ManaFrame", true, false) as TextureRect
+	if mana_frame and stone_ring:
+		mana_frame.texture = stone_ring
+
+	var pillar = find_child("CenterPillar", true, false) as TextureRect
+	var pillar_tex = _load_hd_texture("res://assets/hud/pillar_divider.png")
+	if pillar and pillar_tex:
+		pillar.texture = pillar_tex
+
+	var slot_tex = _load_hd_texture("res://assets/hud/slot_frame_gothic.png")
+	if slot_tex:
+		for s in skill_slots:
+			if s:
+				var f = s.get_node_or_null("Frame") as TextureRect
+				if f: f.texture = slot_tex
+		for s in [hp_potion_slot, mana_potion_slot, rejuv_potion_slot, town_portal_slot]:
+			if s:
+				var f = s.get_node_or_null("Frame") as TextureRect
+				if f: f.texture = slot_tex
+		for s in belt_slots:
+			if s:
+				var f = s.get_node_or_null("Frame") as TextureRect
+				if f: f.texture = slot_tex
+
+	var d3_bg = _load_hd_texture("res://assets/hud/hud_gothic_d3_frame.png")
+	var void_bg = find_child("VoidBackground", true, false) as TextureRect
+	if void_bg and d3_bg:
+		void_bg.texture = d3_bg
+
 func _input(event: InputEvent):
-	if not visible:
+	if not visible and not has_meta("test_inventory_open"):
 		return
 	var root_node = get_node_or_null("Root")
-	if root_node and not root_node.visible:
+	if root_node and not root_node.visible and not has_meta("test_inventory_open"):
 		return
 
-	var is_ingame = diablo_bridge.is_game_running() if (diablo_bridge and diablo_bridge.has_method("is_game_running")) else false
+	var is_ingame = diablo_bridge.is_game_running() if (diablo_bridge and diablo_bridge.has_method("is_game_running")) else true
 	if not is_ingame:
 		return
 
@@ -381,34 +595,35 @@ func _input(event: InputEvent):
 
 	if event is InputEventKey and event.pressed and not event.echo:
 		var kc = event.keycode
+		var vp = get_viewport()
 
 		# Smart Health Potion (Key Q)
 		if kc == KEY_Q:
 			if diablo_bridge and diablo_bridge.has_method("use_smart_potion"):
 				diablo_bridge.use_smart_potion(0)
-			get_viewport().set_input_as_handled()
+			if vp: vp.set_input_as_handled()
 			return
 		# Smart Mana Potion (Key W)
 		elif kc == KEY_W:
 			if diablo_bridge and diablo_bridge.has_method("use_smart_potion"):
 				diablo_bridge.use_smart_potion(1)
-			get_viewport().set_input_as_handled()
+			if vp: vp.set_input_as_handled()
 			return
 		# Smart Rejuvenation Potion (Key E)
 		elif kc == KEY_E:
 			if diablo_bridge and diablo_bridge.has_method("use_smart_potion"):
 				diablo_bridge.use_smart_potion(2)
-			get_viewport().set_input_as_handled()
+			if vp: vp.set_input_as_handled()
 			return
 		# Smart Town Portal (Key T)
 		elif kc == KEY_T:
 			if diablo_bridge and diablo_bridge.has_method("use_smart_town_portal"):
 				diablo_bridge.use_smart_town_portal()
-			get_viewport().set_input_as_handled()
+			if vp: vp.set_input_as_handled()
 			return
 
-		# Number Keys 1 - 9: Speedbook binding OR Quick Cast
-		elif kc >= KEY_1 and kc <= KEY_9:
+		# Number Keys 1 - 4: Speedbook binding OR Quick Cast for Skills
+		elif kc >= KEY_1 and kc <= KEY_4:
 			var slot_idx = kc - KEY_1
 			if is_speedbook_showing and hovered_speedbook_spell_id >= 0:
 				if diablo_bridge and diablo_bridge.has_method("bind_spell_hotkey"):
@@ -417,65 +632,62 @@ func _input(event: InputEvent):
 					diablo_bridge.select_spell(hovered_speedbook_spell_id, hovered_speedbook_spell_type)
 				populate_speedbook()
 				update_quick_skills()
-				get_viewport().set_input_as_handled()
+				if vp: vp.set_input_as_handled()
 				return
 			else:
 				if diablo_bridge and diablo_bridge.has_method("quick_cast_hotkey"):
 					diablo_bridge.quick_cast_hotkey(slot_idx)
-				get_viewport().set_input_as_handled()
+				if vp: vp.set_input_as_handled()
 				return
 
-		# F1 - F4 Function Keys: Speedbook binding OR Quick Cast for HUD skill slots
-		elif kc >= KEY_F1 and kc <= KEY_F12:
+		# F1 - F8 Function Keys: Belt Slots 0..7
+		elif kc >= KEY_F1 and kc <= KEY_F8:
+			var belt_idx = kc - KEY_F1
+			_use_hud_belt_slot(belt_idx)
+			if vp: vp.set_input_as_handled()
+			return
+
+		# F9 - F12 (Optional / secondary hotkeys)
+		elif kc >= KEY_F9 and kc <= KEY_F12:
 			var slot_idx = kc - KEY_F1
-			if is_speedbook_showing and hovered_speedbook_spell_id >= 0:
-				if diablo_bridge and diablo_bridge.has_method("bind_spell_hotkey"):
-					diablo_bridge.bind_spell_hotkey(hovered_speedbook_spell_id, hovered_speedbook_spell_type, slot_idx)
-				if diablo_bridge and diablo_bridge.has_method("select_spell"):
-					diablo_bridge.select_spell(hovered_speedbook_spell_id, hovered_speedbook_spell_type)
-				populate_speedbook()
-				update_quick_skills()
-				get_viewport().set_input_as_handled()
-				return
-			else:
-				if diablo_bridge and diablo_bridge.has_method("quick_cast_hotkey"):
-					diablo_bridge.quick_cast_hotkey(slot_idx)
-				get_viewport().set_input_as_handled()
-				return
+			if diablo_bridge and diablo_bridge.has_method("quick_cast_hotkey"):
+				diablo_bridge.quick_cast_hotkey(slot_idx)
+			if vp: vp.set_input_as_handled()
+			return
 
 		# Speedbook ribbon / select spell (hotkey S)
 		elif kc == KEY_S:
 			toggle_speedbook()
-			get_viewport().set_input_as_handled()
+			if vp: vp.set_input_as_handled()
 			return
 		# SpellBook grimoire window (hotkey B)
 		elif kc == KEY_B:
 			if tabbed_menu:
 				tabbed_menu.toggle_tab(2)
-			get_viewport().set_input_as_handled()
+			if vp: vp.set_input_as_handled()
 			return
 		# Character Panel (hotkey C)
 		elif kc == KEY_C:
 			if tabbed_menu:
 				tabbed_menu.toggle_tab(0)
-			get_viewport().set_input_as_handled()
+			if vp: vp.set_input_as_handled()
 			return
 		# Inventory Panel (hotkey I)
 		elif kc == KEY_I:
 			if tabbed_menu:
 				tabbed_menu.toggle_tab(1)
-			get_viewport().set_input_as_handled()
+			if vp: vp.set_input_as_handled()
 			return
 		# Quest Log / Journal (hotkey J by default)
 		elif kc == KEY_J:
 			if tabbed_menu:
 				tabbed_menu.toggle_tab(3)
-			get_viewport().set_input_as_handled()
+			if vp: vp.set_input_as_handled()
 			return
 		# Automap (hotkey Tab)
 		elif kc == KEY_TAB:
 			send_key(KEY_TAB)
-			get_viewport().set_input_as_handled()
+			if vp: vp.set_input_as_handled()
 			return
 		elif kc == KEY_ESCAPE:
 			if diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
@@ -483,24 +695,20 @@ func _input(event: InputEvent):
 				if cid > 1 and cid < 12:
 					if diablo_bridge.has_method("cancel_targeting_cursor"):
 						diablo_bridge.cancel_targeting_cursor()
-					var vp = get_viewport()
 					if vp: vp.set_input_as_handled()
 					return
 			if is_speedbook_showing:
 				close_speedbook()
-				var vp = get_viewport()
 				if vp: vp.set_input_as_handled()
 				return
 			if stash_frame and stash_frame.visible:
 				if diablo_bridge and diablo_bridge.has_method("close_stash"):
 					diablo_bridge.close_stash()
 				stash_frame.visible = false
-				var vp = get_viewport()
 				if vp: vp.set_input_as_handled()
 				return
 			if tabbed_menu and tabbed_menu.visible:
 				tabbed_menu.close_menu()
-				var vp = get_viewport()
 				if vp: vp.set_input_as_handled()
 				return
 
@@ -511,8 +719,8 @@ func _input(event: InputEvent):
 				if cid > 1 and cid < 12:
 					if diablo_bridge.has_method("cancel_targeting_cursor"):
 						diablo_bridge.cancel_targeting_cursor()
-					var vp = get_viewport()
-					if vp: vp.set_input_as_handled()
+					var vp_mouse = get_viewport()
+					if vp_mouse: vp_mouse.set_input_as_handled()
 					return
 
 		if is_speedbook_showing:
