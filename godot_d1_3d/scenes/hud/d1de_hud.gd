@@ -3,13 +3,13 @@ extends CanvasLayer
 @export var bridge_receiver: Node3D = null
 
 # Node references
-@onready var life_globe: ColorRect = $Root/HBox/LifeContainer/LifeGlobe
-@onready var life_label: Label = $Root/HBox/LifeContainer/LifeLabel
-@onready var life_tooltip: Control = $Root/HBox/LifeContainer/LifeTooltipArea
+@onready var life_globe: ColorRect = find_child("LifeGlobe", true, false)
+@onready var life_label: Label = find_child("LifeLabel", true, false)
+@onready var life_tooltip: Control = find_child("LifeTooltipArea", true, false)
 
-@onready var mana_globe: ColorRect = $Root/HBox/ManaContainer/ManaGlobe
-@onready var mana_label: Label = $Root/HBox/ManaContainer/ManaLabel
-@onready var mana_tooltip: Control = $Root/HBox/ManaContainer/ManaTooltipArea
+@onready var mana_globe: ColorRect = find_child("ManaGlobe", true, false)
+@onready var mana_label: Label = find_child("ManaLabel", true, false)
+@onready var mana_tooltip: Control = find_child("ManaTooltipArea", true, false)
 
 const TEX_HEAL = preload("res://assets/hud/potion_heal.png")
 const TEX_MANA = preload("res://assets/hud/potion_mana.png")
@@ -20,18 +20,30 @@ const TEX_PORTAL = preload("res://assets/hud/portal_icon.png")
 const FONT_EXOCET = preload("res://assets/fonts/Exocet.ttf")
 
 # Town Portal & Smart Potion Slots
-@onready var town_portal_slot: Control = $Root/HBox/TownPortalSlot
-@onready var hp_potion_slot: Control = $Root/HBox/HealthPotionSlot
-@onready var mana_potion_slot: Control = $Root/HBox/ManaPotionSlot
-@onready var rejuv_potion_slot: Control = $Root/HBox/RejuvPotionSlot
+@onready var town_portal_slot: Control = find_child("TownPortalSlot", true, false)
+@onready var hp_potion_slot: Control = find_child("HealthPotionSlot", true, false)
+@onready var mana_potion_slot: Control = find_child("ManaPotionSlot", true, false)
+@onready var rejuv_potion_slot: Control = find_child("RejuvPotionSlot", true, false)
 
-# Action Bar
-@onready var action_bar: Control = $Root/HBox/CenterPanel/VBox/ActionBar
+# Action Bar & Skill Slots
+@onready var action_bar: Control = find_child("ConsoleHBox", true, false)
 @onready var skill_slots: Array[Control] = [
-	$Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot1,
-	$Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot2,
-	$Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot3,
-	$Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot4
+	find_child("SkillSlot1", true, false),
+	find_child("SkillSlot2", true, false),
+	find_child("SkillSlot3", true, false),
+	find_child("SkillSlot4", true, false)
+]
+
+# HUD Belt Slots
+@onready var belt_slots: Array[Control] = [
+	find_child("BeltSlot0", true, false),
+	find_child("BeltSlot1", true, false),
+	find_child("BeltSlot2", true, false),
+	find_child("BeltSlot3", true, false),
+	find_child("BeltSlot4", true, false),
+	find_child("BeltSlot5", true, false),
+	find_child("BeltSlot6", true, false),
+	find_child("BeltSlot7", true, false)
 ]
 
 # Center Frame Node
@@ -48,7 +60,7 @@ const FONT_EXOCET = preload("res://assets/fonts/Exocet.ttf")
 var durability_pulse_time: float = 0.0
 
 # XP & Level
-@onready var xp_bar: ProgressBar = find_child("XPBar", true, false)
+@onready var xp_bar: ProgressBar = find_child("XpBar", true, false) if find_child("XpBar", true, false) != null else find_child("XPBar", true, false)
 @onready var level_label: Label = find_child("LevelLabel", true, false)
 @onready var gold_label: Label = find_child("GoldLabel", true, false)
 
