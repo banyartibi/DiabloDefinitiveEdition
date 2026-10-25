@@ -301,6 +301,10 @@ public:
 	void send_input(int type, int code, int state, int x, int y);
 	void send_key_event(int keycode, bool pressed);
 	void send_click_to_tile(int tile_x, int tile_y, int button_mask = 1);
+	void interact_with_item(int item_id, int tile_x = -1, int tile_y = -1);
+	void interact_with_object(int object_id, int tile_x = -1, int tile_y = -1);
+	void interact_with_monster(int monster_id);
+	void walk_to_tile(int tile_x, int tile_y);
 
 	// Direct Video Frame Access (In-memory blit directly to Godot Image)
 	PackedByteArray get_frame_bytes();

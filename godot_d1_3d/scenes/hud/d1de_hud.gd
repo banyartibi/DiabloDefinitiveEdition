@@ -632,7 +632,11 @@ func _load_hd_texture(path: String) -> Texture2D:
 	return null
 
 func _apply_hd_hud_assets() -> void:
-	var console_bg = _load_hd_texture("res://assets/hud/hud_gothic_clean_master.png")
+	var console_bg = _load_hd_texture("res://assets/hud/hud_gothic_valley_frame_2x.png")
+	if not console_bg:
+		console_bg = _load_hd_texture("res://assets/hud/hud_gothic_valley_frame.png")
+	if not console_bg:
+		console_bg = _load_hd_texture("res://assets/hud/hud_gothic_clean_master.png")
 	if not console_bg:
 		console_bg = _load_hd_texture("res://assets/hud/hud_gothic_d3_frame.png")
 	if not console_bg:
@@ -641,6 +645,14 @@ func _apply_hd_hud_assets() -> void:
 		console_bg = _load_hd_texture("res://assets/hud/center_bar.png")
 	if center_gothic_frame and console_bg:
 		center_gothic_frame.texture = console_bg
+
+	var xp_fill_tex = _load_hd_texture("res://assets/hud/hud_valley_xp_fill_hd.png")
+	if not xp_fill_tex:
+		xp_fill_tex = _load_hd_texture("res://assets/hud/hud_valley_xp_fill.png")
+	if xp_bar and xp_fill_tex:
+		var sb_fill = StyleBoxTexture.new()
+		sb_fill.texture = xp_fill_tex
+		xp_bar.add_theme_stylebox_override("fill", sb_fill)
 
 	var orb_left = _load_hd_texture("res://assets/hud/frame_orb_left_stone_clean.png")
 	if not orb_left:
@@ -662,7 +674,7 @@ func _apply_hd_hud_assets() -> void:
 		pillar.texture = pillar_tex
 
 	# If console background is the full unified gothic frame, it already has the stone orb bezels and carved center altar!
-	var is_unified_frame = (console_bg != null and console_bg.get_width() >= 1200)
+	var is_unified_frame = (console_bg != null and console_bg.get_width() >= 1000)
 	if pillar:
 		pillar.visible = not is_unified_frame
 	if lf:
@@ -1515,6 +1527,11 @@ func format_item_stats(raw_stats: String) -> String:
 				result_lines.append(p)
 
 	return "\n".join(result_lines)
+
+func set_target_monster(monster_id: int) -> void:
+	if monster_id >= 0:
+		current_target_monster_id = monster_id
+		target_linger_timer = 2.5
 
 func update_enemy_health_bar(delta: float):
 	if not enemy_health_bar:

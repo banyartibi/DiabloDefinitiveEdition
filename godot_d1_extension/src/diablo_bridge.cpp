@@ -249,6 +249,10 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("send_input", "type", "code", "state", "x", "y"), &DiabloBridge::send_input);
 	ClassDB::bind_method(D_METHOD("send_key_event", "keycode", "pressed"), &DiabloBridge::send_key_event);
 	ClassDB::bind_method(D_METHOD("send_click_to_tile", "tile_x", "tile_y", "button_mask"), &DiabloBridge::send_click_to_tile, DEFVAL(1));
+	ClassDB::bind_method(D_METHOD("interact_with_item", "item_id", "tile_x", "tile_y"), &DiabloBridge::interact_with_item, DEFVAL(-1), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("interact_with_object", "object_id", "tile_x", "tile_y"), &DiabloBridge::interact_with_object, DEFVAL(-1), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("interact_with_monster", "monster_id"), &DiabloBridge::interact_with_monster);
+	ClassDB::bind_method(D_METHOD("walk_to_tile", "tile_x", "tile_y"), &DiabloBridge::walk_to_tile);
 
 	// Video Frame Blitting
 	ClassDB::bind_method(D_METHOD("get_frame_bytes"), &DiabloBridge::get_frame_bytes);
@@ -1036,6 +1040,22 @@ void DiabloBridge::send_click_to_tile(int tile_x, int tile_y, int button_mask) {
 	int btn = (button_mask == 2) ? 3 : 1;
 	send_input(2, btn, 1, screen_pos.x, screen_pos.y);
 	send_input(2, btn, 0, screen_pos.x, screen_pos.y);
+}
+
+void DiabloBridge::interact_with_item(int item_id, int tile_x, int tile_y) {
+	devilution::PushBridgeAction(devilution::D1BridgeActionType::InteractWithItem, item_id, tile_x, tile_y);
+}
+
+void DiabloBridge::interact_with_object(int object_id, int tile_x, int tile_y) {
+	devilution::PushBridgeAction(devilution::D1BridgeActionType::InteractWithObject, object_id, tile_x, tile_y);
+}
+
+void DiabloBridge::interact_with_monster(int monster_id) {
+	devilution::PushBridgeAction(devilution::D1BridgeActionType::InteractWithMonster, monster_id);
+}
+
+void DiabloBridge::walk_to_tile(int tile_x, int tile_y) {
+	devilution::PushBridgeAction(devilution::D1BridgeActionType::WalkToTile, tile_x, tile_y);
 }
 
 PackedByteArray DiabloBridge::get_frame_bytes() {

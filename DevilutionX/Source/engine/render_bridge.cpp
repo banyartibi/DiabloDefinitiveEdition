@@ -534,6 +534,49 @@ void PollGodotBridgeInput()
 		case D1BridgeActionType::SetActiveUiPanel:   SetActiveUiPanel(job.a); break;
 		case D1BridgeActionType::CloseAllUiPanels:   CloseAllUiPanels(); break;
 		case D1BridgeActionType::CancelTargetingCursor: CancelTargetingCursor(); break;
+		case D1BridgeActionType::InteractWithItem: {
+			int itemIdx = job.a;
+			Point pos { job.b, job.c };
+			if (MyPlayer != nullptr && itemIdx >= 0 && itemIdx < MAXITEMS) {
+				if (pos.x <= 0 && pos.y <= 0) {
+					pos = Items[itemIdx].position;
+				}
+				NetSendCmdLocParam1(true, invflag ? CMD_GOTOGETITEM : CMD_GOTOAGETITEM, pos, static_cast<uint16_t>(itemIdx));
+			}
+			break;
+		}
+		case D1BridgeActionType::InteractWithObject: {
+			int objId = job.a;
+			Point pos { job.b, job.c };
+			if (MyPlayer != nullptr) {
+				if ((pos.x <= 0 && pos.y <= 0) && objId >= 0 && objId < ActiveObjectCount) {
+					int realObjIdx = ActiveObjects[objId];
+					pos = Objects[realObjIdx].position;
+				}
+				NetSendCmdLoc(MyPlayerId, true, pcurs == CURSOR_DISARM ? CMD_DISARMXY : CMD_OPOBJXY, pos);
+			}
+			break;
+		}
+		case D1BridgeActionType::InteractWithMonster: {
+			int monsterId = job.a;
+			if (MyPlayer != nullptr && monsterId >= 0 && monsterId < MaxMonsters) {
+				if (CanTalkToMonst(Monsters[monsterId])) {
+					NetSendCmdParam1(true, CMD_TALKXY, static_cast<uint16_t>(monsterId));
+				} else if (MyPlayer->UsesRangedWeapon()) {
+					NetSendCmdParam1(true, CMD_RATTACKID, static_cast<uint16_t>(monsterId));
+				} else {
+					NetSendCmdParam1(true, CMD_ATTACKID, static_cast<uint16_t>(monsterId));
+				}
+			}
+			break;
+		}
+		case D1BridgeActionType::WalkToTile: {
+			Point pos { job.a, job.b };
+			if (MyPlayer != nullptr && InDungeonBounds(pos)) {
+				NetSendCmdLoc(MyPlayerId, true, CMD_WALKXY, pos);
+			}
+			break;
+		}
 		default: break;
 	}
 	// Captured on the engine thread, right after the job: no other code consumed RNG in between.
@@ -704,6 +747,26 @@ void PushDevilutionXInput(uint32_t type, uint32_t code, uint32_t state, int32_t 
 {
 	std::lock_guard<std::mutex> lock(g_DirectInputMutex);
 	g_DirectInputQueue.push_back({ type, code, state, x, y });
+}
+
+void BridgeInteractWithItem(int itemId, int tileX, int tileY)
+{
+	PushBridgeAction(D1BridgeActionType::InteractWithItem, itemId, tileX, tileY);
+}
+
+void BridgeInteractWithObject(int objectId, int tileX, int tileY)
+{
+	PushBridgeAction(D1BridgeActionType::InteractWithObject, objectId, tileX, tileY);
+}
+
+void BridgeInteractWithMonster(int monsterId)
+{
+	PushBridgeAction(D1BridgeActionType::InteractWithMonster, monsterId);
+}
+
+void BridgeWalkToTile(int tileX, int tileY)
+{
+	PushBridgeAction(D1BridgeActionType::WalkToTile, tileX, tileY);
 }
 
 bool CopyD1FrameBytes(uint8_t *dest, size_t maxBytes, uint32_t *outFrameId, int *outW, int *outH)

@@ -11,28 +11,28 @@
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_life"]
 shader = ExtResource("2_liquid")
 shader_parameter/fill_amount = 1.0
-shader_parameter/liquid_color_primary = Color(0.88, 0.04, 0.08, 1)
-shader_parameter/liquid_color_deep = Color(0.22, 0.01, 0.02, 1)
-shader_parameter/liquid_color_surface = Color(1, 0.35, 0.35, 1)
-shader_parameter/glow_color = Color(2.2, 0.15, 0.15, 1)
+shader_parameter/liquid_color_primary = Color(0.92, 0.04, 0.08, 1)
+shader_parameter/liquid_color_deep = Color(0.24, 0.01, 0.02, 1)
+shader_parameter/liquid_color_surface = Color(1, 0.38, 0.38, 1)
+shader_parameter/glow_color = Color(2.4, 0.18, 0.18, 1)
 shader_parameter/slosh_speed = 2.8
 shader_parameter/slosh_amplitude = 0.035
 shader_parameter/bubble_intensity = 1.5
 shader_parameter/glass_rim_opacity = 0.65
-shader_parameter/specular_intensity = 1.1
+shader_parameter/specular_intensity = 1.2
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_mana"]
 shader = ExtResource("2_liquid")
 shader_parameter/fill_amount = 1.0
-shader_parameter/liquid_color_primary = Color(0.06, 0.4, 0.95, 1)
-shader_parameter/liquid_color_deep = Color(0.01, 0.06, 0.25, 1)
-shader_parameter/liquid_color_surface = Color(0.35, 0.75, 1, 1)
-shader_parameter/glow_color = Color(0.2, 0.8, 2.4, 1)
+shader_parameter/liquid_color_primary = Color(0.08, 0.42, 0.98, 1)
+shader_parameter/liquid_color_deep = Color(0.01, 0.06, 0.28, 1)
+shader_parameter/liquid_color_surface = Color(0.38, 0.78, 1, 1)
+shader_parameter/glow_color = Color(0.25, 0.85, 2.5, 1)
 shader_parameter/slosh_speed = 2.8
 shader_parameter/slosh_amplitude = 0.035
 shader_parameter/bubble_intensity = 1.5
 shader_parameter/glass_rim_opacity = 0.65
-shader_parameter/specular_intensity = 1.1
+shader_parameter/specular_intensity = 1.2
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_levelup_btn"]
 bg_color = Color(0.12, 0.1, 0.04, 0.92)
@@ -47,24 +47,24 @@ corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_bg"]
-bg_color = Color(0.05, 0.04, 0.03, 0.96)
+bg_color = Color(0.04, 0.03, 0.05, 0.98)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.28, 0.24, 0.18, 1)
+border_color = Color(0.25, 0.18, 0.32, 1)
 corner_radius_top_left = 2
 corner_radius_top_right = 2
 corner_radius_bottom_right = 2
 corner_radius_bottom_left = 2
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_fill"]
-bg_color = Color(0.92, 0.68, 0.12, 1)
+bg_color = Color(0.55, 0.2, 0.92, 1)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(1, 0.88, 0.4, 1)
+border_color = Color(0.75, 0.5, 1, 1)
 corner_radius_top_left = 2
 corner_radius_top_right = 2
 corner_radius_bottom_right = 2
@@ -121,9 +121,9 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -600.0
-offset_top = -220.0
-offset_right = 600.0
+offset_left = -512.0
+offset_top = -215.0
+offset_right = 512.0
 offset_bottom = 0.0
 grow_horizontal = 2
 grow_vertical = 0
@@ -163,32 +163,32 @@ mouse_filter = 2
 [node name="LifeGlobe" type="ColorRect" parent="Root/ConsoleHBox"]
 material = SubResource("ShaderMaterial_life")
 layout_mode = 0
-offset_left = 10.0
-offset_top = 20.0
-offset_right = 190.0
-offset_bottom = 200.0
+offset_left = 55.0
+offset_top = 75.0
+offset_right = 155.0
+offset_bottom = 175.0
 mouse_filter = 2
 
 [node name="ManaGlobe" type="ColorRect" parent="Root/ConsoleHBox"]
 material = SubResource("ShaderMaterial_mana")
 layout_mode = 0
-offset_left = 1010.0
-offset_top = 20.0
-offset_right = 1190.0
-offset_bottom = 200.0
+offset_left = 865.0
+offset_top = 75.0
+offset_right = 965.0
+offset_bottom = 175.0
 mouse_filter = 2
 
 [node name="XpBar" type="ProgressBar" parent="Root/ConsoleHBox"]
 layout_mode = 0
-offset_left = 180.0
-offset_top = 39.0
-offset_right = 1020.0
-offset_bottom = 49.0
+offset_left = 374.0
+offset_top = 159.0
+offset_right = 650.0
+offset_bottom = 175.0
 mouse_filter = 1
 theme_override_styles/background = SubResource("StyleBoxFlat_xp_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_xp_fill")
 max_value = 100.0
-value = 35.0
+value = 45.0
 show_percentage = false
 
 [node name="CenterGothicFrame" type="TextureRect" parent="Root/ConsoleHBox"]
@@ -201,7 +201,7 @@ grow_vertical = 2
 mouse_filter = 2
 texture = ExtResource("7_stone_tile")
 expand_mode = 1
-stretch_mode = 0
+stretch_mode = 5
 
 [node name="LifeContainer" type="Control" parent="Root/ConsoleHBox"]
 clip_contents = false
@@ -209,7 +209,7 @@ layout_mode = 0
 offset_left = 10.0
 offset_top = 20.0
 offset_right = 190.0
-offset_bottom = 200.0
+offset_bottom = 210.0
 mouse_filter = 2
 
 [node name="LifeLabel" type="Label" parent="Root/ConsoleHBox/LifeContainer"]
@@ -219,17 +219,17 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -90.0
+offset_left = -70.0
 offset_top = -14.0
-offset_right = 90.0
+offset_right = 70.0
 offset_bottom = 14.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_colors/font_color = Color(0.96, 0.94, 0.90, 1)
+theme_override_colors/font_color = Color(0.98, 0.95, 0.90, 0.95)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 3
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 13
 text = "HP 100 / 100"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -255,10 +255,10 @@ tooltip_text = "Life: 100 / 100"
 [node name="ManaContainer" type="Control" parent="Root/ConsoleHBox"]
 clip_contents = false
 layout_mode = 0
-offset_left = 1010.0
+offset_left = 834.0
 offset_top = 20.0
-offset_right = 1190.0
-offset_bottom = 200.0
+offset_right = 1014.0
+offset_bottom = 210.0
 mouse_filter = 2
 
 [node name="ManaLabel" type="Label" parent="Root/ConsoleHBox/ManaContainer"]
@@ -268,17 +268,17 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -90.0
+offset_left = -70.0
 offset_top = -14.0
-offset_right = 90.0
+offset_right = 70.0
 offset_bottom = 14.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_colors/font_color = Color(0.96, 0.94, 0.90, 1)
+theme_override_colors/font_color = Color(0.98, 0.95, 0.90, 0.95)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 3
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 13
 text = "MANA 100 / 100"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -304,73 +304,77 @@ tooltip_text = "Mana: 100 / 100"
 [node name="CenterPillar" type="TextureRect" parent="Root/ConsoleHBox"]
 visible = false
 layout_mode = 0
-offset_left = 574.0
-offset_top = 30.0
-offset_right = 626.0
-offset_bottom = 210.0
+offset_left = 500.0
+offset_top = 150.0
+offset_right = 524.0
+offset_bottom = 190.0
 mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
 
 [node name="LevelLabel" type="Label" parent="Root/ConsoleHBox"]
 layout_mode = 0
-offset_left = 550.0
-offset_top = 158.0
-offset_right = 650.0
-offset_bottom = 194.0
+offset_left = 462.0
+offset_top = 186.0
+offset_right = 562.0
+offset_bottom = 208.0
 theme_override_colors/font_color = Color(1, 0.88, 0.4, 0.95)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 12
 text = "Lv 1"
 horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="LeftGrid" type="Control" parent="Root/ConsoleHBox"]
 layout_mode = 0
-offset_left = 215.0
-offset_top = 64.0
-offset_right = 555.0
-offset_bottom = 196.0
+offset_left = 165.0
+offset_top = 46.0
+offset_right = 353.0
+offset_bottom = 188.0
 mouse_filter = 2
 
 [node name="SkillsRow" type="HBoxContainer" parent="Root/ConsoleHBox/LeftGrid"]
 layout_mode = 0
-offset_right = 340.0
-offset_bottom = 58.0
-theme_override_constants/separation = 18
+offset_left = 0.0
+offset_top = 2.0
+offset_right = 188.0
+offset_bottom = 66.0
+theme_override_constants/separation = 4
 alignment = 1
 
 [node name="PotionsRow" type="HBoxContainer" parent="Root/ConsoleHBox/LeftGrid"]
 layout_mode = 0
-offset_top = 66.0
-offset_right = 340.0
-offset_bottom = 124.0
-theme_override_constants/separation = 18
+offset_left = 0.0
+offset_top = 72.0
+offset_right = 188.0
+offset_bottom = 136.0
+theme_override_constants/separation = 4
 alignment = 1
 
 [node name="RightGrid" type="Control" parent="Root/ConsoleHBox"]
 layout_mode = 0
-offset_left = 645.0
-offset_top = 64.0
-offset_right = 985.0
-offset_bottom = 196.0
+offset_left = 669.0
+offset_top = 46.0
+offset_right = 857.0
+offset_bottom = 188.0
 mouse_filter = 2
 
 [node name="BeltRow1" type="HBoxContainer" parent="Root/ConsoleHBox/RightGrid"]
 layout_mode = 0
-offset_right = 340.0
-offset_bottom = 58.0
-theme_override_constants/separation = 18
+offset_left = 0.0
+offset_top = 2.0
+offset_right = 188.0
+offset_bottom = 66.0
+theme_override_constants/separation = 4
 alignment = 1
 
 [node name="BeltRow2" type="HBoxContainer" parent="Root/ConsoleHBox/RightGrid"]
 layout_mode = 0
-offset_top = 66.0
-offset_right = 340.0
-offset_bottom = 124.0
-theme_override_constants/separation = 18
+offset_left = 0.0
+offset_top = 72.0
+offset_right = 188.0
+offset_bottom = 136.0
+theme_override_constants/separation = 4
 alignment = 1
 
 [node name="DurabilityContainer" type="HBoxContainer" parent="Root"]
@@ -588,7 +592,7 @@ theme_override_constants/separation = 8
 alignment = 1
 
 [node name="SkillSlot1" type="Control" parent="Root/ConsoleHBox/LeftGrid/SkillsRow"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -606,15 +610,13 @@ stretch_mode = 5
 
 [node name="Icon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot1"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
@@ -622,11 +624,13 @@ stretch_mode = 5
 [node name="ActiveBorder" type="Panel" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot1"]
 visible = false
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
+offset_left = 2.0
+offset_top = 2.0
+offset_right = -2.0
+offset_bottom = 44.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_active_skill")
 
@@ -636,31 +640,31 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -28.0
-offset_top = 4.0
-offset_right = -4.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -2.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 9
+theme_override_font_sizes/font_size = 8
 text = "RMB"
 horizontal_alignment = 2
 
 [node name="ManaBadge" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot1"]
 visible = false
 layout_mode = 1
-offset_left = 5.0
-offset_top = 4.0
-offset_right = 32.0
-offset_bottom = 18.0
+offset_left = 3.0
+offset_top = 2.0
+offset_right = 24.0
+offset_bottom = 15.0
 theme_override_colors/font_color = Color(0.4, 0.75, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 9
+theme_override_font_sizes/font_size = 8
 text = "12"
 
 [node name="BadgeTab" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot1"]
@@ -670,10 +674,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -698,7 +702,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="SkillSlot2" type="Control" parent="Root/ConsoleHBox/LeftGrid/SkillsRow"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -716,15 +720,13 @@ stretch_mode = 5
 
 [node name="Icon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot2"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
@@ -732,11 +734,13 @@ stretch_mode = 5
 [node name="ActiveBorder" type="Panel" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot2"]
 visible = false
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
+offset_left = 2.0
+offset_top = 2.0
+offset_right = -2.0
+offset_bottom = 44.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_active_skill")
 
@@ -746,31 +750,31 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -28.0
-offset_top = 4.0
-offset_right = -4.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -2.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 9
+theme_override_font_sizes/font_size = 8
 text = "RMB"
 horizontal_alignment = 2
 
 [node name="ManaBadge" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot2"]
 visible = false
 layout_mode = 1
-offset_left = 5.0
-offset_top = 4.0
-offset_right = 32.0
-offset_bottom = 18.0
+offset_left = 3.0
+offset_top = 2.0
+offset_right = 24.0
+offset_bottom = 15.0
 theme_override_colors/font_color = Color(0.4, 0.75, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 9
+theme_override_font_sizes/font_size = 8
 text = "12"
 
 [node name="BadgeTab" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot2"]
@@ -780,10 +784,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -808,7 +812,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="SkillSlot3" type="Control" parent="Root/ConsoleHBox/LeftGrid/SkillsRow"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -826,15 +830,13 @@ stretch_mode = 5
 
 [node name="Icon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot3"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
@@ -842,11 +844,13 @@ stretch_mode = 5
 [node name="ActiveBorder" type="Panel" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot3"]
 visible = false
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
+offset_left = 2.0
+offset_top = 2.0
+offset_right = -2.0
+offset_bottom = 44.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_active_skill")
 
@@ -856,31 +860,31 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -28.0
-offset_top = 4.0
-offset_right = -4.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -2.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 9
+theme_override_font_sizes/font_size = 8
 text = "RMB"
 horizontal_alignment = 2
 
 [node name="ManaBadge" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot3"]
 visible = false
 layout_mode = 1
-offset_left = 5.0
-offset_top = 4.0
-offset_right = 32.0
-offset_bottom = 18.0
+offset_left = 3.0
+offset_top = 2.0
+offset_right = 24.0
+offset_bottom = 15.0
 theme_override_colors/font_color = Color(0.4, 0.75, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 9
+theme_override_font_sizes/font_size = 8
 text = "12"
 
 [node name="BadgeTab" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot3"]
@@ -890,10 +894,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -918,7 +922,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="SkillSlot4" type="Control" parent="Root/ConsoleHBox/LeftGrid/SkillsRow"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -936,15 +940,13 @@ stretch_mode = 5
 
 [node name="Icon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot4"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
@@ -952,11 +954,13 @@ stretch_mode = 5
 [node name="ActiveBorder" type="Panel" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot4"]
 visible = false
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
+offset_left = 2.0
+offset_top = 2.0
+offset_right = -2.0
+offset_bottom = 44.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_active_skill")
 
@@ -966,31 +970,31 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -28.0
-offset_top = 4.0
-offset_right = -4.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -2.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 9
+theme_override_font_sizes/font_size = 8
 text = "RMB"
 horizontal_alignment = 2
 
 [node name="ManaBadge" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot4"]
 visible = false
 layout_mode = 1
-offset_left = 5.0
-offset_top = 4.0
-offset_right = 32.0
-offset_bottom = 18.0
+offset_left = 3.0
+offset_top = 2.0
+offset_right = 24.0
+offset_bottom = 15.0
 theme_override_colors/font_color = Color(0.4, 0.75, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 9
+theme_override_font_sizes/font_size = 8
 text = "12"
 
 [node name="BadgeTab" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot4"]
@@ -1000,10 +1004,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -1028,7 +1032,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="HealthPotionSlot" type="Control" parent="Root/ConsoleHBox/LeftGrid/PotionsRow"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -1046,16 +1050,15 @@ stretch_mode = 5
 
 [node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/HealthPotionSlot"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
+texture = ExtResource("4_slot_frame")
 expand_mode = 1
 stretch_mode = 5
 
@@ -1065,16 +1068,16 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -30.0
-offset_top = 4.0
-offset_right = -5.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -3.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 9
 text = "x1"
 horizontal_alignment = 2
 
@@ -1085,10 +1088,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -1113,7 +1116,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="ManaPotionSlot" type="Control" parent="Root/ConsoleHBox/LeftGrid/PotionsRow"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -1131,16 +1134,15 @@ stretch_mode = 5
 
 [node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/ManaPotionSlot"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
+texture = ExtResource("4_slot_frame")
 expand_mode = 1
 stretch_mode = 5
 
@@ -1150,16 +1152,16 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -30.0
-offset_top = 4.0
-offset_right = -5.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -3.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 9
 text = "x1"
 horizontal_alignment = 2
 
@@ -1170,10 +1172,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -1198,7 +1200,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="RejuvPotionSlot" type="Control" parent="Root/ConsoleHBox/LeftGrid/PotionsRow"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -1216,16 +1218,15 @@ stretch_mode = 5
 
 [node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/RejuvPotionSlot"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
+texture = ExtResource("4_slot_frame")
 expand_mode = 1
 stretch_mode = 5
 
@@ -1235,16 +1236,16 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -30.0
-offset_top = 4.0
-offset_right = -5.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -3.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 9
 text = "x1"
 horizontal_alignment = 2
 
@@ -1255,10 +1256,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -1283,7 +1284,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="TownPortalSlot" type="Control" parent="Root/ConsoleHBox/LeftGrid/PotionsRow"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -1301,15 +1302,13 @@ stretch_mode = 5
 
 [node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/TownPortalSlot"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 texture = ExtResource("6_portal_icon")
 expand_mode = 1
@@ -1321,16 +1320,16 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -30.0
-offset_top = 4.0
-offset_right = -5.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -3.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 9
 text = "x1"
 horizontal_alignment = 2
 
@@ -1341,10 +1340,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -1369,7 +1368,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="BeltSlot0" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow1"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -1387,15 +1386,13 @@ stretch_mode = 5
 
 [node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot0"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
@@ -1406,16 +1403,16 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -30.0
-offset_top = 4.0
-offset_right = -5.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -3.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 9
 text = "x1"
 horizontal_alignment = 2
 
@@ -1426,10 +1423,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -1454,7 +1451,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="BeltSlot1" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow1"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -1472,15 +1469,13 @@ stretch_mode = 5
 
 [node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot1"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
@@ -1491,16 +1486,16 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -30.0
-offset_top = 4.0
-offset_right = -5.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -3.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 9
 text = "x1"
 horizontal_alignment = 2
 
@@ -1511,10 +1506,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -1539,7 +1534,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="BeltSlot2" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow1"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -1557,15 +1552,13 @@ stretch_mode = 5
 
 [node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot2"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
@@ -1576,16 +1569,16 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -30.0
-offset_top = 4.0
-offset_right = -5.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -3.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 9
 text = "x1"
 horizontal_alignment = 2
 
@@ -1596,10 +1589,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -1624,7 +1617,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="BeltSlot3" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow1"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -1642,15 +1635,13 @@ stretch_mode = 5
 
 [node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot3"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
@@ -1661,16 +1652,16 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -30.0
-offset_top = 4.0
-offset_right = -5.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -3.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 9
 text = "x1"
 horizontal_alignment = 2
 
@@ -1681,10 +1672,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -1709,7 +1700,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="BeltSlot4" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow2"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -1727,15 +1718,13 @@ stretch_mode = 5
 
 [node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot4"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
@@ -1746,16 +1735,16 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -30.0
-offset_top = 4.0
-offset_right = -5.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -3.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 9
 text = "x1"
 horizontal_alignment = 2
 
@@ -1766,10 +1755,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -1794,7 +1783,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="BeltSlot5" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow2"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -1812,15 +1801,13 @@ stretch_mode = 5
 
 [node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot5"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
@@ -1831,16 +1818,16 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -30.0
-offset_top = 4.0
-offset_right = -5.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -3.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 9
 text = "x1"
 horizontal_alignment = 2
 
@@ -1851,10 +1838,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -1879,7 +1866,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="BeltSlot6" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow2"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -1897,15 +1884,13 @@ stretch_mode = 5
 
 [node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot6"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
@@ -1916,16 +1901,16 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -30.0
-offset_top = 4.0
-offset_right = -5.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -3.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 9
 text = "x1"
 horizontal_alignment = 2
 
@@ -1936,10 +1921,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -1964,7 +1949,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="BeltSlot7" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow2"]
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(44, 64)
 layout_mode = 2
 mouse_filter = 0
 
@@ -1982,15 +1967,13 @@ stretch_mode = 5
 
 [node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot7"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 6.0
-offset_top = 6.0
-offset_right = -6.0
-offset_bottom = -6.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 43.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
@@ -2001,16 +1984,16 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -30.0
-offset_top = 4.0
-offset_right = -5.0
-offset_bottom = 18.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -3.0
+offset_bottom = 15.0
 grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
 theme_override_fonts/font = ExtResource("3_exocet")
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 9
 text = "x1"
 horizontal_alignment = 2
 
@@ -2021,10 +2004,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -17.0
-offset_top = -14.0
-offset_right = 17.0
-offset_bottom = 2.0
+offset_left = -16.0
+offset_top = -18.0
+offset_right = 16.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2

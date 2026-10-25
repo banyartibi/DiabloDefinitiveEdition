@@ -240,10 +240,18 @@ enum class D1BridgeActionType : int {
 	UseSmartTownPortal = 30,
 	SetActiveUiPanel = 31,
 	CloseAllUiPanels = 32,
-	CancelTargetingCursor = 33
+	CancelTargetingCursor = 33,
+	InteractWithItem = 34,
+	InteractWithObject = 35,
+	InteractWithMonster = 36,
+	WalkToTile = 37
 };
 
 void PushBridgeAction(D1BridgeActionType type, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0);
+void BridgeInteractWithItem(int itemId, int tileX = -1, int tileY = -1);
+void BridgeInteractWithObject(int objectId, int tileX = -1, int tileY = -1);
+void BridgeInteractWithMonster(int monsterId);
+void BridgeWalkToTile(int tileX, int tileY);
 
 // Read-only parity helpers: LCG state captured at the moment the last queued job was executed
 // on the engine thread, and that job's type. Safe to call from Godot's main thread (atomics).

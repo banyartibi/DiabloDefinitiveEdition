@@ -120,6 +120,8 @@ var corpse_instances: Dictionary = {}     # String key -> Node3D
 # --- Waypoint / Click Feedback ---
 var click_marker: MeshInstance3D
 var click_fade: float = 0.0
+var hovered_entity: Dictionary = {}
+var last_hovered_item: Node3D = null
 
 # --- Coordinate Math & Scale Constants ---
 const TILE_SCALE: float = 0.75
@@ -1617,6 +1619,11 @@ func update_monster_entities(delta: float):
 		var m_name = m.get("name", "Monster")
 
 		var target_pos = tile_to_world_3d(mx, my)
+		node.set_meta("tile_x", int(round(mx)))
+		node.set_meta("tile_y", int(round(my)))
+		node.set_meta("name", m_name)
+		node.set_meta("hp", hp)
+		node.set_meta("max_hp", max_hp)
 		if delta <= 0.0 or node.position == Vector3.ZERO:
 			node.position = target_pos
 		else:
@@ -1730,6 +1737,7 @@ func get_or_create_monster_node(m_id: int) -> Node3D:
 
 	var node = Node3D.new()
 	node.name = "Monster_%d" % m_id
+	node.set_meta("monster_id", m_id)
 
 	# 3D Billboard Sprite (Unshaded with healthy illumination & ground contact shadow)
 	var sprite = Sprite3D.new()
@@ -1842,6 +1850,8 @@ func update_props(delta: float):
 
 		var prop = get_or_create_prop_node(o_id, o_type, tx, ty)
 		prop.visible = true
+		prop.set_meta("tile_x", tx)
+		prop.set_meta("tile_y", ty)
 
 		# Update object animations & interactive states
 		var category = str(obj.get("category", ""))
@@ -1918,6 +1928,10 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int) -> Node3D
 	node.name = "Prop_%d" % o_id
 	var wpos = tile_to_world_3d(float(tx), float(ty))
 	node.position = wpos
+	node.set_meta("prop_id", o_id)
+	node.set_meta("prop_type", o_type)
+	node.set_meta("tile_x", tx)
+	node.set_meta("tile_y", ty)
 
 	var is_door = (o_type in [1, 2, 148, 149, 180, 181, 211, 212])
 	var is_wall_torch = (o_type in [150, 151, 152, 153])
@@ -2320,6 +2334,8 @@ func update_ground_items(delta: float):
 
 		var node = get_or_create_item_node(i_id, curs_id, anim_frame, quality, iname, tx, ty)
 		node.visible = true
+		node.set_meta("tile_x", tx)
+		node.set_meta("tile_y", ty)
 
 		# Update position in world
 		var wpos = tile_to_world_3d(float(tx), float(ty))
@@ -2344,6 +2360,12 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 	node.name = "GroundItem_%d" % i_id
 	var wpos = tile_to_world_3d(float(tx), float(ty))
 	node.position = wpos + Vector3(0, 0.06, 0)
+	node.set_meta("item_id", i_id)
+	node.set_meta("curs_id", curs_id)
+	node.set_meta("quality", quality)
+	node.set_meta("item_name", iname)
+	node.set_meta("tile_x", tx)
+	node.set_meta("tile_y", ty)
 
 	# Fetch texture from HD disk cache or diablo_bridge
 	var cache_key = "%d_%d" % [curs_id, anim_frame]
@@ -2473,6 +2495,17 @@ func setup_click_marker():
 	click_marker.material_override = marker_mat
 	click_marker.visible = false
 	add_child(click_marker)
+
+func spawn_click_ring(world_pos: Vector3, color: Color) -> void:
+	if click_marker == null:
+		return
+	click_marker.position = Vector3(world_pos.x, 0.04, world_pos.z)
+	click_marker.visible = true
+	click_fade = 0.90
+	var mat = click_marker.material_override as StandardMaterial3D
+	if mat:
+		mat.albedo_color = color
+		mat.albedo_color.a = click_fade
 
 # ==============================================================================
 # Missiles & Projectiles 3D Pipeline
@@ -2901,14 +2934,17 @@ func handle_input(event: InputEvent) -> bool:
 				main_receiver.show_osd("[3D Camera] Distance: %.1fm (Size: %.1f)" % [camera_distance, camera.size if camera else 14.5], 1.0)
 			return true
 
-	if event is InputEventMouseMotion and is_orbiting:
-		var delta_pos = event.position - last_mouse_pos
-		last_mouse_pos = event.position
-		camera_yaw = fposmod(camera_yaw - delta_pos.x * 0.4, 360.0)
-		camera_pitch = clamp(camera_pitch + delta_pos.y * 0.3, 25.0, 75.0)
-		return true
+	if event is InputEventMouseMotion:
+		if is_orbiting:
+			var delta_pos = event.position - last_mouse_pos
+			last_mouse_pos = event.position
+			camera_yaw = fposmod(camera_yaw - delta_pos.x * 0.4, 360.0)
+			camera_pitch = clamp(camera_pitch + delta_pos.y * 0.3, 25.0, 75.0)
+			return true
+		else:
+			update_hover(event.position)
 
-	# 3D Click-to-Move Raycast Navigation
+	# 3D Click-to-Move / Interact Raycast Navigation
 	if event is InputEventMouseButton and (event.button_index == MOUSE_BUTTON_LEFT or event.button_index == MOUSE_BUTTON_RIGHT):
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 			if diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
@@ -2917,42 +2953,267 @@ func handle_input(event: InputEvent) -> bool:
 					if diablo_bridge.has_method("cancel_targeting_cursor"):
 						diablo_bridge.cancel_targeting_cursor()
 					return true
-		var mouse_pos = event.position
-		var ray_origin = camera.project_ray_origin(mouse_pos)
-		var ray_dir = camera.project_ray_normal(mouse_pos)
-		var ground_plane = Plane(Vector3.UP, 0.0)
-		var hit = ground_plane.intersects_ray(ray_origin, ray_dir)
-
-		if hit != null:
-			var target_tile = world_3d_to_tile(hit)
-			var target_tx = clamp(int(round(target_tile.x)), 0, 111)
-			var target_ty = clamp(int(round(target_tile.y)), 0, 111)
-
-			# Spawn glowing 3D waypoint feedback ring
-			if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-				click_marker.position = Vector3(hit.x, 0.04, hit.z)
-				click_marker.visible = true
-				click_fade = 0.85
-				var mat = click_marker.material_override as StandardMaterial3D
-				if mat:
-					mat.albedo_color.a = click_fade
-
-			# Dispatch click command to Diablo logic engine
-			if diablo_bridge and event.pressed:
-				var btn = 1 if event.button_index == MOUSE_BUTTON_LEFT else 2
+			var r_hit = find_entity_under_ray(event.position)
+			if diablo_bridge and r_hit.tile.x >= 0 and r_hit.tile.y >= 0:
 				if diablo_bridge.has_method("send_click_to_tile"):
-					diablo_bridge.send_click_to_tile(target_tx, target_ty, btn)
-				else:
-					var screen_x: int = 0
-					var screen_y: int = 0
-					if diablo_bridge.has_method("map_world_to_screen"):
-						var target_world = Vector2(float(target_tx - target_ty) * 32.0, float(target_tx + target_ty) * 16.0)
-						var screen_pos = diablo_bridge.map_world_to_screen(target_world)
-						screen_x = screen_pos.x
-						screen_y = screen_pos.y
-					var raw_btn = 1 if event.button_index == MOUSE_BUTTON_LEFT else 3
-					var state = 1 if event.pressed else 0
-					diablo_bridge.send_input(2, raw_btn, state, screen_x, screen_y)
+					diablo_bridge.send_click_to_tile(r_hit.tile.x, r_hit.tile.y, 2)
+				return true
+
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var hit = find_entity_under_ray(event.position)
+			if hit.type == "ITEM":
+				spawn_click_ring(hit.world_pos, Color(1.0, 0.85, 0.25, 0.95))
+				if diablo_bridge:
+					if diablo_bridge.has_method("interact_with_item"):
+						diablo_bridge.interact_with_item(hit.id, hit.tile.x, hit.tile.y)
+					elif diablo_bridge.has_method("send_click_to_tile"):
+						diablo_bridge.send_click_to_tile(hit.tile.x, hit.tile.y, 1)
+				return true
+			elif hit.type == "OBJECT":
+				spawn_click_ring(hit.world_pos, Color(0.20, 0.80, 1.0, 0.95))
+				if diablo_bridge:
+					if diablo_bridge.has_method("interact_with_object"):
+						diablo_bridge.interact_with_object(hit.id, hit.tile.x, hit.tile.y)
+					elif diablo_bridge.has_method("send_click_to_tile"):
+						diablo_bridge.send_click_to_tile(hit.tile.x, hit.tile.y, 1)
+				return true
+			elif hit.type == "MONSTER":
+				spawn_click_ring(hit.world_pos, Color(1.0, 0.22, 0.22, 0.95))
+				if diablo_bridge:
+					if diablo_bridge.has_method("interact_with_monster"):
+						diablo_bridge.interact_with_monster(hit.id)
+					elif diablo_bridge.has_method("send_click_to_tile"):
+						diablo_bridge.send_click_to_tile(hit.tile.x, hit.tile.y, 1)
+				return true
+			elif hit.type == "GROUND":
+				spawn_click_ring(hit.world_pos, Color(0.95, 0.80, 0.20, 0.85))
+				if diablo_bridge:
+					if diablo_bridge.has_method("walk_to_tile"):
+						diablo_bridge.walk_to_tile(hit.tile.x, hit.tile.y)
+					elif diablo_bridge.has_method("send_click_to_tile"):
+						diablo_bridge.send_click_to_tile(hit.tile.x, hit.tile.y, 1)
 				return true
 
 	return false
+
+# ==============================================================================
+# 3D Raycast Hit-Testing & Hover Selection
+# ==============================================================================
+
+func get_ray_distance_to_point(ray_origin: Vector3, ray_dir: Vector3, point: Vector3) -> float:
+	var v = point - ray_origin
+	var t = v.dot(ray_dir)
+	if t < 0.0:
+		return 999999.0
+	var c = ray_origin + ray_dir * t
+	return (point - c).length()
+
+func find_entity_under_ray(mouse_pos: Vector2) -> Dictionary:
+	var result = {
+		"type": "NONE",
+		"id": -1,
+		"node": null,
+		"world_pos": Vector3.ZERO,
+		"tile": Vector2i(-1, -1),
+		"data": {}
+	}
+	if camera == null:
+		return result
+
+	var ray_origin = camera.project_ray_origin(mouse_pos)
+	var ray_dir = camera.project_ray_normal(mouse_pos)
+
+	var best_type: String = "NONE"
+	var best_id: int = -1
+	var best_node: Node3D = null
+	var best_score: float = 999999.0
+	var best_tile: Vector2i = Vector2i(-1, -1)
+	var best_pos: Vector3 = Vector3.ZERO
+	var best_data: Dictionary = {}
+
+	# 1. Candidate Evaluation: Ground Items
+	for i_id in item_instances.keys():
+		var inode = item_instances[i_id]
+		if not is_instance_valid(inode) or not inode.visible:
+			continue
+		var ipos = inode.position
+		var ray_d = get_ray_distance_to_point(ray_origin, ray_dir, ipos + Vector3(0, 0.35, 0))
+		var screen_d = 999999.0
+		if camera.is_inside_tree() and camera.get_viewport():
+			var iscreen = camera.unproject_position(ipos + Vector3(0, 0.25, 0))
+			var lscreen = camera.unproject_position(ipos + Vector3(0, 0.55, 0))
+			screen_d = min(mouse_pos.distance_to(iscreen), mouse_pos.distance_to(lscreen))
+
+		if ray_d < 0.50 or screen_d < 38.0:
+			var score = min(ray_d, screen_d / 50.0) * 0.85
+			if score < best_score:
+				best_score = score
+				best_type = "ITEM"
+				best_id = i_id
+				best_node = inode
+				best_pos = ipos
+				var tx = inode.get_meta("tile_x", -1)
+				var ty = inode.get_meta("tile_y", -1)
+				if tx == -1 or ty == -1:
+					var t = world_3d_to_tile(ipos)
+					tx = int(round(t.x))
+					ty = int(round(t.y))
+				best_tile = Vector2i(tx, ty)
+				best_data = {
+					"name": inode.get_meta("item_name", ""),
+					"quality": inode.get_meta("quality", 0)
+				}
+
+	# 2. Candidate Evaluation: Monsters
+	for m_id in monster_instances.keys():
+		var mnode = monster_instances[m_id]
+		if not is_instance_valid(mnode) or not mnode.visible:
+			continue
+		var mctrl = mnode.get_node_or_null("Monster3DController")
+		if mctrl and mctrl.is_dead:
+			continue
+		var mpos = mnode.position
+		var ray_d = get_ray_distance_to_point(ray_origin, ray_dir, mpos + Vector3(0, 0.90, 0))
+		var screen_d = 999999.0
+		if camera.is_inside_tree() and camera.get_viewport():
+			var mscreen = camera.unproject_position(mpos + Vector3(0, 0.9, 0))
+			screen_d = mouse_pos.distance_to(mscreen)
+
+		if ray_d < 0.65 or screen_d < 44.0:
+			var score = min(ray_d, screen_d / 50.0)
+			if score < best_score:
+				best_score = score
+				best_type = "MONSTER"
+				best_id = m_id
+				best_node = mnode
+				best_pos = mpos
+				var mtx = mnode.get_meta("tile_x", -1)
+				var mty = mnode.get_meta("tile_y", -1)
+				if mtx == -1 or mty == -1:
+					var mt = world_3d_to_tile(mpos)
+					mtx = int(round(mt.x))
+					mty = int(round(mt.y))
+				best_tile = Vector2i(mtx, mty)
+				best_data = {
+					"name": mnode.get_meta("name", "Monster"),
+					"id": m_id
+				}
+
+	# 3. Candidate Evaluation: Interactive Props & Doors
+	for p_id in prop_instances.keys():
+		var pnode = prop_instances[p_id]
+		if not is_instance_valid(pnode) or not pnode.visible:
+			continue
+		var ppos = pnode.position
+		var ray_d = get_ray_distance_to_point(ray_origin, ray_dir, ppos + Vector3(0, 0.70, 0))
+		var screen_d = 999999.0
+		if camera.is_inside_tree() and camera.get_viewport():
+			var pscreen = camera.unproject_position(ppos + Vector3(0, 0.7, 0))
+			screen_d = mouse_pos.distance_to(pscreen)
+
+		if ray_d < 0.70 or screen_d < 40.0:
+			var score = min(ray_d, screen_d / 50.0)
+			if score < best_score:
+				best_score = score
+				best_type = "OBJECT"
+				best_id = p_id
+				best_node = pnode
+				best_pos = ppos
+				var ptx = pnode.get_meta("tile_x", -1)
+				var pty = pnode.get_meta("tile_y", -1)
+				if ptx == -1 or pty == -1:
+					var pt = world_3d_to_tile(ppos)
+					ptx = int(round(pt.x))
+					pty = int(round(pt.y))
+				best_tile = Vector2i(ptx, pty)
+				best_data = {
+					"type": pnode.get_meta("prop_type", 0)
+				}
+
+	# 4. Check Ground Plane & Door Tiles Intersection
+	var ground_plane = Plane(Vector3.UP, 0.0)
+	var ground_hit = ground_plane.intersects_ray(ray_origin, ray_dir)
+	var g_tile = Vector2i(-1, -1)
+	if ground_hit != null:
+		var t = world_3d_to_tile(ground_hit)
+		g_tile = Vector2i(clampi(int(round(t.x)), 0, 111), clampi(int(round(t.y)), 0, 111))
+
+	# If no entity was hit directly, check if ground hit tile is a door:
+	if best_type == "NONE" and g_tile.x >= 0 and g_tile.y >= 0:
+		for p_id in prop_instances.keys():
+			var pnode = prop_instances[p_id]
+			if is_instance_valid(pnode) and pnode.visible:
+				var ptx = pnode.get_meta("tile_x", -999)
+				var pty = pnode.get_meta("tile_y", -999)
+				if ptx == g_tile.x and pty == g_tile.y:
+					var p_type = pnode.get_meta("prop_type", 0)
+					if p_type in [1, 2, 148, 149, 180, 181, 211, 212]:
+						best_type = "OBJECT"
+						best_id = p_id
+						best_node = pnode
+						best_pos = pnode.position
+						best_tile = g_tile
+						best_data = {"type": p_type, "is_door": true}
+						break
+
+	if best_type != "NONE":
+		result.type = best_type
+		result.id = best_id
+		result.node = best_node
+		result.world_pos = best_pos
+		result.tile = best_tile
+		result.data = best_data
+		return result
+
+	# 5. Ground Walk
+	if ground_hit != null:
+		result.type = "GROUND"
+		result.world_pos = ground_hit
+		result.tile = g_tile
+		return result
+
+	return result
+
+func update_hover(mouse_pos: Vector2) -> void:
+	if not is_sandbox_active or camera == null:
+		return
+
+	var hit = find_entity_under_ray(mouse_pos)
+	hovered_entity = hit
+
+	# 1. Item Hover Highlight
+	if hit.type == "ITEM" and is_instance_valid(hit.node):
+		if last_hovered_item != hit.node:
+			if is_instance_valid(last_hovered_item):
+				_reset_item_hover(last_hovered_item)
+			last_hovered_item = hit.node
+			_set_item_hover(hit.node, true)
+	else:
+		if is_instance_valid(last_hovered_item):
+			_reset_item_hover(last_hovered_item)
+			last_hovered_item = null
+
+	# 2. Monster Hover HUD Health Bar
+	if hit.type == "MONSTER":
+		if main_receiver and main_receiver.get("d1de_hud"):
+			var hud = main_receiver.d1de_hud
+			if hud.has_method("set_target_monster"):
+				hud.set_target_monster(hit.id)
+			elif hud.get("enemy_health_bar") != null:
+				var e_bar = hud.enemy_health_bar as Control
+				if e_bar:
+					e_bar.visible = true
+					var n_lbl = hud.get("enemy_name_label") as Label
+					if n_lbl:
+						n_lbl.text = hit.data.get("name", "Monster")
+
+func _set_item_hover(node: Node3D, hover: bool) -> void:
+	if not is_instance_valid(node):
+		return
+	var lbl = node.get_node_or_null("ItemLabel") as Label3D
+	if lbl:
+		lbl.scale = Vector3(1.18, 1.18, 1.18) if hover else Vector3.ONE
+		lbl.outline_modulate = Color(1.0, 1.0, 1.0, 0.98) if hover else Color(0.0, 0.0, 0.0, 0.95)
+
+func _reset_item_hover(node: Node3D) -> void:
+	_set_item_hover(node, false)
