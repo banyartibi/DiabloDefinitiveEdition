@@ -21,6 +21,15 @@ var transition_logic = preload("res://scripts/logic/d1_level_transition_logic.gd
 const FONT_EXOCET = preload("res://assets/fonts/Exocet.ttf")
 const LAVA_3D_SHADER = preload("res://shaders/d1de_3d_lava.gdshader")
 var main_receiver = null
+
+func _get_hud():
+	if main_receiver == null:
+		return null
+	if main_receiver.get("modern_hud"):
+		return main_receiver.get("modern_hud")
+	if main_receiver.get("d1de_hud"):
+		return main_receiver.get("d1de_hud")
+	return null
 var is_sandbox_active: bool = false
 
 # --- Camera & Tracking ---
@@ -1509,22 +1518,6 @@ func setup_player_entity():
 	player_sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	player_root.add_child(player_sprite)
 
-	# Soft Ground Contact Shadow Disc
-	var shadow_disc = MeshInstance3D.new()
-	shadow_disc.name = "PlayerShadowDisc"
-	var disc_mesh = CylinderMesh.new()
-	disc_mesh.top_radius = 0.38
-	disc_mesh.bottom_radius = 0.42
-	disc_mesh.height = 0.01
-	shadow_disc.mesh = disc_mesh
-	shadow_disc.position.y = 0.01
-	var s_mat = StandardMaterial3D.new()
-	s_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	s_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.55)
-	s_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	shadow_disc.material_override = s_mat
-	player_root.add_child(shadow_disc)
-
 	# Golden Rune Ring at Feet
 	player_ring = MeshInstance3D.new()
 	var ring_torus = TorusMesh.new()
@@ -1809,22 +1802,6 @@ func get_or_create_monster_node(m_id: int) -> Node3D:
 		mc.monster_id = m_id
 		mc.visible = false
 		node.add_child(mc)
-
-	# Soft Ground Contact Shadow Disc
-	var shadow_disc = MeshInstance3D.new()
-	shadow_disc.name = "MonsterShadowDisc"
-	var disc_mesh = CylinderMesh.new()
-	disc_mesh.top_radius = 0.32
-	disc_mesh.bottom_radius = 0.36
-	disc_mesh.height = 0.01
-	shadow_disc.mesh = disc_mesh
-	shadow_disc.position.y = 0.01
-	var s_mat = StandardMaterial3D.new()
-	s_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	s_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.50)
-	s_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	shadow_disc.material_override = s_mat
-	node.add_child(shadow_disc)
 
 	# Floating 3D Name Label
 	var label = Label3D.new()
@@ -2200,21 +2177,6 @@ func _attach_universal_object_sprite(node: Node3D, o_id: int):
 	spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	spr.modulate = Color(1.45, 1.42, 1.35)
 
-	var shadow_disc = MeshInstance3D.new()
-	shadow_disc.name = "PropShadowDisc"
-	var disc_mesh = CylinderMesh.new()
-	disc_mesh.top_radius = 0.28
-	disc_mesh.bottom_radius = 0.32
-	disc_mesh.height = 0.01
-	shadow_disc.mesh = disc_mesh
-	shadow_disc.position.y = 0.01
-	var s_mat = StandardMaterial3D.new()
-	s_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	s_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.45)
-	s_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	shadow_disc.material_override = s_mat
-	node.add_child(shadow_disc)
-
 	if diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
 		var s_data = diablo_bridge.get_object_sprite_data(o_id)
 		var sw = s_data.get("width", 0)
@@ -2476,28 +2438,12 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 	# Generous +75% item scale boost ensures dropped items are clearly visible and legible in 3D
 	var item_scale_boost = 1.75
 	spr.pixel_size = (PIXEL_SIZE_HD if item_is_hd else PIXEL_SIZE_1X) * item_scale_boost
-	spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	if tex:
 		spr.texture = tex
 		spr.offset = Vector2(0, float(tex.get_height()) * 0.5)
 	spr.modulate = Color(1.35, 1.35, 1.35)
 	node.add_child(spr)
-
-	# Soft ground contact shadow disc
-	var shadow_disc = MeshInstance3D.new()
-	shadow_disc.name = "ItemShadowDisc"
-	var disc_mesh = CylinderMesh.new()
-	disc_mesh.top_radius = 0.28
-	disc_mesh.bottom_radius = 0.32
-	disc_mesh.height = 0.005
-	shadow_disc.mesh = disc_mesh
-	shadow_disc.position.y = -0.04
-	var s_mat = StandardMaterial3D.new()
-	s_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	s_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.45)
-	s_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	shadow_disc.material_override = s_mat
-	node.add_child(shadow_disc)
 
 	# Modern ARPG Ground Loot Label Container (Always Visible, y = 0.85m)
 	var label_root = Node3D.new()
@@ -2644,13 +2590,21 @@ func update_missiles(delta: float):
 		var m_dir = m.get("dir", 0)
 		var px = m.get("pos_x", 0.0)
 		var py = m.get("pos_y", 0.0)
+		var anim_frame = m.get("anim_frame", 0)
 		var light_flag = bool(m.get("light_flag", false))
+		var pre_flag = bool(m.get("pre_flag", false))
 
 		# Convert continuous tile/world pos to 3D world pos
 		var tile_x = (px / 32.0 + py / 16.0) * 0.5
 		var tile_y = (py / 16.0 - px / 32.0) * 0.5
 		var pos_3d = tile_to_world_3d(tile_x, tile_y)
-		pos_3d.y = 0.85 # Flying projectile height
+
+		# Ground/Wall effects (FireWall, LightningWall, TownPortal, Acid) vs flying projectiles
+		var is_ground_skill = pre_flag or m_type in [5, 10, 59, 65, 70] # FireWall, TownPortal, AcidPuddle, RedPortal, LightningWall
+		if is_ground_skill:
+			pos_3d.y = 0.04
+		else:
+			pos_3d.y = 0.85
 
 		var node = missile_instances.get(m_id, null)
 		if node == null:
@@ -2667,21 +2621,19 @@ func update_missiles(delta: float):
 			spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			node.add_child(spr)
 
-			if light_flag:
-				var m_light = OmniLight3D.new()
-				m_light.name = "MissileLight"
-				m_light.light_color = Color(1.0, 0.70, 0.30)
-				m_light.light_energy = 2.0
-				m_light.omni_range = 5.0
-				m_light.omni_attenuation = 1.3
-				node.add_child(m_light)
+			var m_light = OmniLight3D.new()
+			m_light.name = "MissileLight"
+			node.add_child(m_light)
 
 			missile_instances[m_id] = node
 
 		node.position = pos_3d
 
+		# Dynamic animation update on frame change
 		var spr = node.get_node_or_null("Sprite3D") as Sprite3D
-		if spr and spr.texture == null and diablo_bridge.has_method("get_missile_sprite_data"):
+		var last_frame = node.get_meta("last_anim_frame", -1)
+		if spr and (spr.texture == null or anim_frame != last_frame) and diablo_bridge.has_method("get_missile_sprite_data"):
+			node.set_meta("last_anim_frame", anim_frame)
 			var ms_data = diablo_bridge.get_missile_sprite_data(m_id)
 			var mw = ms_data.get("width", 0)
 			var mh = ms_data.get("height", 0)
@@ -2690,6 +2642,52 @@ func update_missiles(delta: float):
 				var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
 				m_img.generate_mipmaps()
 				spr.texture = ImageTexture.create_from_image(m_img)
+				if is_ground_skill:
+					spr.offset = Vector2(0, float(mh) * 0.5)
+				else:
+					spr.offset = Vector2.ZERO
+
+		# Dynamic 3D lighting & forward+ HDR illumination
+		var m_light = node.get_node_or_null("MissileLight") as OmniLight3D
+		if m_light:
+			m_light.visible = true
+			if m_type in [8, 15, 23, 42, 52, 56, 70]: # Lightning / Lightning Wall / Nova / Charged Bolt
+				m_light.light_color = Color(0.35, 0.78, 1.0)
+				m_light.light_energy = randf_range(2.6, 4.4)
+				m_light.omni_range = 6.5
+				m_light.omni_attenuation = 1.1
+				if spr: spr.modulate = Color(1.5, 1.5, 1.6)
+			elif m_type in [1, 5, 6, 9, 14, 21, 27, 44, 48, 67, 72]: # Fire / Fire Wall / Fireball
+				m_light.light_color = Color(1.0, 0.58, 0.18)
+				m_light.light_energy = randf_range(2.2, 3.6)
+				m_light.omni_range = 6.0
+				m_light.omni_attenuation = 1.2
+				if spr: spr.modulate = Color(1.5, 1.4, 1.2)
+			elif m_type == 53: # Holy Bolt
+				m_light.light_color = Color(1.0, 0.95, 0.70)
+				m_light.light_energy = randf_range(2.5, 3.2)
+				m_light.omni_range = 5.5
+				m_light.omni_attenuation = 1.2
+				if spr: spr.modulate = Color(1.6, 1.6, 1.4)
+			elif m_type in [57, 58, 59]: # Acid / Poison
+				m_light.light_color = Color(0.30, 1.0, 0.35)
+				m_light.light_energy = 1.8
+				m_light.omni_range = 4.5
+				m_light.omni_attenuation = 1.3
+				if spr: spr.modulate = Color(1.2, 1.5, 1.2)
+			elif m_type in [10, 65]: # Town Portal / Red Portal
+				m_light.light_color = Color(0.35, 0.60, 1.0) if m_type == 10 else Color(1.0, 0.25, 0.25)
+				m_light.light_energy = randf_range(2.2, 3.0)
+				m_light.omni_range = 5.0
+				m_light.omni_attenuation = 1.2
+				if spr: spr.modulate = Color(1.4, 1.4, 1.4)
+			elif light_flag:
+				m_light.light_color = Color(1.0, 0.80, 0.40)
+				m_light.light_energy = 2.0
+				m_light.omni_range = 4.5
+				m_light.omni_attenuation = 1.3
+			else:
+				m_light.visible = false
 
 	# Clean up expired missiles
 	var to_remove = []
@@ -3090,6 +3088,17 @@ func handle_input(event: InputEvent) -> bool:
 				return true
 
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			# 0. Check Held Item (Cursor holding item from inventory) - drop onto playfield
+			if diablo_bridge and diablo_bridge.has_method("has_held_item") and diablo_bridge.has_held_item():
+				if diablo_bridge.has_method("drop_held_item"):
+					diablo_bridge.drop_held_item()
+					var hud = _get_hud()
+					if hud and hud.tabbed_menu and hud.tabbed_menu.get_node_or_null("MainMargin/MainVBox/ViewsContainer/InventoryPanel"):
+						var inv = hud.tabbed_menu.get_node("MainMargin/MainVBox/ViewsContainer/InventoryPanel")
+						if inv and inv.has_method("update_inventory"):
+							inv.update_inventory()
+					return true
+
 			var hit = find_entity_under_ray(event.position)
 			if hit.type == "ITEM":
 				spawn_click_ring(hit.world_pos, Color(1.0, 0.85, 0.25, 0.95))
@@ -3328,6 +3337,7 @@ func update_hover(mouse_pos: Vector2) -> void:
 
 	var hit = find_entity_under_ray(mouse_pos)
 	hovered_entity = hit
+	var hud = _get_hud()
 
 	# 1. Item Hover Highlight & Diablo IV Tooltip Card
 	if hit.type == "ITEM" and is_instance_valid(hit.node):
@@ -3336,23 +3346,25 @@ func update_hover(mouse_pos: Vector2) -> void:
 				_reset_item_hover(last_hovered_item)
 			last_hovered_item = hit.node
 			_set_item_hover(hit.node, true)
-		if main_receiver and main_receiver.get("d1de_hud"):
-			var hud = main_receiver.d1de_hud
-			if hud.has_method("show_ground_item_tooltip"):
-				hud.show_ground_item_tooltip(hit.data, mouse_pos)
+		if hud and hud.has_method("show_ground_item_tooltip"):
+			var anchor_screen = mouse_pos
+			if camera:
+				var label_node = hit.node.get_node_or_null("LabelRoot")
+				if label_node:
+					anchor_screen = camera.unproject_position(label_node.global_position + Vector3(0, 0.35, 0))
+				else:
+					anchor_screen = camera.unproject_position(hit.node.global_position + Vector3(0, 0.85, 0))
+			hud.show_ground_item_tooltip(hit.data, anchor_screen)
 	else:
 		if is_instance_valid(last_hovered_item):
 			_reset_item_hover(last_hovered_item)
 			last_hovered_item = null
-		if main_receiver and main_receiver.get("d1de_hud"):
-			var hud = main_receiver.d1de_hud
-			if hud.has_method("hide_ground_item_tooltip"):
-				hud.hide_ground_item_tooltip()
+		if hud and hud.has_method("hide_ground_item_tooltip"):
+			hud.hide_ground_item_tooltip()
 
 	# 2. Monster Hover HUD Health Bar
 	if hit.type == "MONSTER":
-		if main_receiver and main_receiver.get("d1de_hud"):
-			var hud = main_receiver.d1de_hud
+		if hud:
 			if hud.has_method("set_target_monster"):
 				hud.set_target_monster(hit.id)
 			elif hud.get("enemy_health_bar") != null:

@@ -116,6 +116,8 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_player_equipment"), &DiabloBridge::get_player_equipment);
 	ClassDB::bind_method(D_METHOD("get_player_backpack"), &DiabloBridge::get_player_backpack);
 	ClassDB::bind_method(D_METHOD("get_player_hold_item"), &DiabloBridge::get_player_hold_item);
+	ClassDB::bind_method(D_METHOD("has_held_item"), &DiabloBridge::has_held_item);
+	ClassDB::bind_method(D_METHOD("drop_held_item"), &DiabloBridge::drop_held_item);
 	ClassDB::bind_method(D_METHOD("get_item_texture", "curs_id"), &DiabloBridge::get_item_texture);
 	ClassDB::bind_method(D_METHOD("click_inventory_slot", "slot_type", "slot_idx", "is_shift", "is_ctrl"), &DiabloBridge::click_inventory_slot, DEFVAL(false), DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("use_inventory_slot", "slot_type", "slot_idx"), &DiabloBridge::use_inventory_slot);
@@ -1397,6 +1399,14 @@ Dictionary DiabloBridge::get_player_hold_item() const {
 	if (hold.cursId <= 0)
 		return Dictionary();
 	return InvDataToDict(hold);
+}
+
+bool DiabloBridge::has_held_item() const {
+	return devilution::HasHeldItem();
+}
+
+bool DiabloBridge::drop_held_item() {
+	return devilution::DropHeldItem();
 }
 
 Ref<ImageTexture> DiabloBridge::get_item_texture(int curs_id) {

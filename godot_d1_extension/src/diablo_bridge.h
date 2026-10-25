@@ -151,6 +151,8 @@ public:
 	Array get_player_equipment() const;
 	Array get_player_backpack() const;
 	Dictionary get_player_hold_item() const;
+	bool has_held_item() const;
+	bool drop_held_item();
 	Ref<ImageTexture> get_item_texture(int curs_id);
 	void click_inventory_slot(int slot_type, int slot_idx, bool is_shift = false, bool is_ctrl = false);
 	void use_inventory_slot(int slot_type, int slot_idx);

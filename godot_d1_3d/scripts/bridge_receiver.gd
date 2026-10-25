@@ -58,9 +58,15 @@ var diablo_bridge = null
 var use_gdextension: bool = false
 var modern_hud_scene = preload("res://scenes/hud/d1de_hud.tscn")
 var modern_hud = null
+var d1de_hud = null                      # Alias for modern_hud
 var modern_hud_enabled: bool = true     # Default: Modern Diablo: Definitive Edition Native CanvasLayer HUD
 var last_is_ingame: bool = false
 var last_level_idx: int = -999
+
+# Fullscreen Loading... Screen for Level Transitions
+var loading_layer: CanvasLayer = null
+var loading_rect: ColorRect = null
+var loading_label: Label = null
 
 # Display Architecture:
 # Mode 0: Classic 2.5D Blit (Vanilla 1996 + 3D Relief Shader)
@@ -256,9 +262,12 @@ func _ready():
 
 	# Initialize Diablo IV Native CanvasLayer Modern HUD
 	modern_hud = modern_hud_scene.instantiate()
+	d1de_hud = modern_hud
 	add_child(modern_hud)
 	if diablo_bridge and modern_hud and modern_hud.has_method("set_bridge"):
 		modern_hud.set_bridge(diablo_bridge)
+
+	setup_loading_screen()
 
 	# Initialize Native Godot 4K Main Menu & D1DE Campfire Scene
 	menu_layer = CanvasLayer.new()
@@ -436,6 +445,35 @@ func setup_modal_overlay():
 		death_screen_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		death_screen_rect.material = death_screen_mat
 		death_screen_layer.add_child(death_screen_rect)
+
+func setup_loading_screen():
+	loading_layer = CanvasLayer.new()
+	loading_layer.name = "LoadingScreenLayer"
+	loading_layer.layer = 140
+	loading_layer.visible = false
+	add_child(loading_layer)
+
+	loading_rect = ColorRect.new()
+	loading_rect.name = "LoadingBackground"
+	loading_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	loading_rect.color = Color(0.0, 0.0, 0.0, 1.0)
+	loading_layer.add_child(loading_rect)
+
+	loading_label = Label.new()
+	loading_label.name = "LoadingLabel"
+	loading_label.text = "Loading..."
+	loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	loading_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	loading_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var f = load("res://assets/fonts/Exocet.ttf")
+	if f:
+		loading_label.add_theme_font_override("font", f)
+	loading_label.add_theme_font_size_override("font_size", 44)
+	loading_label.add_theme_color_override("font_color", Color(0.851, 0.149, 0.102, 1.0)) # Authentic Diablo Red #d9261a
+	loading_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.9))
+	loading_label.add_theme_constant_override("shadow_offset_x", 3)
+	loading_label.add_theme_constant_override("shadow_offset_y", 3)
+	loading_layer.add_child(loading_label)
 
 func update_torch_light():
 	if hero_light:
@@ -901,6 +939,16 @@ func _process(delta: float):
 				death_screen_layer.visible = false
 			elif death_screen_mat:
 				death_screen_mat.set_shader_parameter("intensity", death_fade)
+
+	# Authentic Red "Loading..." Level Transition Screen
+	if diablo_bridge and diablo_bridge.has_method("is_level_loading"):
+		var is_loading = bool(diablo_bridge.is_level_loading())
+		if loading_layer:
+			if loading_layer.visible != is_loading:
+				loading_layer.visible = is_loading
+			if is_loading and loading_label:
+				var pulse = 0.82 + 0.18 * sin(time_accum * 4.5)
+				loading_label.modulate = Color(1.0, 1.0, 1.0, pulse)
 
 	if use_gdextension and diablo_bridge != null:
 		var quit_req = diablo_bridge.is_quit_requested()

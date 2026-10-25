@@ -454,6 +454,8 @@ struct D1InvItemData {
 std::vector<D1InvItemData> GetPlayerEquipmentData();
 std::vector<D1InvItemData> GetPlayerBackpackData();
 D1InvItemData GetPlayerHoldItemData();
+bool HasHeldItem();
+bool DropHeldItem();
 int GetPlayerGold();
 D1ItemIconRgba GetItemSpriteRgba(int cursId);
 void ClickInventorySlot(int slotType, int slotIdx, bool isShift = false, bool isCtrl = false);

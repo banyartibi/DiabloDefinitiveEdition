@@ -1868,13 +1868,17 @@ func show_ground_item_tooltip(item_data: Dictionary, screen_pos: Vector2) -> voi
 	var tooltip_w = item_tooltip.size.x
 	var tooltip_h = item_tooltip.size.y
 
-	var target_pos = screen_pos + Vector2(22.0, 16.0)
+	var target_pos = Vector2(
+		screen_pos.x - tooltip_w * 0.5,
+		screen_pos.y - tooltip_h - 14.0
+	)
+	if target_pos.y < 12.0:
+		# If too close to top edge, display beneath the ground label box
+		target_pos.y = screen_pos.y + 24.0
 	if target_pos.x + tooltip_w > vp_size.x - 12.0:
-		target_pos.x = screen_pos.x - tooltip_w - 18.0
-	if target_pos.y + tooltip_h > vp_size.y - 12.0:
-		target_pos.y = vp_size.y - tooltip_h - 12.0
-	if target_pos.x < 12.0: target_pos.x = 12.0
-	if target_pos.y < 12.0: target_pos.y = 12.0
+		target_pos.x = vp_size.x - tooltip_w - 12.0
+	if target_pos.x < 12.0:
+		target_pos.x = 12.0
 
 	item_tooltip.position = target_pos
 
@@ -2064,6 +2068,16 @@ func update_custom_cursor():
 				hotspot = Vector2(tex.get_width() * 0.5, tex.get_height() * 0.5)
 			else:
 				hotspot = Vector2(4.0, 4.0)
+			Input.set_custom_mouse_cursor(tex, Input.CURSOR_ARROW, hotspot)
+		else:
+			Input.set_custom_mouse_cursor(null)
+	elif cid >= 12 or (diablo_bridge.has_method("has_held_item") and diablo_bridge.has_held_item()):
+		# Held item cursor - display item sprite on cursor with center hotspot
+		var tex: Texture2D = null
+		if diablo_bridge.has_method("get_cursor_texture"):
+			tex = diablo_bridge.get_cursor_texture(cid)
+		if tex:
+			var hotspot = Vector2(tex.get_width() * 0.5, tex.get_height() * 0.5)
 			Input.set_custom_mouse_cursor(tex, Input.CURSOR_ARROW, hotspot)
 		else:
 			Input.set_custom_mouse_cursor(null)

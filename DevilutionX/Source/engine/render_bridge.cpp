@@ -13,6 +13,7 @@
 #include "engine/backbuffer_state.hpp"
 #include "engine/random.hpp"
 #include "levels/trigs.h"   // trigs[] / numtrigs: level transition trigger tiles
+#include "controls/plrctrls.h"
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -1939,6 +1940,26 @@ D1InvItemData GetPlayerHoldItemData()
 		return {};
 
 	return ConvertItemToInvData(MyPlayer->HoldItem, -1, 0, 0, -1);
+}
+
+bool HasHeldItem()
+{
+	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	return gbRunGame && MyPlayer != nullptr && !MyPlayer->HoldItem.isEmpty();
+}
+
+bool DropHeldItem()
+{
+	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	if (!gbRunGame || MyPlayer == nullptr || MyPlayer->HoldItem.isEmpty())
+		return false;
+
+	bool dropped = devilution::TryDropItem();
+	if (dropped) {
+		devilution::CalcPlrInv(*MyPlayer, true);
+		g_InventoryVersion.fetch_add(1);
+	}
+	return dropped;
 }
 
 int GetPlayerGold()
