@@ -1621,6 +1621,18 @@ Array DiabloBridge::get_active_items() const {
 		d["height"] = item.height;
 		d["anim_frame"] = item.animFrame;
 		d["quality_name"] = String::utf8(item.qualityName);
+		d["item_type"] = item.itemType;
+		d["min_dam"] = item.minDam;
+		d["max_dam"] = item.maxDam;
+		d["ac"] = item.ac;
+		d["durability"] = item.durability;
+		d["max_dur"] = item.maxDur;
+		d["req_str"] = item.reqStr;
+		d["req_dex"] = item.reqDex;
+		d["req_mag"] = item.reqMag;
+		d["value"] = item.value;
+		d["type_desc"] = String::utf8(item.itemTypeDesc);
+		d["magic_desc"] = String::utf8(item.magicDesc);
 		arr.push_back(d);
 	}
 	return arr;

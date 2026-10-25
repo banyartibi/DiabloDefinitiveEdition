@@ -662,17 +662,30 @@ D1AutomapRgba GetAutomapRgba();
 
 // Native Godot 2.5D Ground Items & Loot
 struct D1ItemInfo {
-	int id;
-	int tileX;
-	int tileY;
-	int cursId;
-	int quality;
-	bool identified;
-	char name[64];
-	int width;
-	int height;
-	int animFrame;
+	int id = 0;
+	int tileX = 0;
+	int tileY = 0;
+	int cursId = 0;
+	int quality = 0;
+	bool identified = false;
+	char name[64] = { 0 };
+	int width = 0;
+	int height = 0;
+	int animFrame = 0;
 	char qualityName[16] = { 0 };
+	// Rich ARPG Stats (D4 Tooltip)
+	int itemType = 0;
+	int minDam = 0;
+	int maxDam = 0;
+	int ac = 0;
+	int durability = 0;
+	int maxDur = 0;
+	int reqStr = 0;
+	int reqDex = 0;
+	int reqMag = 0;
+	int value = 0;
+	char itemTypeDesc[32] = { 0 };
+	char magicDesc[128] = { 0 };
 };
 
 struct D1ItemSpriteRgba {

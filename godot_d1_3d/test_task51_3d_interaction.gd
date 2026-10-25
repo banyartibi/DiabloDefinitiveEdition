@@ -183,7 +183,9 @@ func walk_to_tile(tx: int, ty: int):
 	# Test 2: Item Hover Visual Scaling & Outline
 	# =========================================================================
 	print("[2/5] Testing Item Hover Visual Reaction...")
-	var lbl101 = item101.get_node_or_null("ItemLabel") as Label3D
+	var lbl101 = item101.get_node_or_null("LabelRoot/ItemLabel") as Label3D
+	if lbl101 == null:
+		lbl101 = item101.get_node_or_null("ItemLabel") as Label3D
 	assert(lbl101 != null, "ItemLabel must exist on item node")
 
 	sandbox.update_hover(item101_screen)

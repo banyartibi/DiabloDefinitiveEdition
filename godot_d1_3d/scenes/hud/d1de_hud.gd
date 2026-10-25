@@ -109,6 +109,7 @@ var quick_slot_spell_data: Array[Dictionary] = [{}, {}, {}, {}]
 var spell_icon_cache: Dictionary = {}
 var belt_icon_cache: Dictionary = {}
 var tooltip_style: StyleBoxFlat
+var is_ground_item_hovered: bool = false
 
 const QUALITY_TITLE_COLORS = {
 	0: Color(0.92, 0.90, 0.85, 1.0),   # Normal: Crisp Silver/Bone
@@ -682,32 +683,41 @@ func _apply_hd_hud_assets() -> void:
 	if mf:
 		mf.visible = not is_unified_frame
 
-	var slot_tex = _load_hd_texture("res://assets/hud/gothic_bar_frame.png")
-	if not slot_tex:
-		slot_tex = _load_hd_texture("res://assets/hud/slot_frame.png")
-	if slot_tex:
-		for s in skill_slots:
-			if s:
-				var f = s.get_node_or_null("Frame") as TextureRect
-				if f: f.texture = slot_tex
-		for s in [hp_potion_slot, mana_potion_slot, rejuv_potion_slot, town_portal_slot]:
-			if s:
-				var f = s.get_node_or_null("Frame") as TextureRect
-				if f: f.texture = slot_tex
-		for s in belt_slots:
-			if s:
-				var f = s.get_node_or_null("Frame") as TextureRect
-				if f: f.texture = slot_tex
+	var all_slots = skill_slots + [hp_potion_slot, mana_potion_slot, rejuv_potion_slot, town_portal_slot] + belt_slots
 
-	var tab_tex = _load_hd_texture("res://assets/hud/badge_tab_gothic.png")
-	if not tab_tex:
-		tab_tex = _load_hd_texture("res://assets/hud/badge_tab_gothic_hd.png")
-	if tab_tex:
-		var all_slots = skill_slots + [hp_potion_slot, mana_potion_slot, rejuv_potion_slot, town_portal_slot] + belt_slots
+	if not is_unified_frame:
+		var slot_tex = _load_hd_texture("res://assets/hud/gothic_bar_frame.png")
+		if not slot_tex:
+			slot_tex = _load_hd_texture("res://assets/hud/slot_frame.png")
+		if slot_tex:
+			for s in all_slots:
+				if s:
+					var f = s.get_node_or_null("Frame") as TextureRect
+					if f:
+						f.texture = slot_tex
+						f.visible = true
+
+		var tab_tex = _load_hd_texture("res://assets/hud/badge_tab_gothic.png")
+		if not tab_tex:
+			tab_tex = _load_hd_texture("res://assets/hud/badge_tab_gothic_hd.png")
+		if tab_tex:
+			for s in all_slots:
+				if s:
+					var tab = s.get_node_or_null("BadgeTab") as TextureRect
+					if tab:
+						tab.texture = tab_tex
+	else:
+		# In unified gothic valley frame, stone socket borders and hotkey wells are built into the master texture!
+		# Hide external stretched box frames and ugly grey button tabs so icons and text sit cleanly in their wells.
 		for s in all_slots:
 			if s:
-				var tab = s.get_node_or_null("BadgeTab") as TextureRect
-				if tab: tab.texture = tab_tex
+				var f = s.get_node_or_null("Frame") as TextureRect
+				if f:
+					f.texture = null
+					f.visible = false
+				var tab = s.get_node_or_null("BadgeTab") as Control
+				if tab is TextureRect:
+					(tab as TextureRect).texture = null
 
 func _input(event: InputEvent):
 	if not visible and not has_meta("test_inventory_open"):
@@ -1658,6 +1668,9 @@ func update_enemy_health_bar(delta: float):
 			enemy_health_bar.modulate.a = enemy_bar_alpha
 
 func update_item_tooltip():
+	if is_ground_item_hovered:
+		return
+
 	if not diablo_bridge or not diablo_bridge.has_method("has_hover_item"):
 		if item_tooltip and item_tooltip.visible:
 			item_tooltip.visible = false
@@ -1757,6 +1770,119 @@ func update_item_tooltip():
 		if target_pos.y < 10.0: target_pos.y = 10.0
 
 	item_tooltip.position = target_pos
+
+func show_ground_item_tooltip(item_data: Dictionary, screen_pos: Vector2) -> void:
+	if item_tooltip == null:
+		return
+	is_ground_item_hovered = true
+
+	var iname = item_data.get("name", "Item")
+	var type_desc = item_data.get("type_desc", "")
+	var quality = int(item_data.get("quality", 0))
+	var min_dam = int(item_data.get("min_dam", 0))
+	var max_dam = int(item_data.get("max_dam", 0))
+	var ac = int(item_data.get("ac", 0))
+	var durability = int(item_data.get("durability", 0))
+	var max_dur = int(item_data.get("max_dur", 0))
+	var req_str = int(item_data.get("req_str", 0))
+	var req_dex = int(item_data.get("req_dex", 0))
+	var req_mag = int(item_data.get("req_mag", 0))
+	var val = int(item_data.get("value", 0))
+	var magic_desc = item_data.get("magic_desc", "")
+
+	var p_str = 0
+	var p_dex = 0
+	var p_mag = 0
+	if diablo_bridge and diablo_bridge.has_method("get_character_info"):
+		var cinfo = diablo_bridge.get_character_info()
+		p_str = int(cinfo.get("str_now", 0))
+		p_dex = int(cinfo.get("dex_now", 0))
+		p_mag = int(cinfo.get("mag_now", 0))
+
+	item_title_label.text = iname
+	var title_col = QUALITY_TITLE_COLORS.get(quality, QUALITY_TITLE_COLORS[0])
+	var border_col = QUALITY_BORDER_COLORS.get(quality, QUALITY_BORDER_COLORS[0])
+	item_title_label.add_theme_color_override("font_color", title_col)
+	if tooltip_style:
+		tooltip_style.border_color = border_col
+		if item_divider:
+			item_divider.color = Color(border_col.r, border_col.g, border_col.b, 0.6)
+
+	var lines: Array[String] = []
+	if type_desc != "":
+		lines.append("★ %s ★" % type_desc.to_upper())
+
+	# Primary Combat Stat
+	if max_dam > 0:
+		if min_dam == max_dam:
+			lines.append("DAMAGE: %d" % min_dam)
+		else:
+			lines.append("DAMAGE: %d - %d" % [min_dam, max_dam])
+	elif ac > 0:
+		lines.append("ARMOR: %d" % ac)
+
+	# Durability
+	if max_dur > 0:
+		lines.append("Durability: %d / %d" % [durability, max_dur])
+
+	# Requirements
+	var reqs: Array[String] = []
+	if req_str > 0:
+		var s_txt = "Str: %d" % req_str
+		if p_str > 0 and p_str < req_str: s_txt = "(! " + s_txt + " !)"
+		reqs.append(s_txt)
+	if req_dex > 0:
+		var d_txt = "Dex: %d" % req_dex
+		if p_dex > 0 and p_dex < req_dex: d_txt = "(! " + d_txt + " !)"
+		reqs.append(d_txt)
+	if req_mag > 0:
+		var m_txt = "Mag: %d" % req_mag
+		if p_mag > 0 and p_mag < req_mag: m_txt = "(! " + m_txt + " !)"
+		reqs.append(m_txt)
+	if not reqs.is_empty():
+		lines.append("Requires: " + " • ".join(reqs))
+
+	# Magic / Unique Affixes
+	if magic_desc != "":
+		var m_parts = magic_desc.split(" | ")
+		for mp in m_parts:
+			if not mp.strip_edges().is_empty():
+				lines.append("• " + mp.strip_edges())
+
+	# Value
+	if val > 0:
+		lines.append("Sell Value: %d Gold" % val)
+
+	# Action Prompt
+	lines.append("[ Left Click to Pick Up ]")
+
+	item_stats_label.text = "\n".join(lines)
+	item_stats_label.visible = true
+	if item_divider:
+		item_divider.visible = true
+
+	item_tooltip.visible = true
+	item_tooltip.reset_size()
+
+	var vp_size = get_viewport().get_visible_rect().size if get_viewport() else Vector2(1920, 1080)
+	var tooltip_w = item_tooltip.size.x
+	var tooltip_h = item_tooltip.size.y
+
+	var target_pos = screen_pos + Vector2(22.0, 16.0)
+	if target_pos.x + tooltip_w > vp_size.x - 12.0:
+		target_pos.x = screen_pos.x - tooltip_w - 18.0
+	if target_pos.y + tooltip_h > vp_size.y - 12.0:
+		target_pos.y = vp_size.y - tooltip_h - 12.0
+	if target_pos.x < 12.0: target_pos.x = 12.0
+	if target_pos.y < 12.0: target_pos.y = 12.0
+
+	item_tooltip.position = target_pos
+
+func hide_ground_item_tooltip() -> void:
+	if is_ground_item_hovered:
+		is_ground_item_hovered = false
+		if item_tooltip and item_tooltip.visible:
+			item_tooltip.visible = false
 
 func format_number(n: int) -> String:
 	if n <= 0: return "0"

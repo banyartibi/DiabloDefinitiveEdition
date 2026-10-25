@@ -3384,6 +3384,58 @@ std::vector<D1ItemInfo> GetActiveItemsList()
 				info.width = sprite.width();
 				info.height = sprite.height();
 			}
+
+			// Rich ARPG Item Stats (D4 Tooltip)
+			info.itemType = static_cast<int>(item._itype);
+			info.minDam = item._iMinDam;
+			info.maxDam = item._iMaxDam;
+			info.ac = item._iAC;
+			info.durability = item._iDurability;
+			info.maxDur = item._iMaxDur;
+			info.reqStr = item._iMinStr;
+			info.reqDex = item._iMinDex;
+			info.reqMag = item._iMinMag;
+			info.value = (item._iIdentified ? item._iIvalue : item._ivalue);
+
+			const char *typeDesc = "Item";
+			switch (item._itype) {
+			case ItemType::Sword: typeDesc = "Sword"; break;
+			case ItemType::Axe: typeDesc = "Axe"; break;
+			case ItemType::Bow: typeDesc = "Bow"; break;
+			case ItemType::Mace: typeDesc = "Mace"; break;
+			case ItemType::Staff: typeDesc = "Staff"; break;
+			case ItemType::Shield: typeDesc = "Shield"; break;
+			case ItemType::HeavyArmor: typeDesc = "Heavy Armor"; break;
+			case ItemType::LightArmor: typeDesc = "Light Armor"; break;
+			case ItemType::Helm: typeDesc = "Helm"; break;
+			case ItemType::Ring: typeDesc = "Ring"; break;
+			case ItemType::Amulet: typeDesc = "Amulet"; break;
+			case ItemType::Gold: typeDesc = "Gold"; break;
+			case ItemType::Misc: typeDesc = "Consumable"; break;
+			default: typeDesc = "Equipment"; break;
+			}
+			std::strncpy(info.itemTypeDesc, typeDesc, sizeof(info.itemTypeDesc) - 1);
+
+			if (item._iIdentified) {
+				std::string mDesc;
+				if (item._iPrePower != IPL_INVALID) {
+					mDesc += PrintItemPower(item._iPrePower, item);
+				}
+				if (item._iSufPower != IPL_INVALID) {
+					if (!mDesc.empty()) mDesc += " | ";
+					mDesc += PrintItemPower(item._iSufPower, item);
+				}
+				if (item._iMagical == ITEM_QUALITY_UNIQUE && item._iUid >= 0) {
+					const UniqueItem &uitem = UniqueItems[item._iUid];
+					for (const auto &power : uitem.powers) {
+						if (power.type == IPL_INVALID) break;
+						if (!mDesc.empty()) mDesc += " | ";
+						mDesc += PrintItemPower(power.type, item);
+					}
+				}
+				std::strncpy(info.magicDesc, mDesc.c_str(), sizeof(info.magicDesc) - 1);
+			}
+
 			list.push_back(info);
 		}
 	}

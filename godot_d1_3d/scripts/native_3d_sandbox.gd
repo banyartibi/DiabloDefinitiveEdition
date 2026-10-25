@@ -2346,7 +2346,7 @@ func update_ground_items(delta: float):
 		var curs_id = item.get("curs_id", 0)
 		var anim_frame = item.get("anim_frame", 0)
 
-		var node = get_or_create_item_node(i_id, curs_id, anim_frame, quality, iname, tx, ty)
+		var node = get_or_create_item_node(i_id, curs_id, anim_frame, quality, iname, tx, ty, item)
 		node.visible = true
 		node.set_meta("tile_x", tx)
 		node.set_meta("tile_y", ty)
@@ -2366,7 +2366,7 @@ func update_ground_items(delta: float):
 		if not seen_ids.has(id):
 			item_instances[id].visible = false
 
-func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: int, iname: String, tx: int, ty: int) -> Node3D:
+func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: int, iname: String, tx: int, ty: int, item_data: Dictionary = {}) -> Node3D:
 	if item_instances.has(i_id):
 		return item_instances[i_id]
 
@@ -2377,9 +2377,22 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 	node.set_meta("item_id", i_id)
 	node.set_meta("curs_id", curs_id)
 	node.set_meta("quality", quality)
+	node.set_meta("quality_name", item_data.get("quality_name", "NORMAL"))
 	node.set_meta("item_name", iname)
 	node.set_meta("tile_x", tx)
 	node.set_meta("tile_y", ty)
+	node.set_meta("item_type", item_data.get("item_type", 0))
+	node.set_meta("type_desc", item_data.get("type_desc", "Item"))
+	node.set_meta("min_dam", item_data.get("min_dam", 0))
+	node.set_meta("max_dam", item_data.get("max_dam", 0))
+	node.set_meta("ac", item_data.get("ac", 0))
+	node.set_meta("durability", item_data.get("durability", 0))
+	node.set_meta("max_dur", item_data.get("max_dur", 0))
+	node.set_meta("req_str", item_data.get("req_str", 0))
+	node.set_meta("req_dex", item_data.get("req_dex", 0))
+	node.set_meta("req_mag", item_data.get("req_mag", 0))
+	node.set_meta("value", item_data.get("value", 0))
+	node.set_meta("magic_desc", item_data.get("magic_desc", ""))
 
 	# Fetch texture from HD disk cache or diablo_bridge
 	var cache_key = "%d_%d" % [curs_id, anim_frame]
@@ -2450,25 +2463,72 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 	shadow_disc.material_override = s_mat
 	node.add_child(shadow_disc)
 
-	# Authentic Loot Label (White / Blue / Gold)
+	# Modern ARPG Ground Loot Label Container (Always Visible, y = 0.85m)
+	var label_root = Node3D.new()
+	label_root.name = "LabelRoot"
+	label_root.position = Vector3(0, 0.85, 0)
+	node.add_child(label_root)
+
+	var quality_border: Color
+	var quality_text: Color
+	if quality == 1:
+		quality_border = Color(0.30, 0.65, 1.0, 0.95) # Magic Blue
+		quality_text = Color(0.45, 0.75, 1.0)
+	elif quality == 2:
+		quality_border = Color(1.0, 0.82, 0.22, 0.95) # Unique Gold
+		quality_text = Color(1.0, 0.88, 0.35)
+	else:
+		quality_border = Color(0.75, 0.75, 0.78, 0.90) # Normal Silver/Slate
+		quality_text = Color(0.92, 0.92, 0.94)
+
+	# 1. Dark Slate Ground Label Box (QuadMesh)
+	var bg_quad = MeshInstance3D.new()
+	bg_quad.name = "LabelBg"
+	var q_mesh = QuadMesh.new()
+	var char_len = max(6, iname.length())
+	var box_w = clampf(float(char_len) * 0.052 + 0.24, 0.55, 2.4)
+	var box_h = 0.22
+	q_mesh.size = Vector2(box_w, box_h)
+	bg_quad.mesh = q_mesh
+
+	var bg_mat = StandardMaterial3D.new()
+	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bg_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	bg_mat.no_depth_test = true
+	bg_mat.render_priority = 20
+	bg_mat.albedo_color = Color(0.04, 0.04, 0.06, 0.88)
+	bg_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bg_quad.material_override = bg_mat
+	label_root.add_child(bg_quad)
+
+	# 2. Quality Border Quad (slightly larger outline behind bg)
+	var border_quad = MeshInstance3D.new()
+	border_quad.name = "LabelBorder"
+	var b_mesh = QuadMesh.new()
+	b_mesh.size = Vector2(box_w + 0.03, box_h + 0.03)
+	border_quad.mesh = b_mesh
+
+	var b_mat = StandardMaterial3D.new()
+	b_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	b_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	b_mat.no_depth_test = true
+	b_mat.render_priority = 19
+	b_mat.albedo_color = quality_border
+	border_quad.material_override = b_mat
+	label_root.add_child(border_quad)
+
+	# 3. Label Text (billboarded above backing)
 	var lbl = Label3D.new()
 	lbl.name = "ItemLabel"
-	lbl.position = Vector3(0, 0.55, 0)
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	lbl.no_depth_test = true
-	lbl.font_size = 20
-	lbl.outline_render_priority = 1
+	lbl.render_priority = 21
+	lbl.font_size = 18
 	lbl.outline_size = 4
-	lbl.outline_modulate = Color(0.0, 0.0, 0.0, 0.95)
+	lbl.outline_modulate = Color(0.0, 0.0, 0.0, 0.98)
+	lbl.modulate = quality_text
 	lbl.text = iname
-
-	if quality == 1:
-		lbl.modulate = Color(0.35, 0.65, 1.0) # Magic: Blue
-	elif quality == 2:
-		lbl.modulate = Color(1.0, 0.84, 0.25) # Unique: Gold
-	else:
-		lbl.modulate = Color(0.92, 0.92, 0.92) # Normal: White
-	node.add_child(lbl)
+	label_root.add_child(lbl)
 
 	# Vertical loot beam for Magic & Unique drops
 	if quality >= 1:
@@ -2480,14 +2540,14 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 		cyl.height = 1.80
 		beam.mesh = cyl
 		beam.position.y = 0.90
-		var b_mat = StandardMaterial3D.new()
-		b_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		b_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		var beam_mat = StandardMaterial3D.new()
+		beam_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		if quality == 1:
-			b_mat.albedo_color = Color(0.30, 0.60, 1.0, 0.35)
+			beam_mat.albedo_color = Color(0.30, 0.60, 1.0, 0.35)
 		else:
-			b_mat.albedo_color = Color(1.0, 0.80, 0.20, 0.45)
-		beam.material_override = b_mat
+			beam_mat.albedo_color = Color(1.0, 0.80, 0.20, 0.45)
+		beam.material_override = beam_mat
 		node.add_child(beam)
 
 	items_root.add_child(node)
@@ -3066,7 +3126,7 @@ func find_entity_under_ray(mouse_pos: Vector2) -> Dictionary:
 		var screen_d = 999999.0
 		if camera.is_inside_tree() and camera.get_viewport():
 			var iscreen = camera.unproject_position(ipos + Vector3(0, 0.25, 0))
-			var lscreen = camera.unproject_position(ipos + Vector3(0, 0.55, 0))
+			var lscreen = camera.unproject_position(ipos + Vector3(0, 0.85, 0))
 			screen_d = min(mouse_pos.distance_to(iscreen), mouse_pos.distance_to(lscreen))
 
 		if ray_d < 0.50 or screen_d < 38.0:
@@ -3085,8 +3145,22 @@ func find_entity_under_ray(mouse_pos: Vector2) -> Dictionary:
 					ty = int(round(t.y))
 				best_tile = Vector2i(tx, ty)
 				best_data = {
+					"id": i_id,
 					"name": inode.get_meta("item_name", ""),
-					"quality": inode.get_meta("quality", 0)
+					"quality": inode.get_meta("quality", 0),
+					"quality_name": inode.get_meta("quality_name", "NORMAL"),
+					"item_type": inode.get_meta("item_type", 0),
+					"type_desc": inode.get_meta("type_desc", "Item"),
+					"min_dam": inode.get_meta("min_dam", 0),
+					"max_dam": inode.get_meta("max_dam", 0),
+					"ac": inode.get_meta("ac", 0),
+					"durability": inode.get_meta("durability", 0),
+					"max_dur": inode.get_meta("max_dur", 0),
+					"req_str": inode.get_meta("req_str", 0),
+					"req_dex": inode.get_meta("req_dex", 0),
+					"req_mag": inode.get_meta("req_mag", 0),
+					"value": inode.get_meta("value", 0),
+					"magic_desc": inode.get_meta("magic_desc", "")
 				}
 
 	# 2. Candidate Evaluation: Monsters
@@ -3206,17 +3280,25 @@ func update_hover(mouse_pos: Vector2) -> void:
 	var hit = find_entity_under_ray(mouse_pos)
 	hovered_entity = hit
 
-	# 1. Item Hover Highlight
+	# 1. Item Hover Highlight & Diablo IV Tooltip Card
 	if hit.type == "ITEM" and is_instance_valid(hit.node):
 		if last_hovered_item != hit.node:
 			if is_instance_valid(last_hovered_item):
 				_reset_item_hover(last_hovered_item)
 			last_hovered_item = hit.node
 			_set_item_hover(hit.node, true)
+		if main_receiver and main_receiver.get("d1de_hud"):
+			var hud = main_receiver.d1de_hud
+			if hud.has_method("show_ground_item_tooltip"):
+				hud.show_ground_item_tooltip(hit.data, mouse_pos)
 	else:
 		if is_instance_valid(last_hovered_item):
 			_reset_item_hover(last_hovered_item)
 			last_hovered_item = null
+		if main_receiver and main_receiver.get("d1de_hud"):
+			var hud = main_receiver.d1de_hud
+			if hud.has_method("hide_ground_item_tooltip"):
+				hud.hide_ground_item_tooltip()
 
 	# 2. Monster Hover HUD Health Bar
 	if hit.type == "MONSTER":
@@ -3235,7 +3317,23 @@ func update_hover(mouse_pos: Vector2) -> void:
 func _set_item_hover(node: Node3D, hover: bool) -> void:
 	if not is_instance_valid(node):
 		return
-	var lbl = node.get_node_or_null("ItemLabel") as Label3D
+	var l_root = node.get_node_or_null("LabelRoot") as Node3D
+	if l_root:
+		l_root.scale = Vector3(1.15, 1.15, 1.15) if hover else Vector3.ONE
+		var b_quad = l_root.get_node_or_null("LabelBorder") as MeshInstance3D
+		if b_quad and b_quad.material_override is StandardMaterial3D:
+			var mat = b_quad.material_override as StandardMaterial3D
+			if hover:
+				mat.albedo_color = Color(1.0, 0.95, 0.40, 1.0)
+			else:
+				var q = int(node.get_meta("quality", 0))
+				if q == 1: mat.albedo_color = Color(0.30, 0.65, 1.0, 0.95)
+				elif q == 2: mat.albedo_color = Color(1.0, 0.82, 0.22, 0.95)
+				else: mat.albedo_color = Color(0.75, 0.75, 0.78, 0.90)
+
+	var lbl = node.get_node_or_null("LabelRoot/ItemLabel") as Label3D
+	if lbl == null:
+		lbl = node.get_node_or_null("ItemLabel") as Label3D
 	if lbl:
 		lbl.scale = Vector3(1.18, 1.18, 1.18) if hover else Vector3.ONE
 		lbl.outline_modulate = Color(1.0, 1.0, 1.0, 0.98) if hover else Color(0.0, 0.0, 0.0, 0.95)
