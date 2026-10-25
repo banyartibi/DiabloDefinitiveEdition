@@ -326,10 +326,10 @@ vertical_alignment = 1
 
 [node name="LeftGrid" type="Control" parent="Root/ConsoleHBox"]
 layout_mode = 0
-offset_left = 170.0
-offset_top = 54.0
-offset_right = 354.0
-offset_bottom = 180.0
+offset_left = 165.0
+offset_top = 56.0
+offset_right = 349.0
+offset_bottom = 182.0
 mouse_filter = 2
 
 [node name="SkillsRow" type="HBoxContainer" parent="Root/ConsoleHBox/LeftGrid"]
@@ -352,10 +352,10 @@ alignment = 1
 
 [node name="RightGrid" type="Control" parent="Root/ConsoleHBox"]
 layout_mode = 0
-offset_left = 677.0
-offset_top = 54.0
-offset_right = 861.0
-offset_bottom = 180.0
+offset_left = 672.0
+offset_top = 56.0
+offset_right = 856.0
+offset_bottom = 182.0
 mouse_filter = 2
 
 [node name="BeltRow1" type="HBoxContainer" parent="Root/ConsoleHBox/RightGrid"]
