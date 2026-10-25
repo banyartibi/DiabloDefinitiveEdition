@@ -3168,18 +3168,24 @@ func find_entity_under_ray(mouse_pos: Vector2) -> Dictionary:
 			continue
 		var ipos = inode.position
 		var ray_d = get_ray_distance_to_point(ray_origin, ray_dir, ipos + Vector3(0, 0.35, 0))
+		var is_over_label = false
 		var screen_d = 999999.0
+
 		if camera.is_inside_tree() and camera.get_viewport():
+			if not camera.is_position_behind(ipos + Vector3(0, 0.85, 0)):
+				var lscreen = camera.unproject_position(ipos + Vector3(0, 0.85, 0))
+				var box_w_val = float(inode.get_meta("box_w", 1.0))
+				var half_w = maxf(40.0, box_w_val * 38.0)
+				var half_h = 20.0
+				var label_rect = Rect2(lscreen.x - half_w, lscreen.y - half_h, half_w * 2.0, half_h * 2.0)
+				is_over_label = label_rect.has_point(mouse_pos)
+
 			var iscreen = camera.unproject_position(ipos + Vector3(0, 0.25, 0))
-			var lscreen = camera.unproject_position(ipos + Vector3(0, 0.85, 0))
-			screen_d = min(mouse_pos.distance_to(iscreen), mouse_pos.distance_to(lscreen))
+			screen_d = mouse_pos.distance_to(iscreen)
 
-		var max_screen_d = 42.0
-		if inode.has_meta("box_w"):
-			max_screen_d = maxf(42.0, float(inode.get_meta("box_w")) * 26.0)
-
-		if ray_d < 0.50 or screen_d < max_screen_d:
-			var score = min(ray_d, screen_d / 50.0) * 0.85
+		var hit_item = is_over_label or (ray_d < 0.50) or (screen_d < 36.0)
+		if hit_item:
+			var score = 0.05 if is_over_label else (min(ray_d, screen_d / 50.0) * 0.85)
 			if score < best_score:
 				best_score = score
 				best_type = "ITEM"
@@ -3342,7 +3348,7 @@ func update_hover(mouse_pos: Vector2) -> void:
 			if camera:
 				var label_node = hit.node.get_node_or_null("LabelRoot")
 				if label_node:
-					anchor_screen = camera.unproject_position(label_node.global_position + Vector3(0, 0.35, 0))
+					anchor_screen = camera.unproject_position(label_node.global_position + Vector3(0, 0.15, 0))
 				else:
 					anchor_screen = camera.unproject_position(hit.node.global_position + Vector3(0, 0.85, 0))
 			hud.show_ground_item_tooltip(hit.data, anchor_screen)

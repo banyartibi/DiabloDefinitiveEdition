@@ -1402,7 +1402,12 @@ func _unhandled_input(event: InputEvent):
 			
 		var mpos = get_game_mouse_pos(event.position, vp_size)
 		var btn = 1
-		if event.button_index == MOUSE_BUTTON_RIGHT:
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			if diablo_bridge and diablo_bridge.has_method("has_held_item") and diablo_bridge.has_held_item():
+				if diablo_bridge.has_method("drop_held_item"):
+					diablo_bridge.drop_held_item()
+					return
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			btn = 3
 			if event.pressed and diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
 				var cid = diablo_bridge.get_cursor_id()

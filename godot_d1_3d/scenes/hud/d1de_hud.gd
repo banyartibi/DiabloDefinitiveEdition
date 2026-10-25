@@ -320,6 +320,8 @@ func _ready():
 	stash_frame.visible = false
 	add_child(stash_frame)
 
+	_setup_custom_cursor()
+
 	if diablo_bridge:
 		set_bridge(diablo_bridge)
 
@@ -464,6 +466,17 @@ func setup_button_events():
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if diablo_bridge and diablo_bridge.has_method("has_held_item") and diablo_bridge.has_held_item():
+			if diablo_bridge.has_method("drop_held_item"):
+				diablo_bridge.drop_held_item()
+				if tabbed_menu and tabbed_menu.visible:
+					var inv = tabbed_menu.get_node_or_null("MainMargin/MainVBox/ViewsContainer/InventoryPanel")
+					if inv and inv.has_method("update_inventory"):
+						inv.update_inventory()
+				var vp = get_viewport()
+				if vp: vp.set_input_as_handled()
+				return
 	_input(event)
 
 func _is_inventory_open() -> bool:
@@ -733,6 +746,9 @@ func _input(event: InputEvent):
 	var is_text_active = diablo_bridge.is_text_input_active() if (diablo_bridge and diablo_bridge.has_method("is_text_input_active")) else false
 	if is_text_active:
 		return
+
+	if event is InputEventMouseMotion and held_item_cursor and held_item_cursor.visible:
+		held_item_cursor.global_position = event.position - (held_item_cursor.size * 0.5)
 
 	if event is InputEventKey and event.pressed and not event.echo:
 		var kc = event.keycode
@@ -2038,8 +2054,22 @@ func update_durability_warnings(delta: float):
 			slot.visible = false
 
 var last_custom_cursor_id: int = -1
+var held_item_cursor: TextureRect = null
+
+func _setup_custom_cursor() -> void:
+	if held_item_cursor == null:
+		held_item_cursor = TextureRect.new()
+		held_item_cursor.name = "HeldItemCursor"
+		held_item_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		held_item_cursor.z_index = 250
+		held_item_cursor.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		held_item_cursor.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		held_item_cursor.visible = false
+		add_child(held_item_cursor)
 
 func _reset_custom_cursor():
+	if held_item_cursor:
+		held_item_cursor.visible = false
 	if last_custom_cursor_id != -1:
 		Input.set_custom_mouse_cursor(null)
 		last_custom_cursor_id = -1
@@ -2049,7 +2079,43 @@ func update_custom_cursor():
 		_reset_custom_cursor()
 		return
 
+	if held_item_cursor == null:
+		_setup_custom_cursor()
+
 	var cid: int = diablo_bridge.get_cursor_id()
+	var has_item: bool = diablo_bridge.has_held_item() if diablo_bridge.has_method("has_held_item") else false
+	var effective_held = has_item or cid >= 12
+
+	if effective_held:
+		# Held item: render software cursor TextureRect centered on mouse position
+		var tex: Texture2D = null
+		if diablo_bridge.has_method("get_cursor_texture"):
+			tex = diablo_bridge.get_cursor_texture(cid)
+		if tex:
+			held_item_cursor.texture = tex
+			held_item_cursor.size = tex.get_size()
+			var vp = get_viewport()
+			if vp:
+				var mpos = vp.get_mouse_position()
+				held_item_cursor.global_position = mpos - (tex.get_size() * 0.5)
+			held_item_cursor.visible = true
+		else:
+			held_item_cursor.visible = false
+
+		# Hardware cursor remains authentic Diablo gauntlet pointing at the item
+		if last_custom_cursor_id != 1:
+			var hand_tex: Texture2D = diablo_bridge.get_cursor_texture(1) if diablo_bridge.has_method("get_cursor_texture") else null
+			if hand_tex:
+				Input.set_custom_mouse_cursor(hand_tex, Input.CURSOR_ARROW, Vector2(1.0, 1.0))
+			else:
+				Input.set_custom_mouse_cursor(null)
+			last_custom_cursor_id = 1
+		return
+
+	# No held item: hide software cursor
+	if held_item_cursor and held_item_cursor.visible:
+		held_item_cursor.visible = false
+
 	if cid == last_custom_cursor_id:
 		return
 
@@ -2063,26 +2129,21 @@ func update_custom_cursor():
 		if not tex and cid == 2:
 			tex = TEX_SCROLL
 		if tex:
-			var hotspot = Vector2.ZERO
+			var hotspot = Vector2(4.0, 4.0)
 			if cid == 9: # Teleport / crosshair targeting cursor
 				hotspot = Vector2(tex.get_width() * 0.5, tex.get_height() * 0.5)
-			else:
-				hotspot = Vector2(4.0, 4.0)
-			Input.set_custom_mouse_cursor(tex, Input.CURSOR_ARROW, hotspot)
-		else:
-			Input.set_custom_mouse_cursor(null)
-	elif cid >= 12 or (diablo_bridge.has_method("has_held_item") and diablo_bridge.has_held_item()):
-		# Held item cursor - display item sprite on cursor with center hotspot
-		var tex: Texture2D = null
-		if diablo_bridge.has_method("get_cursor_texture"):
-			tex = diablo_bridge.get_cursor_texture(cid)
-		if tex:
-			var hotspot = Vector2(tex.get_width() * 0.5, tex.get_height() * 0.5)
 			Input.set_custom_mouse_cursor(tex, Input.CURSOR_ARROW, hotspot)
 		else:
 			Input.set_custom_mouse_cursor(null)
 	else:
-		Input.set_custom_mouse_cursor(null)
+		# Normal gameplay (cid == 1, CURSOR_HAND) - authentic Diablo golden gauntlet
+		var hand_tex: Texture2D = null
+		if diablo_bridge.has_method("get_cursor_texture"):
+			hand_tex = diablo_bridge.get_cursor_texture(1)
+		if hand_tex:
+			Input.set_custom_mouse_cursor(hand_tex, Input.CURSOR_ARROW, Vector2(1.0, 1.0))
+		else:
+			Input.set_custom_mouse_cursor(null)
 
 func _exit_tree():
 	_reset_custom_cursor()

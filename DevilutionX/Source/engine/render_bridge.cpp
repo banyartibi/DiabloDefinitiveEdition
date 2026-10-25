@@ -1650,6 +1650,11 @@ void ToggleInventory()
 	sbookflag = false;
 	CloseGoldWithdraw();
 	CloseStash();
+	if (invflag && MyPlayer != nullptr && !MyPlayer->HoldItem.isEmpty()) {
+		devilution::TryDropItem();
+		if (pcurs > CURSOR_HAND)
+			NewCursor(CURSOR_HAND);
+	}
 	invflag = !invflag;
 	if (DropGoldFlag) {
 		CloseGoldDrop();
@@ -1667,6 +1672,11 @@ void SetActiveUiPanel(int panel)
 	PlaySFX(IS_TITLEMOV);
 	if (panel != 0 && chrflag) chrflag = false;
 	if (panel != 1 && invflag) {
+		if (MyPlayer != nullptr && !MyPlayer->HoldItem.isEmpty()) {
+			devilution::TryDropItem();
+			if (pcurs > CURSOR_HAND)
+				NewCursor(CURSOR_HAND);
+		}
 		invflag = false;
 		CloseGoldWithdraw();
 		CloseStash();
@@ -1692,6 +1702,11 @@ void CloseAllUiPanels()
 	bool had_open = chrflag || invflag || sbookflag || QuestLogIsOpen;
 	if (chrflag) chrflag = false;
 	if (invflag) {
+		if (MyPlayer != nullptr && !MyPlayer->HoldItem.isEmpty()) {
+			devilution::TryDropItem();
+			if (pcurs > CURSOR_HAND)
+				NewCursor(CURSOR_HAND);
+		}
 		invflag = false;
 		CloseGoldWithdraw();
 		CloseStash();
@@ -2300,14 +2315,8 @@ void ClickInventorySlot(int slotType, int slotIdx, bool isShift, bool isCtrl)
 		if (slotIdx < 0 || slotIdx >= 40)
 			return;
 
-		int cellX = slotIdx % 10;
-		int cellY = slotIdx / 10;
-
 		if (!player.HoldItem.isEmpty()) {
-			Size itemSize = GetInventorySize(player.HoldItem);
-			int clickCol = std::clamp(cellX + (itemSize.width - 1) / 2, 0, 9);
-			int clickRow = std::clamp(cellY + (itemSize.height - 1) / 2, 0, 3);
-			int targetSlot = SLOTXY_INV_FIRST + clickRow * 10 + clickCol;
+			int targetSlot = SLOTXY_INV_FIRST + slotIdx;
 			Point clickPos { InvRect[targetSlot].Center().x + GetRightPanel().position.x, InvRect[targetSlot].Center().y + GetRightPanel().position.y };
 			DoCheckInvPaste(player, clickPos);
 		} else {

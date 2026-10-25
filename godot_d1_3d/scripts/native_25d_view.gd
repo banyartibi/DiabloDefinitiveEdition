@@ -2829,7 +2829,12 @@ func handle_input(event: InputEvent) -> bool:
 			d1_pos = Vector2i(clampi(int(norm_x * float(d1_w)), 0, d1_w - 1), clampi(int(norm_y * float(d1_h)), 0, d1_h - 1))
 
 		var btn = 1
-		if event.button_index == MOUSE_BUTTON_RIGHT:
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			if diablo_bridge and diablo_bridge.has_method("has_held_item") and diablo_bridge.has_held_item():
+				if diablo_bridge.has_method("drop_held_item"):
+					diablo_bridge.drop_held_item()
+					return true
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			btn = 3
 			if event.pressed and diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
 				var cid = diablo_bridge.get_cursor_id()

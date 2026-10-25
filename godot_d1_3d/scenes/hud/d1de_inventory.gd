@@ -138,6 +138,8 @@ func _shadow_verify() -> void:
 
 
 func _process(_delta: float) -> void:
+	if visible or is_visible_in_tree():
+		check_and_update()
 	# Deferred parity check: runs on the frame AFTER the engine thread drained the queued action.
 	if not _pending_prediction.is_empty():
 		_shadow_verify()
@@ -406,6 +408,8 @@ func _update_backpack():
 	if not diablo_bridge or not diablo_bridge.has_method("get_player_backpack"):
 		return
 	if not items_overlay:
+		items_overlay = find_child("ItemsOverlay", true, false)
+	if not items_overlay:
 		return
 
 	# Clear previous overlay item controls
@@ -421,7 +425,7 @@ func _update_backpack():
 		var curs_id = it.get("curs_id", 0)
 		var quality = it.get("quality", 0)
 		var can_use = it.get("can_use", true)
-		var cell_idx = it.get("slot_id", cell_y * 10 + cell_x)
+		var top_left_cell = cell_y * 10 + cell_x
 		var inv_list_idx = it.get("inv_list_index", -1)
 
 		var pos_x = float(cell_x) * CELL_STEP
@@ -478,7 +482,10 @@ func _update_backpack():
 
 		# Input handling
 		item_ctrl.gui_input.connect(func(event: InputEvent):
-			_on_backpack_item_gui_input(cell_idx, inv_list_idx, event)
+			var sub_x = int(clamp(event.position.x / CELL_STEP, 0, cell_w - 1))
+			var sub_y = int(clamp(event.position.y / CELL_STEP, 0, cell_h - 1))
+			var clicked_cell = (cell_y + sub_y) * 10 + (cell_x + sub_x)
+			_on_backpack_item_gui_input(clicked_cell, inv_list_idx, event)
 		)
 		item_ctrl.mouse_entered.connect(func():
 			_show_item_tooltip(it, item_ctrl.global_position)
@@ -502,15 +509,7 @@ func _set_slot_border_color(panel: Panel, col: Color):
 
 func _gui_input(event: InputEvent):
 	if event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			if diablo_bridge and diablo_bridge.has_method("has_held_item") and diablo_bridge.has_held_item():
-				if diablo_bridge.has_method("drop_held_item"):
-					diablo_bridge.drop_held_item()
-					update_inventory()
-					_on_item_mouse_exited()
-					accept_event()
-					return
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
+		if event.button_index == MOUSE_BUTTON_RIGHT:
 			if diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
 				var cid = diablo_bridge.get_cursor_id()
 				if cid > 1 and cid < 12:
