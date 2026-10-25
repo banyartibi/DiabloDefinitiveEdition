@@ -18,6 +18,7 @@ var _gate_checked: bool = false
 var _gate_canary: int = 0
 var logic_authority = null  # injected in tests; otherwise the /root/logic_authority autoload
 var transition_logic = preload("res://scripts/logic/d1_level_transition_logic.gd").new()
+const FONT_EXOCET = preload("res://assets/fonts/Exocet.ttf")
 var main_receiver = null
 var is_sandbox_active: bool = false
 
@@ -2482,12 +2483,17 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 		quality_text = Color(0.92, 0.92, 0.94)
 
 	# 1. Dark Slate Ground Label Box (QuadMesh)
+	# Permanent comfortable larger size (font_size 22, height 0.28m) without jarring scale jumps
+	var label_font_size = 22
+	var text_sz = FONT_EXOCET.get_string_size(iname, HORIZONTAL_ALIGNMENT_LEFT, -1, label_font_size)
+	var text_world_w = text_sz.x * 0.005 # Label3D default pixel_size is 0.005
+	var box_w = maxf(text_world_w + 0.28, 0.75)
+	var box_h = 0.28
+	node.set_meta("box_w", box_w)
+
 	var bg_quad = MeshInstance3D.new()
 	bg_quad.name = "LabelBg"
 	var q_mesh = QuadMesh.new()
-	var char_len = max(6, iname.length())
-	var box_w = clampf(float(char_len) * 0.052 + 0.24, 0.55, 2.4)
-	var box_h = 0.22
 	q_mesh.size = Vector2(box_w, box_h)
 	bg_quad.mesh = q_mesh
 
@@ -2505,7 +2511,7 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 	var border_quad = MeshInstance3D.new()
 	border_quad.name = "LabelBorder"
 	var b_mesh = QuadMesh.new()
-	b_mesh.size = Vector2(box_w + 0.03, box_h + 0.03)
+	b_mesh.size = Vector2(box_w + 0.04, box_h + 0.04)
 	border_quad.mesh = b_mesh
 
 	var b_mat = StandardMaterial3D.new()
@@ -2520,10 +2526,11 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 	# 3. Label Text (billboarded above backing)
 	var lbl = Label3D.new()
 	lbl.name = "ItemLabel"
+	lbl.font = FONT_EXOCET
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	lbl.no_depth_test = true
 	lbl.render_priority = 21
-	lbl.font_size = 18
+	lbl.font_size = label_font_size
 	lbl.outline_size = 4
 	lbl.outline_modulate = Color(0.0, 0.0, 0.0, 0.98)
 	lbl.modulate = quality_text
@@ -3129,7 +3136,11 @@ func find_entity_under_ray(mouse_pos: Vector2) -> Dictionary:
 			var lscreen = camera.unproject_position(ipos + Vector3(0, 0.85, 0))
 			screen_d = min(mouse_pos.distance_to(iscreen), mouse_pos.distance_to(lscreen))
 
-		if ray_d < 0.50 or screen_d < 38.0:
+		var max_screen_d = 42.0
+		if inode.has_meta("box_w"):
+			max_screen_d = maxf(42.0, float(inode.get_meta("box_w")) * 26.0)
+
+		if ray_d < 0.50 or screen_d < max_screen_d:
 			var score = min(ray_d, screen_d / 50.0) * 0.85
 			if score < best_score:
 				best_score = score
@@ -3319,7 +3330,8 @@ func _set_item_hover(node: Node3D, hover: bool) -> void:
 		return
 	var l_root = node.get_node_or_null("LabelRoot") as Node3D
 	if l_root:
-		l_root.scale = Vector3(1.15, 1.15, 1.15) if hover else Vector3.ONE
+		# Constant scale: no jarring scale jump, larger comfortable size is always preserved (per user spec)
+		l_root.scale = Vector3.ONE
 		var b_quad = l_root.get_node_or_null("LabelBorder") as MeshInstance3D
 		if b_quad and b_quad.material_override is StandardMaterial3D:
 			var mat = b_quad.material_override as StandardMaterial3D
@@ -3335,7 +3347,7 @@ func _set_item_hover(node: Node3D, hover: bool) -> void:
 	if lbl == null:
 		lbl = node.get_node_or_null("ItemLabel") as Label3D
 	if lbl:
-		lbl.scale = Vector3(1.18, 1.18, 1.18) if hover else Vector3.ONE
+		lbl.scale = Vector3.ONE
 		lbl.outline_modulate = Color(1.0, 1.0, 1.0, 0.98) if hover else Color(0.0, 0.0, 0.0, 0.95)
 
 func _reset_item_hover(node: Node3D) -> void:

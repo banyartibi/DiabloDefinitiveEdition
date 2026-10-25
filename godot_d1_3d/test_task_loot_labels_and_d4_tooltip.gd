@@ -184,15 +184,23 @@ func _run_tests():
 	assert(label_root.visible == true, "LabelRoot must be visible by default without requiring hover")
 	print("  PASS: Ground loot labels are always visible on drop (D2R / D3 / PoE style).")
 
-	print("\n[3/4] Testing 3D Hover Visual Highlight...")
+	print("\n[3/4] Testing Fixed Comfortable Size & Hover Highlight (No Scale Jump Invariant)...")
+	assert(lbl.font_size == 22, "Font size must be fixed at larger comfortable size 22")
+	var cleaver_node = sandbox.item_instances.get(103, null)
+	assert(cleaver_node != null, "The Butcher's Cleaver node must exist")
+	var cleaver_box_w = float(cleaver_node.get_meta("box_w", 0.0))
+	assert(cleaver_box_w >= 1.5, "Box width for 'The Butcher's Cleaver' must accommodate full text width (is %0.2f)" % cleaver_box_w)
+
 	sandbox._set_item_hover(bow_node, true)
-	assert(label_root.scale.x > 1.10, "LabelRoot must scale up on hover (>1.10x)")
+	assert(label_root.scale == Vector3.ONE, "Scale must remain constant (no jarring scale jumps on hover)")
+	assert(lbl.scale == Vector3.ONE, "Label scale must remain constant")
 	var b_mat = border_quad.material_override as StandardMaterial3D
 	assert(b_mat.albedo_color.r > 0.9 and b_mat.albedo_color.g > 0.8, "LabelBorder must glow gold on hover")
+	assert(lbl.outline_modulate.r > 0.9, "Label outline must glow white on hover")
 
 	sandbox._reset_item_hover(bow_node)
-	assert(label_root.scale.x == 1.0, "LabelRoot must return to 1.0x on unhover")
-	print("  PASS: LabelRoot scales up (+15%) with radiant golden border on hover, resets on unhover.")
+	assert(label_root.scale == Vector3.ONE, "Scale must remain constant on unhover")
+	print("  PASS: Constant comfortable larger size (font 22, dynamic padding box), radiant golden border on hover without scale jump.")
 
 	print("\n[4/4] Testing Diablo IV Style Tooltip Card on Hover...")
 	var bow_screen = sandbox.camera.unproject_position(bow_node.position + Vector3(0, 0.25, 0))

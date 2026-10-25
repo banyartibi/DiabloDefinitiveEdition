@@ -189,13 +189,12 @@ func walk_to_tile(tx: int, ty: int):
 	assert(lbl101 != null, "ItemLabel must exist on item node")
 
 	sandbox.update_hover(item101_screen)
-	assert(lbl101.scale.x > 1.10, "ItemLabel must scale up on hover (>1.10x)")
 	assert(lbl101.outline_modulate.r > 0.9, "ItemLabel outline must glow on hover")
 
 	# Clear hover
 	sandbox.update_hover(Vector2(-999, -999))
-	assert(lbl101.scale.x == 1.0, "ItemLabel scale must reset to 1.0 after unhover")
-	print("  PASS: ItemLabel scales up (+18%) and glows on hover, resets on unhover")
+	assert(lbl101.outline_modulate.r < 0.2, "ItemLabel outline must reset to dark after unhover")
+	print("  PASS: ItemLabel glows on hover, resets on unhover")
 
 	# =========================================================================
 	# Test 3: Monster Raycast & Selection
