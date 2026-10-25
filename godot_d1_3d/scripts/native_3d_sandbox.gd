@@ -640,7 +640,7 @@ func _is_lava_piece(img: Image, theme: String) -> bool:
 		return false
 	var w = img.get_width()
 	var h = img.get_height()
-	var sample_step = max(1, w / 8)
+	var sample_step = max(1, w / 16)
 	var red_dominant_count = 0
 	var total_sampled = 0
 	for y in range(0, h, sample_step):
@@ -648,9 +648,9 @@ func _is_lava_piece(img: Image, theme: String) -> bool:
 			var c = img.get_pixel(x, y)
 			if c.a > 0.10:
 				total_sampled += 1
-				if c.r > 0.28 and c.r > c.b * 1.5 and c.g > c.b * 1.1:
+				if c.r > 0.35 and c.r > c.b * 1.8 and c.g > c.b * 1.1:
 					red_dominant_count += 1
-	if total_sampled > 0 and float(red_dominant_count) / float(total_sampled) > 0.35:
+	if total_sampled > 0 and float(red_dominant_count) / float(total_sampled) > 0.015:
 		return true
 	return false
 
@@ -1888,16 +1888,7 @@ func update_props(delta: float):
 		var is_sarc = (category == "SARCOPHAGUS") or (o_type in [154, 214])
 		var is_fire = (category == "TORCH") or (o_type in [0, 3, 8, 9, 10, 106, 109, 114, 115, 116, 120, 121, 150, 151, 152, 153, 155, 171, 193, 210])
 
-		if is_door:
-			var pivot = prop.get_node_or_null("DoorContainer/DoorPivot")
-			if pivot:
-				if not is_open and diablo_bridge and diablo_bridge.has_method("get_dungeon_tile"):
-					var cur_pid = diablo_bridge.get_dungeon_tile(tx, ty)
-					if cur_pid in [392, 394, 12, 16, 537, 540, 205, 208]:
-						is_open = true
-				var target_deg = 85.0 if is_open else 0.0
-				pivot.rotation_degrees.y = lerp(pivot.rotation_degrees.y, target_deg, delta * 12.0)
-		elif is_chest:
+		if is_chest:
 			var lid = prop.get_node_or_null("ChestLid")
 			if lid == null:
 				lid = prop.get_node_or_null("ChestProp/ChestLid")
@@ -1969,33 +1960,9 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int) -> Node3D
 	var is_shrine = (o_type in [165, 166, 185, 186])
 
 	if is_door:
-		var is_l_door = (o_type in [1, 148, 180, 211])
-		var basis_tile = Basis().rotated(Vector3.UP, deg_to_rad(-45.0))
-		var arch_basis = basis_tile
-		if is_l_door:
-			arch_basis = basis_tile.rotated(Vector3.UP, deg_to_rad(-90.0))
-
-		var door_container = Node3D.new()
-		door_container.name = "DoorContainer"
-		door_container.transform = Transform3D(arch_basis, Vector3.ZERO)
-
-		var pivot = Node3D.new()
-		pivot.name = "DoorPivot"
-		pivot.position = Vector3(-0.40, 0.0, 0.0)
-
-		var leaf = MeshInstance3D.new()
-		leaf.name = "DoorLeaf"
-		leaf.mesh = get_or_load_mesh("res://assets/models/dungeon/door_leaf.glb")
-		leaf.scale = Vector3(1.48, 1.08, 1.0)
-		var door_mat = StandardMaterial3D.new()
-		door_mat.albedo_color = Color(0.25, 0.18, 0.12)
-		door_mat.roughness = 0.72
-		door_mat.metallic = 0.08
-		leaf.material_override = door_mat
-		pivot.add_child(leaf)
-
-		door_container.add_child(pivot)
-		node.add_child(door_container)
+		# Door visuals are rendered natively by the authentic dungeon tile / archway graphics.
+		# The prop node functions as the interaction hit volume without redundant synthetic 3D meshes.
+		pass
 
 	elif is_wall_torch:
 		var basis_tile = Basis().rotated(Vector3.UP, deg_to_rad(-45.0))

@@ -92,7 +92,7 @@ func _run_tests():
 	print("\n[2/3] Testing Hell Lava Parameters...")
 	mock_bridge.level = 13 # Hell Level 13
 	sandbox._on_level_changed(13)
-	var hell_lava_mat = sandbox.get_floor_material(101, 13)
+	var hell_lava_mat = sandbox.get_floor_material(90, 13)
 	assert(hell_lava_mat is ShaderMaterial, "Hell lava must use ShaderMaterial")
 	assert(hell_lava_mat.get_shader_parameter("is_hell") == true, "Hell level must set is_hell = true")
 	print("  PASS: Hell theme correctly configures infernal crimson brimstone spectrum.")

@@ -940,9 +940,10 @@ func _process(delta: float):
 			elif death_screen_mat:
 				death_screen_mat.set_shader_parameter("intensity", death_fade)
 
-	# Authentic Red "Loading..." Level Transition Screen
+	# Authentic Red "Loading..." Level Transition Screen (in-game only)
 	if diablo_bridge and diablo_bridge.has_method("is_level_loading"):
-		var is_loading = bool(diablo_bridge.is_level_loading())
+		var is_ingame = diablo_bridge.is_game_running() if diablo_bridge.has_method("is_game_running") else false
+		var is_loading = is_ingame and bool(diablo_bridge.is_level_loading())
 		if loading_layer:
 			if loading_layer.visible != is_loading:
 				loading_layer.visible = is_loading

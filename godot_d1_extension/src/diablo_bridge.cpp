@@ -499,7 +499,7 @@ bool DiabloBridge::is_game_running() const {
 }
 
 bool DiabloBridge::is_level_loading() const {
-	return devilution::g_D1LevelTransitioning.load() || !devilution::IsBridgeSafeToRead();
+	return devilution::g_D1LevelTransitioning.load() || (devilution::IsGameRunningLive() && !devilution::IsBridgeSafeToRead());
 }
 
 bool DiabloBridge::is_modal_active() const {
