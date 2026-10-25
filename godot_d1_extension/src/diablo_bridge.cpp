@@ -458,12 +458,13 @@ int DiabloBridge::get_player_spell_type() const {
 
 Array DiabloBridge::get_belt_items() const {
 	Array items;
-	for (int i = 0; i < 8; ++i) {
+	auto belt = devilution::GetBeltItemsLive();
+	for (const auto &b : belt) {
 		Dictionary d;
-		d["slot"] = i;
-		d["type"] = devilution::g_D1EngineData.beltTypes[i];
-		d["count"] = devilution::g_D1EngineData.beltCounts[i];
-		d["name"] = String::utf8(devilution::g_D1EngineData.beltNames[i]);
+		d["slot"] = b.slot;
+		d["type"] = b.type;
+		d["count"] = b.count;
+		d["name"] = String::utf8(b.name);
 		items.push_back(d);
 	}
 	return items;
@@ -940,6 +941,15 @@ Dictionary DiabloBridge::get_player_continuous_pos() const {
 	d["is_walking"] = data.isWalking;
 	d["mode"] = data.mode;
 	d["anim_frame"] = data.animFrame;
+	d["action"] = String::utf8(data.action);
+	d["hp"] = data.hp;
+	d["max_hp"] = data.maxHp;
+	d["hp_pct"] = (data.maxHp > 0) ? std::clamp(static_cast<float>(data.hp) / static_cast<float>(data.maxHp), 0.0f, 1.0f) : 0.0f;
+	d["mana"] = data.mana;
+	d["max_mana"] = data.maxMana;
+	d["mana_pct"] = (data.maxMana > 0) ? std::clamp(static_cast<float>(data.mana) / static_cast<float>(data.maxMana), 0.0f, 1.0f) : 0.0f;
+	d["player_class"] = data.playerClass;
+	d["name"] = String::utf8(data.name);
 	return d;
 }
 
@@ -961,6 +971,8 @@ Array DiabloBridge::get_active_monsters_data() const {
 		md["mode"] = m.mode;
 		md["anim_frame"] = m.animFrame;
 		md["is_visible"] = m.isVisible;
+		md["action"] = String::utf8(m.action);
+		md["hp_pct"] = m.hpPct;
 		arr.push_back(md);
 	}
 	return arr;
@@ -1028,6 +1040,10 @@ void DiabloBridge::send_click_to_tile(int tile_x, int tile_y, int button_mask) {
 
 PackedByteArray DiabloBridge::get_frame_bytes() {
 	PackedByteArray arr;
+	// In Native 3D Engine during active gameplay, pixels are not exported to save CPU/GPU bandwidth
+	if (devilution::g_D1EngineData.isGameRunning && devilution::GetResurrectedDisplayMode() == 2) {
+		return arr;
+	}
 	int w = devilution::g_D1EngineData.width;
 	int h = devilution::g_D1EngineData.height;
 	if (w <= 0 || h <= 0) return arr;
@@ -1525,6 +1541,9 @@ Array DiabloBridge::get_active_objects() const {
 		d["selectable"] = obj.selectable;
 		d["width"] = obj.width;
 		d["height"] = obj.height;
+		d["is_open"] = obj.isOpen;
+		d["is_broken"] = obj.isBroken;
+		d["category"] = String::utf8(obj.category);
 		arr.push_back(d);
 	}
 	return arr;
@@ -1559,6 +1578,7 @@ Array DiabloBridge::get_active_items() const {
 		d["width"] = item.width;
 		d["height"] = item.height;
 		d["anim_frame"] = item.animFrame;
+		d["quality_name"] = String::utf8(item.qualityName);
 		arr.push_back(d);
 	}
 	return arr;

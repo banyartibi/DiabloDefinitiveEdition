@@ -224,6 +224,17 @@ void snd_init()
 	sgOptions.Audio.musicVolume.SetValue(CapVolume(*sgOptions.Audio.musicVolume));
 	gbMusicOn = *sgOptions.Audio.musicVolume > VOLUME_MIN;
 
+	if (gbGodotBridgeActive) {
+		// Native Godot Audio Engine handles all audio mixing, 3D spatialization, and output.
+		// Initialize Aulib in NoOutput mode so SDL hardware devices (/dev/dsp) are never touched,
+		// eliminating all "No such audio device" errors while keeping gbSndInited active!
+		Aulib::initWithoutOutput(*sgOptions.Audio.sampleRate, *sgOptions.Audio.channels);
+		duplicateSoundsMutex.emplace();
+		gbSndInited = true;
+		LogVerbose(LogCategory::Audio, "Native Godot Audio Engine active (Aulib NoOutput mode)");
+		return;
+	}
+
 	// Initialize the SDL_audiolib library. Set the output sample rate to
 	// 22kHz, the audio format to 16-bit signed, use 2 output channels
 	// (stereo), and a 2KiB output buffer.
@@ -241,7 +252,9 @@ void snd_init()
 void snd_deinit()
 {
 	if (gbSndInited) {
-		Aulib::quit();
+		if (!gbGodotBridgeActive) {
+			Aulib::quit();
+		}
 		duplicateSoundsMutex = std::nullopt;
 	}
 

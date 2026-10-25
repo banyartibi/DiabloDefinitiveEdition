@@ -181,35 +181,42 @@ void ExportGodotFrame(const SDL_Surface *surface)
 	if (!gbGodotBridgeActive || surface == nullptr || surface->pixels == nullptr || surface->w <= 0 || surface->h <= 0)
 		return;
 
+	// In Native 3D Engine (Mode 2) during active gameplay, Godot renders its own 3D scene,
+	// PBR lighting, and native HUD. The legacy software framebuffer and paletted blits are not
+	// consumed by Godot, so skip expensive surface format conversion, alpha loops, and pixel memcpys!
+	const bool needsPixelExport = !gbRunGame || (GetResurrectedDisplayMode() == static_cast<int>(DisplayMode::Original_25D));
+
 	const SDL_Surface *srcSurface = surface;
 	SDL_Surface *converted = nullptr;
 
-	// Godot's Image::create_from_data(FORMAT_RGBA8) expects memory layout R,G,B,A,
-	// which on little-endian is SDL_PIXELFORMAT_RGBA32 (== ABGR8888). D1's output surfaces vary:
-	//  - OpenGL upscale path: 24-bit RGB888 (no alpha channel at all),
-	//  - Vulkan readback path: ARGB8888 (memory B,G,R,A; GPU readback leaves alpha=0).
-	// Converting to ARGB8888 used to export memory layout B,G,R,A with alpha=0, which Godot
-	// interpreted as R/B-swapped and fully transparent -> black viewport. Always normalize
-	// to RGBA32 and force opaque alpha so the exported frame is never transparent.
-	const Uint32 targetFormat = SDL_PIXELFORMAT_RGBA32;
-	if (surface->format == nullptr || surface->format->format != targetFormat) {
-		converted = SDL_ConvertSurfaceFormat(const_cast<SDL_Surface *>(surface), targetFormat, 0);
-		if (converted != nullptr && converted->pixels != nullptr) {
-			srcSurface = converted;
+	if (needsPixelExport) {
+		// Godot's Image::create_from_data(FORMAT_RGBA8) expects memory layout R,G,B,A,
+		// which on little-endian is SDL_PIXELFORMAT_RGBA32 (== ABGR8888). D1's output surfaces vary:
+		//  - OpenGL upscale path: 24-bit RGB888 (no alpha channel at all),
+		//  - Vulkan readback path: ARGB8888 (memory B,G,R,A; GPU readback leaves alpha=0).
+		// Converting to ARGB8888 used to export memory layout B,G,R,A with alpha=0, which Godot
+		// interpreted as R/B-swapped and fully transparent -> black viewport. Always normalize
+		// to RGBA32 and force opaque alpha so the exported frame is never transparent.
+		const Uint32 targetFormat = SDL_PIXELFORMAT_RGBA32;
+		if (surface->format == nullptr || surface->format->format != targetFormat) {
+			converted = SDL_ConvertSurfaceFormat(const_cast<SDL_Surface *>(surface), targetFormat, 0);
+			if (converted != nullptr && converted->pixels != nullptr) {
+				srcSurface = converted;
 
-			// Force opaque alpha: D1 surfaces carry no meaningful per-pixel alpha.
-			const int w = srcSurface->w;
-			const int h = srcSurface->h;
-			uint8_t *px = static_cast<uint8_t *>(srcSurface->pixels);
-			for (int y = 0; y < h; ++y) {
-				uint8_t *row = px + y * srcSurface->pitch;
-				for (int x = 0; x < w; ++x) {
-					row[x * 4 + 3] = 255; // alpha byte in RGBA32 memory layout
+				// Force opaque alpha: D1 surfaces carry no meaningful per-pixel alpha.
+				const int w = srcSurface->w;
+				const int h = srcSurface->h;
+				uint8_t *px = static_cast<uint8_t *>(srcSurface->pixels);
+				for (int y = 0; y < h; ++y) {
+					uint8_t *row = px + y * srcSurface->pitch;
+					for (int x = 0; x < w; ++x) {
+						row[x * 4 + 3] = 255; // alpha byte in RGBA32 memory layout
+					}
 				}
+			} else {
+				if (converted != nullptr) SDL_FreeSurface(converted);
+				return;
 			}
-		} else {
-			if (converted != nullptr) SDL_FreeSurface(converted);
-			return;
 		}
 	}
 
@@ -349,38 +356,42 @@ void ExportGodotFrame(const SDL_Surface *surface)
 		g_D1EngineData.isTextInputActive = IsTextInputActiveLive();
 		g_D1EngineData.isPlayerDead = MyPlayerIsDead || (MyPlayer != nullptr && MyPlayer->_pmode == PM_DEATH);
 
-		size_t reqBytes = static_cast<size_t>(srcSurface->w) * srcSurface->h * 4;
-		if (g_D1InternalFrame.size() != reqBytes) {
-			g_D1InternalFrame.resize(reqBytes);
+		if (needsPixelExport) {
+			size_t reqBytes = static_cast<size_t>(srcSurface->w) * srcSurface->h * 4;
+			if (g_D1InternalFrame.size() != reqBytes) {
+				g_D1InternalFrame.resize(reqBytes);
+			}
+			std::memcpy(g_D1InternalFrame.data(), srcSurface->pixels, reqBytes);
 		}
-		std::memcpy(g_D1InternalFrame.data(), srcSurface->pixels, reqBytes);
 	}
 
-	// 2. Also write to POSIX SHM for backward compatibility
-	InitGodotBridge(srcSurface->w, srcSurface->h);
-	if (g_ShmMapped != nullptr) {
-		D1BridgeHeader *hdr = static_cast<D1BridgeHeader *>(g_ShmMapped);
-		hdr->magic = 0x44315242; // "D1RB"
-		hdr->version = 1;
-		hdr->width = srcSurface->w;
-		hdr->height = srcSurface->h;
-		hdr->pitch = srcSurface->pitch;
-		hdr->frameId = g_BridgeFrameCount;
-		hdr->timestamp = SDL_GetTicks();
-		hdr->playerNormX = 0.50f;
-		hdr->playerNormY = 0.52f;
-		hdr->zoomMode = static_cast<int32_t>(CurrentZoomMode) + 1;
-		hdr->torchCount = 0;
+	// 2. Also write to POSIX SHM for backward compatibility (only when pixel export is active)
+	if (needsPixelExport) {
+		InitGodotBridge(srcSurface->w, srcSurface->h);
+		if (g_ShmMapped != nullptr) {
+			D1BridgeHeader *hdr = static_cast<D1BridgeHeader *>(g_ShmMapped);
+			hdr->magic = 0x44315242; // "D1RB"
+			hdr->version = 1;
+			hdr->width = srcSurface->w;
+			hdr->height = srcSurface->h;
+			hdr->pitch = srcSurface->pitch;
+			hdr->frameId = g_BridgeFrameCount;
+			hdr->timestamp = SDL_GetTicks();
+			hdr->playerNormX = 0.50f;
+			hdr->playerNormY = 0.52f;
+			hdr->zoomMode = static_cast<int32_t>(CurrentZoomMode) + 1;
+			hdr->torchCount = 0;
 
-		// Export UI Panel States (Character sheet, Inventory, Quest log, Spellbook)
-		hdr->torches[0].normX = g_D1EngineData.leftPanelOpen ? 1.0f : 0.0f;
-		hdr->torches[0].normY = g_D1EngineData.rightPanelOpen ? 1.0f : 0.0f;
+			// Export UI Panel States (Character sheet, Inventory, Quest log, Spellbook)
+			hdr->torches[0].normX = g_D1EngineData.leftPanelOpen ? 1.0f : 0.0f;
+			hdr->torches[0].normY = g_D1EngineData.rightPanelOpen ? 1.0f : 0.0f;
 
-		// Copy pixels directly to shared memory
-		uint8_t *dstPixels = static_cast<uint8_t *>(g_ShmMapped) + sizeof(D1BridgeHeader);
-		std::memcpy(dstPixels, srcSurface->pixels, srcSurface->w * srcSurface->h * 4);
+			// Copy pixels directly to shared memory
+			uint8_t *dstPixels = static_cast<uint8_t *>(g_ShmMapped) + sizeof(D1BridgeHeader);
+			std::memcpy(dstPixels, srcSurface->pixels, srcSurface->w * srcSurface->h * 4);
 
-		hdr->readyFlag = 1;
+			hdr->readyFlag = 1;
+		}
 	}
 
 	if (converted != nullptr) {
@@ -1087,12 +1098,48 @@ std::vector<AvailableSpellItem> GetAvailableSpells()
 	return result;
 }
 
+std::vector<BeltItemData> GetBeltItemsLive()
+{
+	std::vector<BeltItemData> result(8);
+	for (size_t i = 0; i < 8; ++i) {
+		result[i].slot = static_cast<int>(i);
+		if (gbRunGame && MyPlayer != nullptr && i < sizeof(MyPlayer->SpdList) / sizeof(MyPlayer->SpdList[0]) && !MyPlayer->SpdList[i].isEmpty()) {
+			const Item &item = MyPlayer->SpdList[i];
+			int type = 11;
+			if (item._iMiscId == IMISC_HEAL) type = 1;
+			else if (item._iMiscId == IMISC_FULLHEAL) type = 2;
+			else if (item._iMiscId == IMISC_MANA) type = 3;
+			else if (item._iMiscId == IMISC_FULLMANA) type = 4;
+			else if (item._iMiscId == IMISC_REJUV) type = 5;
+			else if (item._iMiscId == IMISC_FULLREJUV) type = 6;
+			else if (item._iMiscId > IMISC_OILFIRST && item._iMiscId < IMISC_OILLAST) type = 9;
+			else if (item.isScroll()) type = 8;
+			else if (item.isRune()) type = 10;
+			else if (item._iMiscId == IMISC_ELIXSTR || item._iMiscId == IMISC_ELIXMAG || item._iMiscId == IMISC_ELIXDEX || item._iMiscId == IMISC_ELIXVIT) type = 7;
+			result[i].type = type;
+			result[i].count = 1;
+			std::strncpy(result[i].name, item._iIName, 63);
+			result[i].name[63] = '\0';
+		} else {
+			result[i].type = g_D1EngineData.beltTypes[i];
+			result[i].count = g_D1EngineData.beltCounts[i];
+			std::strncpy(result[i].name, g_D1EngineData.beltNames[i], 63);
+			result[i].name[63] = '\0';
+		}
+	}
+	return result;
+}
+
 void SelectSpell(int spellId, int spellType)
 {
 	if (!gbRunGame || MyPlayer == nullptr)
 		return;
 	MyPlayer->_pRSpell = static_cast<SpellID>(spellId);
 	MyPlayer->_pRSplType = static_cast<SpellType>(spellType);
+	if (MyPlayer->_pRSplType == SpellType::Spell || MyPlayer->_pRSplType == SpellType::Skill) {
+		MyPlayer->_pPrevRSpell = MyPlayer->_pRSpell;
+		MyPlayer->_pPrevRSplType = MyPlayer->_pRSplType;
+	}
 	spselflag = false;
 	RedrawEverything();
 }
@@ -1164,8 +1211,6 @@ void QuickCastHotkey(int slotIdx)
 	if ((spells & spl) == 0)
 		return;
 
-	myPlayer._pRSpell = spell;
-	myPlayer._pRSplType = spellType;
 	CheckPlrSpell(false, spell, spellType);
 	RedrawEverything();
 }
@@ -2245,8 +2290,11 @@ void CancelTargetingCursor()
 		return;
 	if (pcurs > CURSOR_HAND && pcurs < CURSOR_FIRSTITEM) {
 		NewCursor(CURSOR_HAND);
-		if (MyPlayer != nullptr)
+		if (MyPlayer != nullptr) {
+			MyPlayer->inventorySpell = SpellID::Invalid;
+			MyPlayer->spellFrom = 0;
 			CalcPlrInv(*MyPlayer, true);
+		}
 		g_InventoryVersion.fetch_add(1);
 	}
 }
@@ -2573,6 +2621,30 @@ D1PlayerEntityData GetPlayerEntityData()
 	data.mode = static_cast<int>(player._pmode);
 	data.isWalking = player.isWalking();
 	data.animFrame = player.AnimInfo.getFrameToUseForRendering();
+	data.hp = player._pHitPoints >> 6;
+	data.maxHp = player._pMaxHP >> 6;
+	data.mana = player._pMana >> 6;
+	data.maxMana = player._pMaxMana >> 6;
+	data.playerClass = static_cast<int>(player._pClass);
+	std::strncpy(data.name, player._pName, sizeof(data.name) - 1);
+
+	const char *pact = "STAND";
+	switch (player._pmode) {
+	case PM_STAND: pact = "STAND"; break;
+	case PM_WALK_NORTHWARDS:
+	case PM_WALK_SOUTHWARDS:
+	case PM_WALK_SIDEWAYS: pact = "WALK"; break;
+	case PM_ATTACK: pact = "ATTACK"; break;
+	case PM_RATTACK: pact = "RATTACK"; break;
+	case PM_BLOCK: pact = "BLOCK"; break;
+	case PM_GOTHIT: pact = "HIT"; break;
+	case PM_DEATH: pact = "DEATH"; break;
+	case PM_SPELL: pact = "SPELL"; break;
+	case PM_NEWLVL: pact = "NEWLVL"; break;
+	case PM_QUIT: pact = "QUIT"; break;
+	default: pact = "STAND"; break;
+	}
+	std::strncpy(data.action, pact, sizeof(data.action) - 1);
 
 	if (player.isWalking()) {
 		Point origin = player.position.tile;
@@ -2616,6 +2688,8 @@ std::vector<D1MonsterEntityData> GetActiveMonstersData()
 			med.isAlive = true;
 			med.isWalking = false;
 			med.animFrame = towner._tAnimFrame;
+			std::strncpy(med.action, "STAND", sizeof(med.action) - 1);
+			med.hpPct = 1.0f;
 
 			string_view nameView = towner.name;
 			size_t copyLen = std::min(nameView.size(), sizeof(med.name) - 1);
@@ -2652,6 +2726,27 @@ std::vector<D1MonsterEntityData> GetActiveMonstersData()
 		med.isAlive = (m.hitPoints > 0 || m.mode == MonsterMode::Death);
 		med.isWalking = m.isWalking();
 		med.animFrame = m.animInfo.sprites ? m.animInfo.getFrameToUseForRendering() : 0;
+		med.hpPct = (m.maxHitPoints > 0) ? std::clamp(static_cast<float>(m.hitPoints) / static_cast<float>(m.maxHitPoints), 0.0f, 1.0f) : 0.0f;
+
+		const char *mact = "STAND";
+		switch (m.mode) {
+		case MonsterMode::Stand:
+		case MonsterMode::SpecialStand: mact = "STAND"; break;
+		case MonsterMode::MoveNorthwards:
+		case MonsterMode::MoveSouthwards:
+		case MonsterMode::MoveSideways: mact = "WALK"; break;
+		case MonsterMode::MeleeAttack:
+		case MonsterMode::SpecialMeleeAttack: mact = "ATTACK"; break;
+		case MonsterMode::HitRecovery: mact = "HIT"; break;
+		case MonsterMode::Death: mact = "DEATH"; break;
+		case MonsterMode::RangedAttack:
+		case MonsterMode::SpecialRangedAttack: mact = "RANGED"; break;
+		case MonsterMode::Charge: mact = "CHARGE"; break;
+		case MonsterMode::FadeIn: mact = "FADEIN"; break;
+		case MonsterMode::FadeOut: mact = "FADEOUT"; break;
+		default: mact = "STAND"; break;
+		}
+		std::strncpy(med.action, mact, sizeof(med.action) - 1);
 
 		string_view nameView = m.name();
 		size_t copyLen = std::min(nameView.size(), sizeof(med.name) - 1);
@@ -3090,6 +3185,31 @@ std::vector<D1ObjectInfo> GetActiveObjectsList()
 		info.selectable = (obj._oSelFlag != 0);
 		info.width = 0;
 		info.height = 0;
+		info.isOpen = false;
+		info.isBroken = false;
+		const char *cat = "MISC";
+		if (obj.IsBarrel()) {
+			cat = "BARREL";
+			info.isBroken = obj.IsBroken();
+		} else if (obj.IsChest()) {
+			cat = "CHEST";
+			info.isOpen = (obj._oAnimFrame > 1 || obj._oSelFlag == 0);
+		} else if (IsAnyOf(obj._otype, _object_id::OBJ_L1LDOOR, _object_id::OBJ_L1RDOOR, _object_id::OBJ_L2LDOOR, _object_id::OBJ_L2RDOOR, _object_id::OBJ_L3LDOOR, _object_id::OBJ_L3RDOOR, _object_id::OBJ_L5LDOOR, _object_id::OBJ_L5RDOOR)) {
+			cat = "DOOR";
+			info.isOpen = (obj._oVar4 == 1 || obj._oAnimFrame > 1 || !obj._oSolidFlag);
+		} else if (IsAnyOf(obj._otype, _object_id::OBJ_SARC, _object_id::OBJ_L5SARC)) {
+			cat = "SARCOPHAGUS";
+			info.isOpen = (obj._oAnimFrame > 1 || obj._oSelFlag == 0);
+		} else if (IsAnyOf(obj._otype, _object_id::OBJ_L1LIGHT, _object_id::OBJ_TORCHL, _object_id::OBJ_TORCHR, _object_id::OBJ_TORCHL2, _object_id::OBJ_TORCHR2)) {
+			cat = "TORCH";
+		} else if (IsAnyOf(obj._otype, _object_id::OBJ_BOOKSTAND, _object_id::OBJ_BOOK2L, _object_id::OBJ_BOOK2R, _object_id::OBJ_BOOKSHELF, _object_id::OBJ_BOOKCASEL, _object_id::OBJ_BOOKCASER, _object_id::OBJ_SKELBOOK, _object_id::OBJ_BLINDBOOK, _object_id::OBJ_BLOODBOOK, _object_id::OBJ_STORYBOOK, _object_id::OBJ_STEELTOME, _object_id::OBJ_L5BOOKS)) {
+			cat = "BOOK";
+			info.isOpen = (obj._oSelFlag == 0);
+		} else if (IsAnyOf(obj._otype, _object_id::OBJ_SHRINEL, _object_id::OBJ_SHRINER, _object_id::OBJ_GOATSHRINE, _object_id::OBJ_CAULDRON)) {
+			cat = "SHRINE";
+			info.isOpen = (obj._oSelFlag == 0);
+		}
+		std::strncpy(info.category, cat, sizeof(info.category) - 1);
 		if (obj._oAnimData.has_value() && obj._oAnimFrame > 0 &&
 		    static_cast<size_t>(obj._oAnimFrame) <= (*obj._oAnimData).numSprites()) {
 			const ClxSprite sprite = (*obj._oAnimData)[obj._oAnimFrame - 1];
@@ -3142,8 +3262,17 @@ std::vector<D1ItemInfo> GetActiveItemsList()
 			info.cursId = item._iCurs;
 			info.quality = static_cast<int>(item._iMagical);
 			info.identified = item._iIdentified;
+			const char *qName = "NORMAL";
+			switch (item._iMagical) {
+			case ITEM_QUALITY_NORMAL: qName = "NORMAL"; break;
+			case ITEM_QUALITY_MAGIC: qName = "MAGIC"; break;
+			case ITEM_QUALITY_UNIQUE: qName = "UNIQUE"; break;
+			default: qName = "NORMAL"; break;
+			}
+			std::strncpy(info.qualityName, qName, sizeof(info.qualityName) - 1);
 			if (item._itype == ItemType::Gold) {
-				std::string goldStr = fmt::format(fmt::runtime(_("{:s} gold")), FormatInteger(item._ivalue));
+				std::string valStr = FormatInteger(item._ivalue);
+				std::string goldStr = fmt::format(fmt::runtime(_("{:s} gold")), valStr);
 				strncpy(info.name, goldStr.c_str(), sizeof(info.name) - 1);
 			} else {
 				std::string cleanName = SanitizeUtf8(item.getName());
@@ -4181,7 +4310,12 @@ bool GetShowFpsEnabled()
 
 int GetResurrectedDisplayMode()
 {
-	return static_cast<int>(*sgOptions.Resurrected.displayMode);
+	auto mode = *sgOptions.Resurrected.displayMode;
+	if (static_cast<int>(mode) == 1) {
+		sgOptions.Resurrected.displayMode.SetValue(DisplayMode::Native_3D);
+		return static_cast<int>(DisplayMode::Native_3D);
+	}
+	return static_cast<int>(mode);
 }
 
 int GetModeSwitchKey()

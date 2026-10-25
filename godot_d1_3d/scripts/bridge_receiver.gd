@@ -62,12 +62,12 @@ var modern_hud_enabled: bool = true     # Default: Modern Diablo: Definitive Edi
 var last_is_ingame: bool = false
 var last_level_idx: int = -999
 
-# 3-Mode Display Architecture:
-# Mode 0: Classic 2.5D Blit (Vanilla + 3D Relief Shader)
-# Mode 1: Native Godot 2.5D Engine (Direct Godot 2D Engine, 144Hz Smooth Camera, Y-Sorted Sprites, PointLight2D)
-# Mode 2: Native 3D Sandbox (Real 3D Geometry, Billboard Sprites, Q/E Orbit, PgUp/PgDn Tilt)
+# Display Architecture:
+# Mode 0: Classic 2.5D Blit (Vanilla 1996 + 3D Relief Shader)
+# Mode 1: Native 2.5D (Deprecated - automatically upgraded to Native 3D Engine)
+# Mode 2: Native Godot 3D Engine (Forward+ Vulkan, Real 3D Geometry, Billboard Sprites, Q/E Orbit, PgUp/PgDn Tilt)
 enum DisplayMode { ORIGINAL_25D = 0, NATIVE_25D = 1, NATIVE_3D = 2 }
-var current_display_mode: int = DisplayMode.NATIVE_25D
+var current_display_mode: int = DisplayMode.NATIVE_3D
 # Track modal open/close in native modes so we can re-apply the display mode (show/hide the authentic D1 UI blit)
 var last_modal_active := false
 
@@ -781,7 +781,9 @@ func _process(delta: float):
 				new_disp = int(diablo_bridge.get_d1de_display_mode())
 			elif diablo_bridge.has_method("get_resurrected_display_mode"):
 				new_disp = int(diablo_bridge.get_resurrected_display_mode())
-			if new_disp != current_display_mode and new_disp >= 0 and new_disp < 3:
+			if new_disp == DisplayMode.NATIVE_25D:
+				new_disp = DisplayMode.NATIVE_3D
+			if new_disp != current_display_mode and (new_disp == DisplayMode.ORIGINAL_25D or new_disp == DisplayMode.NATIVE_3D):
 				switch_display_mode(new_disp)
 
 			var new_vs = bool(diablo_bridge.get_vsync_enabled())
@@ -1065,12 +1067,6 @@ func _process(delta: float):
 var _dbg_frame_updates := 0
 
 func update_frame_texture(w: int, h: int, bytes: PackedByteArray):
-	_dbg_frame_updates += 1
-	if _dbg_frame_updates <= 3 or _dbg_frame_updates % 600 == 0:
-		print("[D1-DEBUG] frame_update #%d w=%d h=%d bytes=%d shader_mat_bound=%s tex_size=(%d,%d)" % [
-			_dbg_frame_updates, w, h, bytes.size(), shader_material != null,
-			(image_texture.get_width() if image_texture else 0),
-			(image_texture.get_height() if image_texture else 0)])
 	var img = Image.create_from_data(w, h, false, Image.FORMAT_RGBA8, bytes)
 	if not img:
 		return
@@ -1131,6 +1127,9 @@ func apply_display_mode():
 		return
 
 	# In-game mode activation:
+	if current_display_mode == DisplayMode.NATIVE_25D:
+		current_display_mode = DisplayMode.NATIVE_3D
+
 	if native_25d_instance:
 		native_25d_instance.deactivate()
 	if sandbox_instance:
@@ -1168,7 +1167,7 @@ func apply_display_mode():
 			brightness_material.set_shader_parameter("color_profile", 0)
 		if camera:
 			camera.make_current()
-		show_osd("Display Mode 1/3: Classic 2.5D Blit (Vanilla + 3D Relief Shader)", 3.5)
+		show_osd("Display Mode: Classic 2.5D Blit (Vanilla 1996 + PBR Relief)", 3.5)
 
 	elif current_display_mode == DisplayMode.NATIVE_25D:
 		# Mode 1: Native Godot 2.5D Engine (Smooth 144Hz Camera, Y-Sorted Sprites, PointLight2D)
@@ -1259,13 +1258,15 @@ func apply_display_mode():
 			modal_layer.visible = diablo_bridge.is_modal_active()
 		if sandbox_instance:
 			sandbox_instance.activate()
-		show_osd("Display Mode 3/3: Native 3D Sandbox (Real 3D Geometry, Billboard Sprites, Q/E Orbit, PgUp/PgDn Tilt)", 3.5)
+		show_osd("Display Mode: Native 3D Engine (Forward+ Vulkan, Real 3D Geometry, Q/E Orbit)", 3.5)
 
 	apply_upscaler_mode()
 
 func switch_display_mode(new_mode: int):
+	if new_mode == DisplayMode.NATIVE_25D:
+		new_mode = DisplayMode.NATIVE_3D
 	current_display_mode = new_mode
-	print("[D1-DEBUG] display_mode -> %d" % new_mode)
+	print("[D1DE] display_mode -> %d" % new_mode)
 	apply_display_mode()
 
 func _unhandled_input(event: InputEvent):
@@ -1296,8 +1297,6 @@ func _unhandled_input(event: InputEvent):
 				return
 
 	if event is InputEventKey and event.pressed and not event.echo:
-		print("[D1-DEBUG] key_unhandled keycode=%d phys=%d uni=%d text_act=%s ingame=%s" % [event.keycode, event.physical_keycode, event.unicode, is_text_active, is_ingame])
-
 		if diablo_bridge != null and diablo_bridge.has_method("get_mode_switch_key"):
 			var sw_key := int(diablo_bridge.get_mode_switch_key())
 			var sw_mods := int(diablo_bridge.get_mode_switch_mods())
@@ -1307,16 +1306,15 @@ func _unhandled_input(event: InputEvent):
 			if event.alt_pressed: pressed_mask |= 4
 			if event.meta_pressed: pressed_mask |= 8
 			if int(event.physical_keycode) == sw_key and pressed_mask == sw_mods:
-				var next_mode = (current_display_mode + 1) % 3
+				var next_mode = DisplayMode.ORIGINAL_25D if current_display_mode == DisplayMode.NATIVE_3D else DisplayMode.NATIVE_3D
 				switch_display_mode(next_mode)
 				_write_display_mode(next_mode)   # persists to diablo.ini
 				if not is_ingame:
-					var mode_names = [
-						"Classic 2.5D Blit (Vanilla + 3D Relief Shader)",
-						"Native Godot 2.5D Engine (144Hz Smooth Camera)",
-						"Native 3D Sandbox (Real 3D Geometry)"
-					]
-					show_osd("Mode selected: " + mode_names[next_mode] + " (Active when game begins)", 3.0)
+					var mode_names = {
+						DisplayMode.ORIGINAL_25D: "Classic 2.5D Blit (Vanilla 1996)",
+						DisplayMode.NATIVE_3D: "Native Godot 3D Engine (Forward+ Vulkan)"
+					}
+					show_osd("Mode selected: " + mode_names.get(next_mode, "Native 3D Engine") + " (Active when game begins)", 3.0)
 				return
 
 	if is_ingame:
@@ -1357,6 +1355,12 @@ func _unhandled_input(event: InputEvent):
 		var btn = 1
 		if event.button_index == MOUSE_BUTTON_RIGHT:
 			btn = 3
+			if event.pressed and diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
+				var cid = diablo_bridge.get_cursor_id()
+				if cid > 1 and cid < 12:
+					if diablo_bridge.has_method("cancel_targeting_cursor"):
+						diablo_bridge.cancel_targeting_cursor()
+					return
 		elif event.button_index == MOUSE_BUTTON_MIDDLE:
 			btn = 2
 		var state = 1 if event.pressed else 0
@@ -1392,7 +1396,8 @@ func _write_display_mode(mode_idx: int):
 					found = true
 					break
 			if found and diablo_bridge.has_method("set_setting_list"):
-				diablo_bridge.set_setting_list(int(cat.get("id", 0)), e_id, mode_idx)
+				var list_idx = 0 if mode_idx == DisplayMode.ORIGINAL_25D else 1
+				diablo_bridge.set_setting_list(int(cat.get("id", 0)), e_id, list_idx)
 				diablo_bridge.save_settings()
 			return
 

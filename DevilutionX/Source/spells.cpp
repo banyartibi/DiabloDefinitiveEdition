@@ -5,6 +5,8 @@
  */
 #include "spells.h"
 
+#include "playerdat.hpp"
+
 #include "control.h"
 #include "cursor.h"
 #ifdef _DEBUG
@@ -178,7 +180,24 @@ void ConsumeSpell(Player &player, SpellID sn)
 void EnsureValidReadiedSpell(Player &player)
 {
 	if (!IsReadiedSpellValid(player)) {
-		ClearReadiedSpell(player);
+		if (player._pPrevRSpell != SpellID::Invalid && player._pPrevRSplType != SpellType::Invalid && IsValidSpell(player._pPrevRSpell)) {
+			player._pRSpell = player._pPrevRSpell;
+			player._pRSplType = player._pPrevRSplType;
+			if (IsReadiedSpellValid(player)) {
+				RedrawEverything();
+				return;
+			}
+		}
+		SpellID s = PlayersData[static_cast<size_t>(player._pClass)].skill;
+		if (s != SpellID::Invalid) {
+			player._pRSpell = s;
+			player._pRSplType = SpellType::Skill;
+			player._pPrevRSpell = s;
+			player._pPrevRSplType = SpellType::Skill;
+		} else {
+			ClearReadiedSpell(player);
+		}
+		RedrawEverything();
 	}
 }
 

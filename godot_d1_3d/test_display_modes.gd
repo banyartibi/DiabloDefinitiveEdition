@@ -40,13 +40,17 @@ func _init():
 		return
 	print("  PASS: Mode 0 active, 2.5D and 3D properly deactivated!")
 
-	print("[3/4] Testing Mode 1 (Native 2.5D Engine)...")
+	print("[3/4] Testing Mode 1 Upgrade -> Mode 2 (Native 3D Engine)...")
 	main_node.switch_display_mode(1)
-	if sandbox and sandbox.is_sandbox_active:
-		print("FAIL: sandbox should be inactive in Mode 1")
+	if native_25d and native_25d.is_active:
+		print("FAIL: native_25d should be inactive when Mode 1 is upgraded to 3D")
 		quit(1)
 		return
-	print("  PASS: Mode 1 active, 3D sandbox isolated and deactivated!")
+	if sandbox and not sandbox.is_sandbox_active:
+		print("FAIL: sandbox should be active when Mode 1 is upgraded to 3D")
+		quit(1)
+		return
+	print("  PASS: Mode 1 deprecated request cleanly promoted to 3D Engine!")
 
 	print("[4/4] Testing Mode 2 (Native 3D Sandbox)...")
 	main_node.switch_display_mode(2)

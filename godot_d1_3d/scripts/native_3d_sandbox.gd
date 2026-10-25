@@ -45,6 +45,8 @@ var wall_ns_mmi: MultiMeshInstance3D
 var wall_ew_mmi: MultiMeshInstance3D
 var pillar_mmi: MultiMeshInstance3D
 var arch_mmi: MultiMeshInstance3D
+var modular_3d_walls_enabled: bool = false # Modular 3D .glb boxes (disabled by default in favor of authentic 4K PBR gothic architecture)
+var modular_3d_props_enabled: bool = false # Placeholder .glb props (disabled by default in favor of authentic gothic Blizzard North art with 3D lights)
 
 # --- Scenery Billboards (Town Buildings & Trees, Dungeon Walls & Arches) ---
 var town_scenery_root: Node3D = null
@@ -81,6 +83,8 @@ var player_lantern: OmniLight3D
 var player_ring: MeshInstance3D
 var player_arrow: MeshInstance3D
 var player_target_pos: Vector3 = Vector3.ZERO
+var warrior_controller: Node3D = null
+var warrior_3d_enabled: bool = false
 
 # --- Monster Entities ---
 var monsters_root: Node3D
@@ -88,7 +92,9 @@ var monster_instances: Dictionary = {}    # id (int) -> Node3D
 var monster_textures: Dictionary = {}     # id (int) -> ImageTexture
 var monster_last_frame: Dictionary = {}   # id (int) -> int
 var monster_last_dir: Dictionary = {}     # id (int) -> int
+var monster_unseen_frames: Dictionary = {}# id (int) -> int
 var last_gamma_value: int = -1
+var monsters_3d_enabled: bool = false
 
 # --- Interactive 3D Props ---
 var props_root: Node3D
@@ -102,6 +108,14 @@ var item_instances: Dictionary = {}       # id (int) -> Node3D
 var item_textures: Dictionary = {}        # String cache_key -> ImageTexture
 var item_is_hd_cache: Dictionary = {}     # String cache_key -> bool
 var last_item_check_timer: float = 0.0
+
+# --- Missiles & Projectiles ---
+var missiles_root: Node3D = null
+var missile_instances: Dictionary = {}    # id (int) -> Node3D
+
+# --- Corpses & Fallen Entities ---
+var corpses_root: Node3D = null
+var corpse_instances: Dictionary = {}     # String key -> Node3D
 
 # --- Waypoint / Click Feedback ---
 var click_marker: MeshInstance3D
@@ -132,7 +146,7 @@ func _bridge_read_gate_open() -> bool:
 		if _gate_native:
 			print("[3D] level_transition gate: AUTH_NATIVE (native decision)")
 	if not _gate_native:
-		return not diablo_bridge.is_level_loading()
+		return not (diablo_bridge.is_level_loading() if diablo_bridge.has_method("is_level_loading") else false)
 	var g = diablo_bridge.get_read_gate_state()
 	var native_ok: bool = transition_logic.update_from_gate(g, int(diablo_bridge.get_current_level()))
 	if native_ok != bool(g.get("safe", false)):
@@ -163,9 +177,31 @@ func setup_scene_nodes():
 	env.glow_enabled = true
 	env.glow_intensity = 0.50
 	env.glow_bloom = 0.20
+
+	# AAA Forward+ Screen-Space Ambient Occlusion (SSAO)
+	env.ssao_enabled = true
+	env.ssao_radius = 1.4
+	env.ssao_intensity = 1.8
+	env.ssao_power = 1.5
+	env.ssao_detail = 0.6
+
+	# AAA Forward+ Screen-Space Indirect Lighting (SSIL)
+	env.ssil_enabled = true
+	env.ssil_radius = 3.2
+	env.ssil_intensity = 0.95
+
+	# Volumetric Fog & Atmospheric God-Rays
 	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.005
+	env.volumetric_fog_density = 0.006
 	env.volumetric_fog_albedo = Color(0.35, 0.38, 0.48, 1.0)
+	env.volumetric_fog_emission = Color(0.03, 0.02, 0.01, 1.0)
+	env.volumetric_fog_emission_energy = 0.4
+
+	# Scene-wide WorldEnvironment
+	world_env = WorldEnvironment.new()
+	world_env.name = "WorldEnvironment"
+	world_env.environment = env
+	add_child(world_env)
 
 	# 2. Directional Key Light
 	dir_light = DirectionalLight3D.new()
@@ -210,6 +246,16 @@ func setup_scene_nodes():
 	monsters_root.name = "MonstersRoot"
 	add_child(monsters_root)
 
+	# 6.5 Missiles & Projectiles Container
+	missiles_root = Node3D.new()
+	missiles_root.name = "MissilesRoot"
+	add_child(missiles_root)
+
+	# 6.8 Corpses Container
+	corpses_root = Node3D.new()
+	corpses_root.name = "CorpsesRoot"
+	add_child(corpses_root)
+
 	# 7. Click Marker
 	setup_click_marker()
 
@@ -223,6 +269,12 @@ func setup_scene_nodes():
 		camera.size = 14.5
 		add_child(camera)
 	camera.environment = env
+	var listener = camera.get_node_or_null("AudioListener3D") as AudioListener3D
+	if not listener:
+		listener = AudioListener3D.new()
+		listener.name = "AudioListener3D"
+		camera.add_child(listener)
+	listener.make_current()
 	load_dungeon_piece_types()
 
 func load_dungeon_piece_types():
@@ -274,8 +326,45 @@ func is_piece_floor(piece_id: int, cur_level: int) -> bool:
 	return is_f
 
 # ==============================================================================
-# Modular 3D Dungeon Kit Pipeline
+# Modular 3D Dungeon Kit Pipeline & AAA Quality Certification
 # ==============================================================================
+
+# In accordance with project directives, any low-poly, prototype, or generic
+# CC0 box meshes (e.g. 1 KB extruded wall cubes or modern white bathtubs) are
+# strictly rejected from gameplay. Only models meeting AAA dark fantasy standards
+# (sculpted reliefs, high polygon density, PBR maps, zero light leakage) are certified.
+
+var aaa_certified_meshes: Dictionary = {}
+var aaa_certified_themes: Dictionary = {}
+var aaa_certified_props: Dictionary = {}
+
+func is_mesh_aaa_certified(path: String) -> bool:
+	if aaa_certified_meshes.has(path):
+		return bool(aaa_certified_meshes[path])
+	if path.begins_with("res://assets/models/aaa/"):
+		return ResourceLoader.exists(path) or FileAccess.file_exists(ProjectSettings.globalize_path(path))
+	return false
+
+func can_use_modular_3d_walls(theme: String = "") -> bool:
+	if not modular_3d_walls_enabled:
+		return false
+	if theme.is_empty():
+		theme = get_theme_name(last_level_idx)
+	return aaa_certified_themes.get(theme, false)
+
+func can_use_modular_3d_prop(prop_key: String) -> bool:
+	if not modular_3d_props_enabled:
+		return false
+	return aaa_certified_props.get(prop_key, false)
+
+func set_theme_aaa_certified(theme: String, certified: bool):
+	aaa_certified_themes[theme] = certified
+
+func set_prop_aaa_certified(prop_key: String, certified: bool):
+	aaa_certified_props[prop_key] = certified
+
+func set_mesh_aaa_certified(path: String, certified: bool):
+	aaa_certified_meshes[path] = certified
 
 func get_or_load_mesh(path: String) -> Mesh:
 	if mesh_cache.has(path):
@@ -778,7 +867,22 @@ func update_modular_dungeon_assets(level_idx: int):
 	var wall_ns_mesh = get_or_load_mesh("res://assets/models/dungeon/wall_ns.glb")
 	var wall_ew_mesh = get_or_load_mesh("res://assets/models/dungeon/wall_ew.glb")
 	var pillar_mesh = get_or_load_mesh("res://assets/models/dungeon/pillar.glb")
-	var arch_mesh = get_or_load_mesh("res://assets/models/dungeon/arch_open.glb")
+	var arch_mesh = get_or_load_mesh("res://assets/models/dungeon/arch_door.glb")
+	if arch_mesh == null or (arch_mesh is BoxMesh):
+		arch_mesh = get_or_load_mesh("res://assets/models/dungeon/arch_open.glb")
+
+	# Certified AAA Dark Fantasy Kits
+	if theme == "cathedral":
+		var aaa_ns = "res://assets/models/aaa/cathedral/wall_ns_gothic.res"
+		var aaa_ew = "res://assets/models/aaa/cathedral/wall_ew_gothic.res"
+		var aaa_corner = "res://assets/models/aaa/cathedral/wall_corner_gothic.res"
+		var aaa_pillar = "res://assets/models/aaa/cathedral/pillar_gothic.res"
+		if ResourceLoader.exists(aaa_ns) and ResourceLoader.exists(aaa_ew):
+			wall_ns_mesh = get_or_load_mesh(aaa_ns)
+			wall_ew_mesh = get_or_load_mesh(aaa_ew)
+			wall_block_mesh = get_or_load_mesh(aaa_corner)
+			pillar_mesh = get_or_load_mesh(aaa_pillar)
+			set_theme_aaa_certified("cathedral", true)
 
 	# For Caves (L9..12), use broken / organic rock walls instead of straight drywall
 	if theme == "caves":
@@ -931,21 +1035,21 @@ func update_modular_dungeon_assets(level_idx: int):
 			if theme == "cathedral":
 				dir_light.rotation_degrees = Vector3(-55.0, -35.0, 0.0)
 				dir_light.light_color = Color(0.60, 0.70, 0.88, 1.0)
-				dir_light.light_energy = 0.55
+				dir_light.light_energy = 0.15
 			elif theme == "catacombs":
 				dir_light.rotation_degrees = Vector3(-50.0, -40.0, 0.0)
 				dir_light.light_color = Color(0.48, 0.58, 0.44, 1.0)
-				dir_light.light_energy = 0.45
+				dir_light.light_energy = 0.08
 			elif theme == "caves":
 				# Upward/diagonal reflection from molten magma flows below
 				dir_light.rotation_degrees = Vector3(-35.0, -20.0, 0.0)
 				dir_light.light_color = Color(0.90, 0.45, 0.18, 1.0)
-				dir_light.light_energy = 0.65
+				dir_light.light_energy = 0.12
 			elif theme == "hell":
 				# Fierce infernal brimstone downpour
 				dir_light.rotation_degrees = Vector3(-60.0, -30.0, 0.0)
 				dir_light.light_color = Color(1.0, 0.28, 0.12, 1.0)
-				dir_light.light_energy = 0.75
+				dir_light.light_energy = 0.20
 
 		if player_lantern:
 			if theme == "hell":
@@ -998,6 +1102,7 @@ func _on_level_changed(new_lvl: int):
 	monster_textures.clear()
 	monster_last_frame.clear()
 	monster_last_dir.clear()
+	monster_unseen_frames.clear()
 
 	# 5. Clear all ground items
 	if items_root:
@@ -1006,6 +1111,17 @@ func _on_level_changed(new_lvl: int):
 	item_instances.clear()
 	item_textures.clear()
 	item_is_hd_cache.clear()
+
+	# 5.5 Clear missiles & corpses
+	if missiles_root:
+		for c in missiles_root.get_children():
+			c.queue_free()
+	missile_instances.clear()
+
+	if corpses_root:
+		for c in corpses_root.get_children():
+			c.queue_free()
+	corpse_instances.clear()
 
 	# 6. Clear all props & torches
 	if props_root:
@@ -1090,6 +1206,13 @@ func rebuild_dungeon_if_needed(force: bool = false):
 
 	var floor_piece_transforms: Dictionary = {} # piece_id (int) -> Array[Transform3D]
 	var total_floor_count = 0
+	var wall_block_transforms: Array[Transform3D] = []
+	var wall_ns_transforms: Array[Transform3D] = []
+	var wall_ew_transforms: Array[Transform3D] = []
+	var pillar_transforms: Array[Transform3D] = []
+	var arch_transforms: Array[Transform3D] = []
+	var cur_theme = get_theme_name(cur_level)
+	var can_3d_walls = is_dungeon and can_use_modular_3d_walls(cur_theme)
 
 	for y in range(min_bound, max_bound):
 		for x in range(min_bound, max_bound):
@@ -1136,6 +1259,14 @@ func rebuild_dungeon_if_needed(force: bool = false):
 			var is_wall_scenery = (th > floor_h)
 			var is_door_tile = door_tiles.has(tile_pos_i)
 
+			# Modular 3D Door Archway (Cathedral / Dungeons)
+			if is_door_tile and can_3d_walls:
+				var d_obj = door_tiles[tile_pos_i]
+				var o_type = d_obj.get("type", 1)
+				var is_l_door = (o_type in [1, 148, 180, 211])
+				var arch_basis = basis_tile.rotated(Vector3.UP, deg_to_rad(-90.0)) if is_l_door else basis_tile
+				arch_transforms.append(Transform3D(arch_basis, Vector3(wpos.x, 0.0, wpos.z)))
+
 			# 1. Floor diamond: All tiles have a procedural floor diamond on the ground plane
 			if not floor_piece_transforms.has(pid):
 				floor_piece_transforms[pid] = []
@@ -1151,30 +1282,53 @@ func rebuild_dungeon_if_needed(force: bool = false):
 					floor_img.generate_mipmaps()
 					base_floor_texture_cache[pid] = ImageTexture.create_from_image(floor_img)
 
-			# 2. Scenery Billboard Sprite (Town Buildings & Trees, Dungeon Walls, Columns & Bookshelves)
+			# 2. Wall & Scenery Geometry:
+			# If modular 3D walls are enabled in Dungeon: generate true 3D modular meshes for solid walls
 			if is_wall_scenery and not is_door_tile:
-				var spr = Sprite3D.new()
-				spr.name = "Scenery_%d_%d" % [x, y]
-				spr.texture = tex
-				spr.centered = true
-				spr.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-				spr.rotation.x = deg_to_rad(-camera_pitch)
-				spr.rotation.y = deg_to_rad(camera_yaw)
-				spr.shaded = false
-				spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
-				spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-				var p_scale = 1.50 / float(tw)
-				spr.pixel_size = p_scale
-				spr.offset = Vector2(0.0, float(th) * 0.5)
-				spr.position = Vector3(wpos.x, 0.01, wpos.z)
-				# Unshaded healthy illumination per Rule #4 in GEMINI.md
-				spr.modulate = Color(1.48, 1.45, 1.38) if (cur_level == 0) else Color(1.48, 1.44, 1.36)
-				town_scenery_root.add_child(spr)
-				town_scenery_nodes[idx] = spr
+				if can_3d_walls:
+					if val == 2:
+						var has_wall_nx = (x > 0 and (solidity[y * 112 + (x - 1)] == 2 or door_tiles.has(Vector2i(x - 1, y))))
+						var has_wall_px = (x < 111 and (solidity[y * 112 + (x + 1)] == 2 or door_tiles.has(Vector2i(x + 1, y))))
+						var has_wall_ny = (y > 0 and (solidity[(y - 1) * 112 + x] == 2 or door_tiles.has(Vector2i(x, y - 1))))
+						var has_wall_py = (y < 111 and (solidity[(y + 1) * 112 + x] == 2 or door_tiles.has(Vector2i(x, y + 1))))
 
-			# 3. Special CEL Archways & Column Tops (Cathedral only per GEMINI.md Rule #2)
+						var neighbor_x_count = (1 if has_wall_nx else 0) + (1 if has_wall_px else 0)
+						var neighbor_y_count = (1 if has_wall_ny else 0) + (1 if has_wall_py else 0)
+						var total_neighbors = neighbor_x_count + neighbor_y_count
+
+						var w_tf = Transform3D(basis_tile, Vector3(wpos.x, 0.0, wpos.z))
+
+						if total_neighbors == 0:
+							pillar_transforms.append(w_tf)
+						elif neighbor_x_count > 0 and neighbor_y_count == 0:
+							wall_ns_transforms.append(w_tf)
+						elif neighbor_y_count > 0 and neighbor_x_count == 0:
+							wall_ew_transforms.append(w_tf)
+						else:
+							wall_block_transforms.append(w_tf)
+				else:
+					# Town Buildings & Trees (Level 0), or legacy billboard fallback
+					var spr = Sprite3D.new()
+					spr.name = "Scenery_%d_%d" % [x, y]
+					spr.texture = tex
+					spr.centered = true
+					spr.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+					spr.rotation.x = deg_to_rad(-camera_pitch)
+					spr.rotation.y = deg_to_rad(camera_yaw)
+					spr.shaded = false
+					spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+					spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+					var p_scale = 1.50 / float(tw)
+					spr.pixel_size = p_scale
+					spr.offset = Vector2(0.0, float(th) * 0.5)
+					spr.position = Vector3(wpos.x, 0.01, wpos.z)
+					spr.modulate = Color(1.48, 1.45, 1.38) if (cur_level == 0) else Color(1.48, 1.44, 1.36)
+					town_scenery_root.add_child(spr)
+					town_scenery_nodes[idx] = spr
+
+			# 3. Special CEL Archways & Column Tops (Cathedral only per GEMINI.md Rule #2, only when modular 3D meshes are disabled)
 			var special_id = special_grid[idx] if idx < special_grid.size() else 0
-			if special_id > 0 and is_cathedral and (solidity.size() < 112 * 112 or solidity[idx] != 0):
+			if special_id > 0 and is_cathedral and (not can_3d_walls) and (solidity.size() < 112 * 112 or solidity[idx] != 0):
 				var arch_tex = get_scenery_special_texture(special_id, cur_level)
 				if arch_tex:
 					var aspr = Sprite3D.new()
@@ -1234,26 +1388,46 @@ func rebuild_dungeon_if_needed(force: bool = false):
 	if floor_mmi:
 		floor_mmi.visible = false
 
-	# Modular 3D cubes completely disabled in favor of authentic billboard sprites!
-	if wall_mmi and wall_mmi.multimesh:
-		wall_mmi.multimesh.instance_count = 0
-		wall_mmi.visible = false
-	if wall_ns_mmi and wall_ns_mmi.multimesh:
-		wall_ns_mmi.multimesh.instance_count = 0
-		wall_ns_mmi.visible = false
-	if wall_ew_mmi and wall_ew_mmi.multimesh:
-		wall_ew_mmi.multimesh.instance_count = 0
-		wall_ew_mmi.visible = false
-	if pillar_mmi and pillar_mmi.multimesh:
-		pillar_mmi.multimesh.instance_count = 0
-		pillar_mmi.visible = false
-	if arch_mmi and arch_mmi.multimesh:
-		arch_mmi.multimesh.instance_count = 0
-		arch_mmi.visible = false
+	# Modular 3D Kit MultiMeshes
+	if is_dungeon and can_3d_walls:
+		if wall_mmi and wall_mmi.multimesh:
+			_populate_multimesh(wall_mmi.multimesh, wall_block_transforms)
+			wall_mmi.visible = (wall_block_transforms.size() > 0)
+		if wall_ns_mmi and wall_ns_mmi.multimesh:
+			_populate_multimesh(wall_ns_mmi.multimesh, wall_ns_transforms)
+			wall_ns_mmi.visible = (wall_ns_transforms.size() > 0)
+		if wall_ew_mmi and wall_ew_mmi.multimesh:
+			_populate_multimesh(wall_ew_mmi.multimesh, wall_ew_transforms)
+			wall_ew_mmi.visible = (wall_ew_transforms.size() > 0)
+		if pillar_mmi and pillar_mmi.multimesh:
+			_populate_multimesh(pillar_mmi.multimesh, pillar_transforms)
+			pillar_mmi.visible = (pillar_transforms.size() > 0)
+		if arch_mmi and arch_mmi.multimesh:
+			_populate_multimesh(arch_mmi.multimesh, arch_transforms)
+			arch_mmi.visible = (arch_transforms.size() > 0)
+	else:
+		if wall_mmi and wall_mmi.multimesh:
+			wall_mmi.multimesh.instance_count = 0
+			wall_mmi.visible = false
+		if wall_ns_mmi and wall_ns_mmi.multimesh:
+			wall_ns_mmi.multimesh.instance_count = 0
+			wall_ns_mmi.visible = false
+		if wall_ew_mmi and wall_ew_mmi.multimesh:
+			wall_ew_mmi.multimesh.instance_count = 0
+			wall_ew_mmi.visible = false
+		if pillar_mmi and pillar_mmi.multimesh:
+			pillar_mmi.multimesh.instance_count = 0
+			pillar_mmi.visible = false
+		if arch_mmi and arch_mmi.multimesh:
+			arch_mmi.multimesh.instance_count = 0
+			arch_mmi.visible = false
 
-	print("[Native 3D Sandbox] Reconstructed 3D world (L%d): %d floors (%d unique pieces), %d scenery sprites, %d special archways" % [
+	var total_modular_walls = wall_block_transforms.size() + wall_ns_transforms.size() + wall_ew_transforms.size() + pillar_transforms.size() + arch_transforms.size()
+	print("[Native 3D Sandbox] Reconstructed 3D world (L%d): %d floors (%d unique pieces), %d scenery sprites, %d special archways, %d 3D modular walls (%d NS, %d EW, %d corners, %d pillars, %d arches)" % [
 		cur_level, total_floor_count, floor_piece_transforms.size(),
-		town_scenery_nodes.size(), special_scenery_nodes.size()
+		town_scenery_nodes.size(), special_scenery_nodes.size(),
+		total_modular_walls,
+		wall_ns_transforms.size(), wall_ew_transforms.size(), wall_block_transforms.size(), pillar_transforms.size(), arch_transforms.size()
 	])
 
 func _populate_multimesh(mm: MultiMesh, transforms: Array):
@@ -1342,17 +1516,44 @@ func setup_player_entity():
 	player_arrow.visible = false
 	player_root.add_child(player_arrow)
 
+	# AAA Warrior 3D Controller
+	var warrior_script = load("res://scripts/entities/warrior_3d_controller.gd")
+	if warrior_script:
+		warrior_controller = warrior_script.new()
+		warrior_controller.name = "Warrior3DController"
+		warrior_controller.visible = false
+		player_root.add_child(warrior_controller)
+
 func update_player_entity(delta: float):
+	if not diablo_bridge or not diablo_bridge.has_method("get_player_continuous_pos"):
+		return
 	var p_data = diablo_bridge.get_player_continuous_pos()
-	var px = p_data.get("pos_x", 25.0)
-	var py = p_data.get("pos_y", 25.0)
+	if not p_data or p_data.is_empty() or not p_data.has("pos_x"):
+		return
+	var px = float(p_data.get("pos_x", 0.0))
+	var py = float(p_data.get("pos_y", 0.0))
 	var dir = p_data.get("dir", 0)
 	var anim_frame = p_data.get("anim_frame", -1)
 
 	player_target_pos = tile_to_world_3d(px, py)
-	player_root.position = player_root.position.lerp(player_target_pos, delta * 14.0)
+	if delta <= 0.0 or player_root.position == Vector3.ZERO:
+		player_root.position = player_target_pos
+	else:
+		player_root.position = player_root.position.lerp(player_target_pos, delta * 14.0)
 
 	player_arrow.rotation_degrees.y = float(dir) * 45.0
+
+	# 3D Warrior Hero Quality-Gated Sync
+	if warrior_controller:
+		var p_action = str(p_data.get("action", "IDLE"))
+		warrior_controller.set_direction(dir)
+		warrior_controller.set_action(p_action)
+		var is_moving = (player_root.position.distance_to(player_target_pos) > 0.05)
+		warrior_controller.update_animation(delta, Vector3.ZERO, is_moving)
+
+		var use_3d = warrior_3d_enabled and is_mesh_aaa_certified("res://assets/models/aaa/characters/warrior_gothic.res")
+		warrior_controller.visible = use_3d
+		player_sprite.visible = not use_3d
 
 	# Fetch authentic animated player sprite
 	if diablo_bridge and diablo_bridge.has_method("get_player_sprite_data"):
@@ -1371,7 +1572,7 @@ func update_player_entity(delta: float):
 					player_sprite.texture = player_texture
 				else:
 					player_texture.update(img)
-				player_sprite.pixel_size = PIXEL_SIZE_1X
+				player_sprite.pixel_size = PIXEL_SIZE_HD if sw >= 200 else PIXEL_SIZE_1X
 				player_sprite.offset = Vector2(0, float(sh) * 0.5)
 
 	# Healthy illumination modulation (Rule #4 in GEMINI.md)
@@ -1416,13 +1617,29 @@ func update_monster_entities(delta: float):
 		var m_name = m.get("name", "Monster")
 
 		var target_pos = tile_to_world_3d(mx, my)
-		if delta <= 0.0:
+		if delta <= 0.0 or node.position == Vector3.ZERO:
 			node.position = target_pos
 		else:
 			node.position = node.position.lerp(target_pos, delta * 12.0)
 
 		# Update Monster Sprite3D
 		var m_sprite = node.get_node_or_null("MonsterSprite3D") as Sprite3D
+
+		# 3D Monster Controller Quality-Gated Sync
+		var m_ctrl = node.get_node_or_null("Monster3DController")
+		var m_action = str(m.get("action", "IDLE"))
+		if hp <= 0:
+			m_action = "DEATH"
+		if m_ctrl:
+			m_ctrl.set_direction(dir)
+			m_ctrl.set_action(m_action)
+			var is_moving = (delta > 0.0 and node.position.distance_to(target_pos) > 0.02)
+			m_ctrl.update_animation(delta, is_moving)
+
+			var use_3d = monsters_3d_enabled and is_mesh_aaa_certified("res://assets/models/aaa/monsters/skeleton_gothic.res")
+			m_ctrl.visible = use_3d
+			if m_sprite:
+				m_sprite.visible = not use_3d
 		var last_f = monster_last_frame.get(m_id, -999)
 		var last_d = monster_last_dir.get(m_id, -999)
 		var cur_tex: ImageTexture = monster_textures.get(m_id, null)
@@ -1447,7 +1664,7 @@ func update_monster_entities(delta: float):
 						cur_tex.update(m_img)
 
 					if m_sprite:
-						m_sprite.pixel_size = PIXEL_SIZE_1X
+						m_sprite.pixel_size = PIXEL_SIZE_HD if mw >= 200 else PIXEL_SIZE_1X
 						m_sprite.offset = Vector2(0, float(mh) * 0.5)
 
 					# Dynamic HP bar & name label height
@@ -1485,10 +1702,27 @@ func update_monster_entities(delta: float):
 			if not is_town:
 				label.text = "%s [%d/%d]" % [m_name, hp, max_hp]
 
-	# Hide inactive monsters
+	# Prune inactive / despawned monsters cleanly
+	var dead_ids = []
 	for id in monster_instances.keys():
 		if not seen_ids.has(id):
 			monster_instances[id].visible = false
+			monster_unseen_frames[id] = monster_unseen_frames.get(id, 0) + 1
+			if monster_unseen_frames[id] > 90:
+				dead_ids.append(id)
+		else:
+			monster_unseen_frames[id] = 0
+
+	for d_id in dead_ids:
+		if monster_instances.has(d_id):
+			var n = monster_instances[d_id]
+			if is_instance_valid(n):
+				n.queue_free()
+			monster_instances.erase(d_id)
+		monster_textures.erase(d_id)
+		monster_last_frame.erase(d_id)
+		monster_last_dir.erase(d_id)
+		monster_unseen_frames.erase(d_id)
 
 func get_or_create_monster_node(m_id: int) -> Node3D:
 	if monster_instances.has(m_id):
@@ -1508,6 +1742,15 @@ func get_or_create_monster_node(m_id: int) -> Node3D:
 	sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	sprite.modulate = Color(1.38, 1.35, 1.28)
 	node.add_child(sprite)
+
+	# AAA Monster 3D Controller
+	var monster_script = load("res://scripts/entities/monster_3d_controller.gd")
+	if monster_script:
+		var mc = monster_script.new()
+		mc.name = "Monster3DController"
+		mc.monster_id = m_id
+		mc.visible = false
+		node.add_child(mc)
 
 	# Soft Ground Contact Shadow Disc
 	var shadow_disc = MeshInstance3D.new()
@@ -1601,17 +1844,16 @@ func update_props(delta: float):
 		prop.visible = true
 
 		# Update object animations & interactive states
-		var is_door = (o_type in [1, 2, 148, 149, 180, 181, 211, 212])
-		var is_chest = (o_type in [5, 6, 7, 174, 175, 176])
-		var is_sarc = (o_type in [154, 214])
-		var is_fire = (o_type in [0, 3, 8, 9, 10, 106, 109, 114, 115, 116, 120, 121, 150, 151, 152, 153, 155, 171, 193, 210])
+		var category = str(obj.get("category", ""))
+		var is_open = bool(obj.get("is_open", false)) or bool(obj.get("pre_flag", false)) or (anim_frame > 1) or (not bool(obj.get("solid", true)))
+		var is_door = (category == "DOOR") or (o_type in [1, 2, 148, 149, 180, 181, 211, 212])
+		var is_chest = (category == "CHEST") or (o_type in [5, 6, 7, 174, 175, 176])
+		var is_sarc = (category == "SARCOPHAGUS") or (o_type in [154, 214])
+		var is_fire = (category == "TORCH") or (o_type in [0, 3, 8, 9, 10, 106, 109, 114, 115, 116, 120, 121, 150, 151, 152, 153, 155, 171, 193, 210])
 
 		if is_door:
 			var pivot = prop.get_node_or_null("DoorContainer/DoorPivot")
 			if pivot:
-				# In Diablo 1, obj.pre_flag indicates open state (true when open, false when closed)
-				# Also support anim_frame > 1, solid == false, or open door piece IDs
-				var is_open = bool(obj.get("pre_flag", false)) or (anim_frame > 1) or (not bool(obj.get("solid", true)))
 				if not is_open and diablo_bridge and diablo_bridge.has_method("get_dungeon_tile"):
 					var cur_pid = diablo_bridge.get_dungeon_tile(tx, ty)
 					if cur_pid in [392, 394, 12, 16, 537, 540, 205, 208]:
@@ -1620,6 +1862,8 @@ func update_props(delta: float):
 				pivot.rotation_degrees.y = lerp(pivot.rotation_degrees.y, target_deg, delta * 12.0)
 		elif is_chest:
 			var lid = prop.get_node_or_null("ChestLid")
+			if lid == null:
+				lid = prop.get_node_or_null("ChestProp/ChestLid")
 			if lid:
 				var target_rot = -70.0 if anim_frame > 1 else 0.0
 				lid.rotation_degrees.x = lerp(lid.rotation_degrees.x, target_rot, delta * 8.0)
@@ -1628,32 +1872,38 @@ func update_props(delta: float):
 			if s_lid:
 				var target_offset = Vector3(0.4, 0.0, 0.0) if anim_frame > 1 else Vector3.ZERO
 				s_lid.position = s_lid.position.lerp(target_offset, delta * 6.0)
-		elif is_fire:
+		# Light flickering for fire props (wall torches, standing braziers)
+		if is_fire:
 			var light = prop.get_node_or_null("TorchLight") as OmniLight3D
 			if light == null:
 				light = prop.get_node_or_null("WallTorch/TorchLight") as OmniLight3D
 			if light:
 				var flicker = 1.45 + 0.18 * sin(time_accum * 8.0 + float(o_id)) * cos(time_accum * 4.5)
 				light.light_energy = flicker
-		else:
-			var obj_spr = prop.get_node_or_null("ObjectSprite3D") as Sprite3D
-			if obj_spr:
-				var last_f = prop_last_frame.get(o_id, -999)
-				if anim_frame != last_f or obj_spr.texture == null:
-					prop_last_frame[o_id] = anim_frame
-					if diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
-						var s_data = diablo_bridge.get_object_sprite_data(o_id)
-						var sw = s_data.get("width", 0)
-						var sh = s_data.get("height", 0)
-						var rgba = s_data.get("rgba", PackedByteArray())
-						if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
-							var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
-							img.generate_mipmaps()
-							if obj_spr.texture == null or obj_spr.texture.get_width() != sw or obj_spr.texture.get_height() != sh:
-								obj_spr.texture = ImageTexture.create_from_image(img)
-							else:
-								obj_spr.texture.update(img)
-							obj_spr.offset = Vector2(0, float(sh) * 0.5)
+
+		# Update billboard sprite animations for any prop using ObjectSprite3D
+		var obj_spr = prop.get_node_or_null("ObjectSprite3D") as Sprite3D
+		if obj_spr:
+			var last_f = prop_last_frame.get(o_id, -999)
+			if anim_frame != last_f or obj_spr.texture == null:
+				prop_last_frame[o_id] = anim_frame
+				if diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
+					var s_data = diablo_bridge.get_object_sprite_data(o_id)
+					var sw = s_data.get("width", 0)
+					var sh = s_data.get("height", 0)
+					var rgba = s_data.get("rgba", PackedByteArray())
+					if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
+						var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
+						img.generate_mipmaps()
+						if obj_spr.texture == null or obj_spr.texture.get_width() != sw or obj_spr.texture.get_height() != sh:
+							obj_spr.texture = ImageTexture.create_from_image(img)
+						else:
+							obj_spr.texture.update(img)
+						obj_spr.offset = Vector2(0, float(sh) * 0.5)
+						if sw >= 200:
+							obj_spr.pixel_size = PIXEL_SIZE_HD
+						else:
+							obj_spr.pixel_size = PIXEL_SIZE_1X
 
 	# Clean up inactive props
 	for id in prop_instances.keys():
@@ -1757,10 +2007,11 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int) -> Node3D
 		torch_node.name = "WallTorch"
 		torch_node.transform = torch_tf
 
-		var sconce_mesh = MeshInstance3D.new()
-		sconce_mesh.mesh = get_or_load_mesh("res://assets/models/props/torch_sconce.glb")
-		sconce_mesh.material_override = get_pbr_material_for_theme(get_theme_name(last_level_idx), true)
-		torch_node.add_child(sconce_mesh)
+		if can_use_modular_3d_prop("wall_torch"):
+			var sconce_mesh = MeshInstance3D.new()
+			sconce_mesh.mesh = get_or_load_mesh("res://assets/models/props/torch_sconce.glb")
+			sconce_mesh.material_override = get_pbr_material_for_theme(get_theme_name(last_level_idx), true)
+			torch_node.add_child(sconce_mesh)
 
 		var light = OmniLight3D.new()
 		light.name = "TorchLight"
@@ -1781,11 +2032,13 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int) -> Node3D
 		node.add_child(torch_node)
 
 	elif is_standing_fire:
-		# Standing brazier / fire basin resting on the floor
-		var mesh_inst = MeshInstance3D.new()
-		mesh_inst.mesh = get_or_load_mesh("res://assets/models/props/standing_brazier.glb")
-		mesh_inst.material_override = get_pbr_material_for_theme(get_theme_name(last_level_idx), true)
-		node.add_child(mesh_inst)
+		if can_use_modular_3d_prop("standing_brazier"):
+			# Standing brazier / fire basin resting on the floor
+			var mesh_inst = MeshInstance3D.new()
+			mesh_inst.mesh = get_or_load_mesh("res://assets/models/aaa/props/standing_brazier_gothic.res")
+			node.add_child(mesh_inst)
+		else:
+			_attach_universal_object_sprite(node, o_id)
 
 		var light = OmniLight3D.new()
 		light.name = "TorchLight"
@@ -1804,39 +2057,57 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int) -> Node3D
 		node.add_child(embers)
 
 	elif is_chest:
-		var chest_node = Node3D.new()
-		chest_node.name = "ChestProp"
-		var mesh_inst = MeshInstance3D.new()
-		mesh_inst.mesh = get_or_load_mesh("res://assets/models/props/chest.glb")
-		mesh_inst.material_override = get_pbr_material_for_theme(get_theme_name(last_level_idx), true)
-		chest_node.add_child(mesh_inst)
+		if can_use_modular_3d_prop("chest"):
+			var chest_node = Node3D.new()
+			chest_node.name = "ChestProp"
+			var mesh_inst = MeshInstance3D.new()
+			mesh_inst.mesh = get_or_load_mesh("res://assets/models/aaa/props/chest_base.res")
+			chest_node.add_child(mesh_inst)
 
-		var lid_pivot = Node3D.new()
-		lid_pivot.name = "ChestLid"
-		lid_pivot.position = Vector3(0, 0.36, -0.22)
-		chest_node.add_child(lid_pivot)
-		node.add_child(chest_node)
+			var lid_pivot = Node3D.new()
+			lid_pivot.name = "ChestLid"
+			lid_pivot.position = Vector3(0, 0.36, -0.22)
+			var lid_inst = MeshInstance3D.new()
+			lid_inst.mesh = get_or_load_mesh("res://assets/models/aaa/props/chest_lid.res")
+			lid_pivot.add_child(lid_inst)
+			chest_node.add_child(lid_pivot)
+			node.add_child(chest_node)
+		else:
+			_attach_universal_object_sprite(node, o_id)
 
 	elif is_sarc:
-		var sarc_inst = MeshInstance3D.new()
-		sarc_inst.mesh = get_or_load_mesh("res://assets/models/props/sarcophagus.glb")
-		sarc_inst.material_override = get_pbr_material_for_theme(get_theme_name(last_level_idx), true)
-		var lid_node = Node3D.new()
-		lid_node.name = "SarcLid"
-		lid_node.add_child(sarc_inst)
-		node.add_child(lid_node)
+		if can_use_modular_3d_prop("sarcophagus"):
+			var sarc_base = MeshInstance3D.new()
+			sarc_base.mesh = get_or_load_mesh("res://assets/models/aaa/props/sarcophagus_base.res")
+			node.add_child(sarc_base)
+
+			var lid_node = Node3D.new()
+			lid_node.name = "SarcLid"
+			lid_node.position = Vector3(0, 0.44, 0)
+			var lid_mesh = MeshInstance3D.new()
+			lid_mesh.mesh = get_or_load_mesh("res://assets/models/aaa/props/sarcophagus_lid.res")
+			lid_node.add_child(lid_mesh)
+			node.add_child(lid_node)
+		else:
+			_attach_universal_object_sprite(node, o_id)
 
 	elif is_barrel:
-		var barrel_inst = MeshInstance3D.new()
-		barrel_inst.mesh = get_or_load_mesh("res://assets/models/props/barrel.glb")
-		barrel_inst.material_override = get_pbr_material_for_theme(get_theme_name(last_level_idx), true)
-		node.add_child(barrel_inst)
+		if can_use_modular_3d_prop("barrel"):
+			var barrel_inst = MeshInstance3D.new()
+			barrel_inst.mesh = get_or_load_mesh("res://assets/models/props/barrel.glb")
+			barrel_inst.material_override = get_pbr_material_for_theme(get_theme_name(last_level_idx), true)
+			node.add_child(barrel_inst)
+		else:
+			_attach_universal_object_sprite(node, o_id)
 
 	elif is_shrine:
-		var shrine_inst = MeshInstance3D.new()
-		shrine_inst.mesh = get_or_load_mesh("res://assets/models/props/shrine.glb")
-		shrine_inst.material_override = get_pbr_material_for_theme(get_theme_name(last_level_idx), true)
-		node.add_child(shrine_inst)
+		if can_use_modular_3d_prop("shrine"):
+			var shrine_inst = MeshInstance3D.new()
+			shrine_inst.mesh = get_or_load_mesh("res://assets/models/props/shrine.glb")
+			shrine_inst.material_override = get_pbr_material_for_theme(get_theme_name(last_level_idx), true)
+			node.add_child(shrine_inst)
+		else:
+			_attach_universal_object_sprite(node, o_id)
 
 		var shrine_light = OmniLight3D.new()
 		shrine_light.name = "ShrineLight"
@@ -1847,48 +2118,55 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int) -> Node3D
 		node.add_child(shrine_light)
 
 	else:
-		# Universal Interactive Object Billboard Sprite (Book Pedestals, Candles, Crucifixes, Cauldrons, Blood Wells, Altars, Levers, etc.)
-		var spr = Sprite3D.new()
-		spr.name = "ObjectSprite3D"
-		spr.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-		spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
-		spr.shaded = false
-		spr.pixel_size = PIXEL_SIZE_1X
-		spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-		spr.modulate = Color(1.45, 1.42, 1.35)
-
-		var shadow_disc = MeshInstance3D.new()
-		shadow_disc.name = "PropShadowDisc"
-		var disc_mesh = CylinderMesh.new()
-		disc_mesh.top_radius = 0.28
-		disc_mesh.bottom_radius = 0.32
-		disc_mesh.height = 0.01
-		shadow_disc.mesh = disc_mesh
-		shadow_disc.position.y = 0.01
-		var s_mat = StandardMaterial3D.new()
-		s_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		s_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.45)
-		s_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		shadow_disc.material_override = s_mat
-		node.add_child(shadow_disc)
-
-		if diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
-			var s_data = diablo_bridge.get_object_sprite_data(o_id)
-			var sw = s_data.get("width", 0)
-			var sh = s_data.get("height", 0)
-			var rgba = s_data.get("rgba", PackedByteArray())
-			if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
-				var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
-				img.generate_mipmaps()
-				var tex = ImageTexture.create_from_image(img)
-				spr.texture = tex
-				spr.offset = Vector2(0, float(sh) * 0.5)
-		node.add_child(spr)
+		_attach_universal_object_sprite(node, o_id)
 
 	props_root.add_child(node)
 	prop_instances[o_id] = node
 	return node
+
+func _attach_universal_object_sprite(node: Node3D, o_id: int):
+	# Universal Interactive Object Billboard Sprite (Book Pedestals, Sarcophagi, Chests, Barrels, Shrines, Altars, etc.)
+	var spr = Sprite3D.new()
+	spr.name = "ObjectSprite3D"
+	spr.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	spr.shaded = false
+	spr.pixel_size = PIXEL_SIZE_1X
+	spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	spr.modulate = Color(1.45, 1.42, 1.35)
+
+	var shadow_disc = MeshInstance3D.new()
+	shadow_disc.name = "PropShadowDisc"
+	var disc_mesh = CylinderMesh.new()
+	disc_mesh.top_radius = 0.28
+	disc_mesh.bottom_radius = 0.32
+	disc_mesh.height = 0.01
+	shadow_disc.mesh = disc_mesh
+	shadow_disc.position.y = 0.01
+	var s_mat = StandardMaterial3D.new()
+	s_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	s_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.45)
+	s_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	shadow_disc.material_override = s_mat
+	node.add_child(shadow_disc)
+
+	if diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
+		var s_data = diablo_bridge.get_object_sprite_data(o_id)
+		var sw = s_data.get("width", 0)
+		var sh = s_data.get("height", 0)
+		var rgba = s_data.get("rgba", PackedByteArray())
+		if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
+			var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
+			img.generate_mipmaps()
+			var tex = ImageTexture.create_from_image(img)
+			spr.texture = tex
+			spr.offset = Vector2(0, float(sh) * 0.5)
+			if sw >= 200:
+				spr.pixel_size = PIXEL_SIZE_HD
+			else:
+				spr.pixel_size = PIXEL_SIZE_1X
+	node.add_child(spr)
 
 func update_environmental_torches(delta: float):
 	if not diablo_bridge or not diablo_bridge.has_method("get_active_lights"):
@@ -2197,6 +2475,145 @@ func setup_click_marker():
 	add_child(click_marker)
 
 # ==============================================================================
+# Missiles & Projectiles 3D Pipeline
+# ==============================================================================
+
+func update_missiles(delta: float):
+	if not diablo_bridge or not diablo_bridge.has_method("get_active_missiles") or missiles_root == null:
+		return
+
+	var missiles: Array = diablo_bridge.get_active_missiles()
+	var seen_ids: Dictionary = {}
+
+	for m in missiles:
+		var m_id = m.get("id", -1)
+		if m_id < 0:
+			continue
+		seen_ids[m_id] = true
+
+		var m_type = m.get("type", 0)
+		var m_dir = m.get("dir", 0)
+		var px = m.get("pos_x", 0.0)
+		var py = m.get("pos_y", 0.0)
+		var light_flag = bool(m.get("light_flag", false))
+
+		# Convert continuous tile/world pos to 3D world pos
+		var tile_x = (px / 32.0 + py / 16.0) * 0.5
+		var tile_y = (py / 16.0 - px / 32.0) * 0.5
+		var pos_3d = tile_to_world_3d(tile_x, tile_y)
+		pos_3d.y = 0.85 # Flying projectile height
+
+		var node = missile_instances.get(m_id, null)
+		if node == null:
+			node = Node3D.new()
+			node.name = "Missile_%d" % m_id
+			missiles_root.add_child(node)
+
+			var spr = Sprite3D.new()
+			spr.name = "Sprite3D"
+			spr.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+			spr.pixel_size = PIXEL_SIZE_1X
+			spr.shaded = false
+			spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			node.add_child(spr)
+
+			if light_flag:
+				var m_light = OmniLight3D.new()
+				m_light.name = "MissileLight"
+				m_light.light_color = Color(1.0, 0.70, 0.30)
+				m_light.light_energy = 2.0
+				m_light.omni_range = 5.0
+				m_light.omni_attenuation = 1.3
+				node.add_child(m_light)
+
+			missile_instances[m_id] = node
+
+		node.position = pos_3d
+
+		var spr = node.get_node_or_null("Sprite3D") as Sprite3D
+		if spr and spr.texture == null and diablo_bridge.has_method("get_missile_sprite_data"):
+			var ms_data = diablo_bridge.get_missile_sprite_data(m_id)
+			var mw = ms_data.get("width", 0)
+			var mh = ms_data.get("height", 0)
+			var m_rgba = ms_data.get("rgba", PackedByteArray())
+			if mw > 0 and mh > 0 and m_rgba.size() == mw * mh * 4:
+				var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
+				m_img.generate_mipmaps()
+				spr.texture = ImageTexture.create_from_image(m_img)
+
+	# Clean up expired missiles
+	var to_remove = []
+	for id in missile_instances.keys():
+		if not seen_ids.has(id):
+			var n = missile_instances[id]
+			if is_instance_valid(n):
+				n.queue_free()
+			to_remove.append(id)
+	for id in to_remove:
+		missile_instances.erase(id)
+
+# ==============================================================================
+# Corpses & Fallen Entities 3D Pipeline
+# ==============================================================================
+
+func update_corpses():
+	if not diablo_bridge or not diablo_bridge.has_method("get_active_corpses") or corpses_root == null:
+		return
+
+	var corpses: Array = diablo_bridge.get_active_corpses()
+	var seen_keys: Dictionary = {}
+
+	for c in corpses:
+		var tx = c.get("tile_x", 0)
+		var ty = c.get("tile_y", 0)
+		var c_idx = c.get("corpse_idx", 0)
+		var c_dir = c.get("dir", 0)
+		var c_key = "%d_%d_%d" % [tx, ty, c_idx]
+		seen_keys[c_key] = true
+
+		if corpse_instances.has(c_key):
+			continue
+
+		var node = Node3D.new()
+		node.name = "Corpse_" + c_key
+		var c_pos = tile_to_world_3d(tx, ty)
+		c_pos.y = 0.02
+		node.position = c_pos
+		corpses_root.add_child(node)
+
+		var spr = Sprite3D.new()
+		spr.name = "CorpseSprite"
+		spr.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		spr.pixel_size = PIXEL_SIZE_1X
+		spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		spr.shaded = true
+		spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+		node.add_child(spr)
+
+		if diablo_bridge.has_method("get_corpse_sprite_data"):
+			var cs_data = diablo_bridge.get_corpse_sprite_data(c_idx, c_dir)
+			var cw = cs_data.get("width", 0)
+			var ch = cs_data.get("height", 0)
+			var c_rgba = cs_data.get("rgba", PackedByteArray())
+			if cw > 0 and ch > 0 and c_rgba.size() == cw * ch * 4:
+				var c_img = Image.create_from_data(cw, ch, false, Image.FORMAT_RGBA8, c_rgba)
+				c_img.generate_mipmaps()
+				spr.texture = ImageTexture.create_from_image(c_img)
+
+		corpse_instances[c_key] = node
+
+	var to_remove = []
+	for k in corpse_instances.keys():
+		if not seen_keys.has(k):
+			var n = corpse_instances[k]
+			if is_instance_valid(n):
+				n.queue_free()
+			to_remove.append(k)
+	for k in to_remove:
+		corpse_instances.erase(k)
+
+# ==============================================================================
 # Coordinate Mathematics Utilities
 # ==============================================================================
 
@@ -2239,6 +2656,9 @@ func activate():
 		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 		camera.size = camera_distance * (14.5 / 13.0)
 		camera.make_current()
+		var listener = camera.get_node_or_null("AudioListener3D") as AudioListener3D
+		if listener:
+			listener.make_current()
 	camera_pitch = 30.0
 	camera_yaw = 0.0
 	last_applied_scenery_yaw = -999.0
@@ -2271,14 +2691,19 @@ func deactivate():
 			t.visible = false
 	if camera:
 		camera.current = false
+		var listener = camera.get_node_or_null("AudioListener3D") as AudioListener3D
+		if listener:
+			listener.clear_current()
 	print("[Native 3D Sandbox] Deactivated. Classic 2.5D view restored.")
 
 func snap_camera_to_player():
-	if not diablo_bridge:
+	if not diablo_bridge or not diablo_bridge.has_method("get_player_continuous_pos"):
 		return
 	var p_data = diablo_bridge.get_player_continuous_pos()
-	var px = p_data.get("pos_x", 25.0)
-	var py = p_data.get("pos_y", 25.0)
+	if not p_data or p_data.is_empty() or not p_data.has("pos_x"):
+		return
+	var px = float(p_data.get("pos_x", 0.0))
+	var py = float(p_data.get("pos_y", 0.0))
 	camera_target = tile_to_world_3d(px, py)
 	player_target_pos = camera_target
 	if player_root:
@@ -2320,6 +2745,8 @@ func _process(delta: float):
 	update_player_entity(delta)
 	update_monster_entities(delta)
 	update_ground_items(delta)
+	update_missiles(delta)
+	update_corpses()
 
 	# Update interactive 3D props & environmental torches (every 0.2s)
 	if last_prop_check_timer >= 0.2:
@@ -2483,6 +2910,13 @@ func handle_input(event: InputEvent) -> bool:
 
 	# 3D Click-to-Move Raycast Navigation
 	if event is InputEventMouseButton and (event.button_index == MOUSE_BUTTON_LEFT or event.button_index == MOUSE_BUTTON_RIGHT):
+		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+			if diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
+				var cid = diablo_bridge.get_cursor_id()
+				if cid > 1 and cid < 12:
+					if diablo_bridge.has_method("cancel_targeting_cursor"):
+						diablo_bridge.cancel_targeting_cursor()
+					return true
 		var mouse_pos = event.position
 		var ray_origin = camera.project_ray_origin(mouse_pos)
 		var ray_dir = camera.project_ray_normal(mouse_pos)

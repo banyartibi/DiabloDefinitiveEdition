@@ -321,6 +321,10 @@ void ToggleSpell(size_t slot)
 	if ((spells & GetSpellBitmask(spellId)) != 0) {
 		myPlayer._pRSpell = spellId;
 		myPlayer._pRSplType = myPlayer._pSplTHotKey[slot];
+		if (myPlayer._pRSplType == SpellType::Spell || myPlayer._pRSplType == SpellType::Skill) {
+			myPlayer._pPrevRSpell = myPlayer._pRSpell;
+			myPlayer._pPrevRSplType = myPlayer._pRSplType;
+		}
 		RedrawEverything();
 	}
 }

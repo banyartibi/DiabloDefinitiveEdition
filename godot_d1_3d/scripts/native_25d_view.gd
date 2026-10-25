@@ -2831,6 +2831,12 @@ func handle_input(event: InputEvent) -> bool:
 		var btn = 1
 		if event.button_index == MOUSE_BUTTON_RIGHT:
 			btn = 3
+			if event.pressed and diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
+				var cid = diablo_bridge.get_cursor_id()
+				if cid > 1 and cid < 12:
+					if diablo_bridge.has_method("cancel_targeting_cursor"):
+						diablo_bridge.cancel_targeting_cursor()
+					return true
 		elif event.button_index == MOUSE_BUTTON_MIDDLE:
 			btn = 2
 		var state = 1 if event.pressed else 0

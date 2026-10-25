@@ -33,6 +33,7 @@
 #include "utils/sdl_wrap.h"
 #include "utils/str_cat.hpp"
 #include "engine/render_vulkan/render_vulkan.hpp"
+#include "engine/render_bridge.hpp"
 
 #ifdef USE_SDL1
 #ifndef SDL1_VIDEO_MODE_BPP
@@ -309,7 +310,9 @@ bool SpawnWindow(const char *lpWindowName)
 
 	int initFlags = SDL_INIT_VIDEO | SDL_INIT_JOYSTICK;
 #ifndef NOSOUND
-	initFlags |= SDL_INIT_AUDIO;
+	if (!gbGodotBridgeActive) {
+		initFlags |= SDL_INIT_AUDIO;
+	}
 #endif
 #ifndef USE_SDL1
 	initFlags |= SDL_INIT_GAMECONTROLLER;

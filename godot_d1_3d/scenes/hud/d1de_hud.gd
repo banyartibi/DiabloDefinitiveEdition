@@ -374,29 +374,41 @@ func setup_button_events():
 	# Town Portal Click
 	if town_portal_slot:
 		town_portal_slot.gui_input.connect(func(event: InputEvent):
-			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-				if diablo_bridge and diablo_bridge.has_method("use_smart_town_portal"):
-					diablo_bridge.use_smart_town_portal()
+			if event is InputEventMouseButton:
+				var vp = get_viewport()
+				if vp: vp.set_input_as_handled()
+				if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+					if diablo_bridge and diablo_bridge.has_method("use_smart_town_portal"):
+						diablo_bridge.use_smart_town_portal()
 		)
 
 	# Smart Potion Clicks
 	if hp_potion_slot:
 		hp_potion_slot.gui_input.connect(func(event: InputEvent):
-			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-				if diablo_bridge and diablo_bridge.has_method("use_smart_potion"):
-					diablo_bridge.use_smart_potion(0)
+			if event is InputEventMouseButton:
+				var vp = get_viewport()
+				if vp: vp.set_input_as_handled()
+				if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+					if diablo_bridge and diablo_bridge.has_method("use_smart_potion"):
+						diablo_bridge.use_smart_potion(0)
 		)
 	if mana_potion_slot:
 		mana_potion_slot.gui_input.connect(func(event: InputEvent):
-			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-				if diablo_bridge and diablo_bridge.has_method("use_smart_potion"):
-					diablo_bridge.use_smart_potion(1)
+			if event is InputEventMouseButton:
+				var vp = get_viewport()
+				if vp: vp.set_input_as_handled()
+				if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+					if diablo_bridge and diablo_bridge.has_method("use_smart_potion"):
+						diablo_bridge.use_smart_potion(1)
 		)
 	if rejuv_potion_slot:
 		rejuv_potion_slot.gui_input.connect(func(event: InputEvent):
-			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-				if diablo_bridge and diablo_bridge.has_method("use_smart_potion"):
-					diablo_bridge.use_smart_potion(2)
+			if event is InputEventMouseButton:
+				var vp = get_viewport()
+				if vp: vp.set_input_as_handled()
+				if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+					if diablo_bridge and diablo_bridge.has_method("use_smart_potion"):
+						diablo_bridge.use_smart_potion(2)
 		)
 
 	# Quick Skill Slots 1-4 Clicks
@@ -405,24 +417,27 @@ func setup_button_events():
 		var idx = i
 		if slot:
 			slot.gui_input.connect(func(event: InputEvent):
-				if event is InputEventMouseButton and event.pressed:
-					if event.button_index == MOUSE_BUTTON_LEFT:
-						var data = quick_slot_spell_data[idx] if idx < quick_slot_spell_data.size() else {}
-						if data.is_empty():
-							open_speedbook()
-						else:
-							if diablo_bridge and diablo_bridge.has_method("quick_cast_hotkey"):
-								diablo_bridge.quick_cast_hotkey(idx)
-					elif event.button_index == MOUSE_BUTTON_RIGHT:
-						var data = quick_slot_spell_data[idx] if idx < quick_slot_spell_data.size() else {}
-						if not data.is_empty():
-							var s_id = data.get("id", 0)
-							var s_type = data.get("type", 0)
-							if diablo_bridge and diablo_bridge.has_method("select_spell"):
-								diablo_bridge.select_spell(s_id, s_type)
-							update_quick_skills()
-						else:
-							open_speedbook()
+				if event is InputEventMouseButton:
+					var vp = get_viewport()
+					if vp: vp.set_input_as_handled()
+					if event.pressed:
+						if event.button_index == MOUSE_BUTTON_LEFT:
+							var data = quick_slot_spell_data[idx] if idx < quick_slot_spell_data.size() else {}
+							if data.is_empty():
+								open_speedbook()
+							else:
+								if diablo_bridge and diablo_bridge.has_method("quick_cast_hotkey"):
+									diablo_bridge.quick_cast_hotkey(idx)
+						elif event.button_index == MOUSE_BUTTON_RIGHT:
+							var data = quick_slot_spell_data[idx] if idx < quick_slot_spell_data.size() else {}
+							if not data.is_empty():
+								var s_id = data.get("id", 0)
+								var s_type = data.get("type", 0)
+								if diablo_bridge and diablo_bridge.has_method("select_spell"):
+									diablo_bridge.select_spell(s_id, s_type)
+								update_quick_skills()
+							else:
+								open_speedbook()
 			)
 
 	# Level Up Button (opens character sheet)
@@ -438,9 +453,12 @@ func setup_button_events():
 	for slot in durability_slots:
 		if slot:
 			slot.gui_input.connect(func(event: InputEvent):
-				if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-					if tabbed_menu:
-						tabbed_menu.open_tab(1)
+				if event is InputEventMouseButton:
+					var vp = get_viewport()
+					if vp: vp.set_input_as_handled()
+					if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+						if tabbed_menu:
+							tabbed_menu.open_tab(1)
 			)
 
 
@@ -460,20 +478,54 @@ func _use_hud_belt_slot(idx: int) -> void:
 	var items: Array = diablo_bridge.get_belt_items() if diablo_bridge.has_method("get_belt_items") else []
 	if idx >= 0 and idx < items.size():
 		var item: Dictionary = items[idx]
+		var type = item.get("type", 0)
+		var iname = item.get("name", "").to_lower()
+		# Scrolls of Identify and Oils target items in inventory: open inventory immediately
+		if (type == 8 and ("identify" in iname)) or type == 9:
+			if tabbed_menu and not tabbed_menu.visible:
+				tabbed_menu.open_tab(1)
 		_shadow_use(item)
 	diablo_bridge.use_belt_slot(idx)
 	update_belt_slots()
 	_shadow_verify()
 
+var _last_belt_signature: Array = []
+
 func _on_hud_belt_slot_gui_input(idx: int, event: InputEvent) -> void:
-	if not (event is InputEventMouseButton) or not event.pressed:
+	if not (event is InputEventMouseButton):
 		return
 	var mb = event as InputEventMouseButton
+	var vp = get_viewport()
+	if vp: vp.set_input_as_handled()
+	if not mb.pressed:
+		return
+
+	# If in targeting mode (Identify, Repair, Oil, etc.), clicking belt cancels targeting (vanilla D1 parity)
+	if diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
+		var cid = diablo_bridge.get_cursor_id()
+		if cid > 1 and cid < 12:
+			if diablo_bridge.has_method("cancel_targeting_cursor"):
+				diablo_bridge.cancel_targeting_cursor()
+			_reset_custom_cursor()
+			return
+
+	var is_inv_open = false
+	if has_meta("test_inventory_open"):
+		is_inv_open = bool(get_meta("test_inventory_open"))
+	elif tabbed_menu and tabbed_menu.visible and tabbed_menu.get_current_tab() == 1:
+		is_inv_open = true
+	elif diablo_bridge and diablo_bridge.has_method("is_inventory_open"):
+		is_inv_open = diablo_bridge.is_inventory_open()
+
 	if mb.button_index == MOUSE_BUTTON_LEFT:
-		if _is_inventory_open():
+		var has_held = false
+		if diablo_bridge and diablo_bridge.has_method("get_player_hold_item"):
+			var hold = diablo_bridge.get_player_hold_item()
+			has_held = not hold.is_empty()
+		if is_inv_open or has_held or mb.shift_pressed:
 			if diablo_bridge and diablo_bridge.has_method("click_belt_slot"):
 				diablo_bridge.click_belt_slot(idx)
-				update_belt_slots()
+				update_belt_slots(true)
 		else:
 			_use_hud_belt_slot(idx)
 	elif mb.button_index == MOUSE_BUTTON_RIGHT:
@@ -489,10 +541,17 @@ func _init_hud_belt_slots() -> void:
 			)
 			slot_node.tooltip_text = "Belt Slot %d [F%d]\n(Empty)" % [i + 1, i + 1]
 
-func update_belt_slots() -> void:
+func update_belt_slots(force: bool = false) -> void:
 	if diablo_bridge == null or not diablo_bridge.has_method("get_belt_items"):
 		return
 	var items: Array = diablo_bridge.get_belt_items()
+	var current_sig: Array = []
+	for it in items:
+		current_sig.append([it.get("type", 0), it.get("count", 0), it.get("name", "")])
+	if not force and current_sig == _last_belt_signature:
+		return
+	_last_belt_signature = current_sig
+
 	for i in range(min(belt_slots.size(), items.size())):
 		var slot_node = belt_slots[i]
 		if slot_node == null:
@@ -507,17 +566,46 @@ func update_belt_slots() -> void:
 
 		if type != 0 and item_name != "":
 			slot_node.set_meta("belt_item", item)
-			slot_node.tooltip_text = "%s\n[LMB] Drink / Move\n[RMB] Drink\n[F%d] Hotkey" % [item_name, i + 1]
+			var action_desc = "[LMB] Drink / Move\n[RMB] Drink"
+			if type == 8:
+				action_desc = "[LMB] Read Scroll\n[RMB] Read Scroll"
+			elif type == 9:
+				action_desc = "[LMB] Apply Oil\n[RMB] Apply Oil"
+			elif type == 10 or ("rune" in item_name.to_lower()):
+				action_desc = "[LMB] Inscribe Rune\n[RMB] Inscribe Rune"
+			slot_node.tooltip_text = "%s\n%s\n[F%d] Hotkey" % [item_name, action_desc, i + 1]
 			var slot_tex: Texture2D = null
-			if diablo_bridge.has_method("get_belt_item_texture"):
+			var name_l = item_name.to_lower()
+			if "heal" in name_l:
+				slot_tex = TEX_HEAL
+			elif "mana" in name_l:
+				slot_tex = TEX_MANA
+			elif "rejuv" in name_l:
+				slot_tex = TEX_REJUV
+			elif "scroll" in name_l or type == 8:
+				slot_tex = TEX_SCROLL
+			elif "oil" in name_l or type == 9:
+				slot_tex = TEX_OIL
+			elif "rune of fire" in name_l:
+				slot_tex = preload("res://assets/skills/rune_of_fire.png")
+			elif "rune of light" in name_l:
+				slot_tex = preload("res://assets/skills/rune_of_light.png")
+			elif "rune of nova" in name_l:
+				slot_tex = preload("res://assets/skills/rune_of_nova.png")
+			elif "rune of immolation" in name_l:
+				slot_tex = preload("res://assets/skills/rune_of_immolation.png")
+			elif "rune of stone" in name_l:
+				slot_tex = preload("res://assets/skills/rune_of_stone.png")
+			elif "rune" in name_l or type == 10:
+				slot_tex = preload("res://assets/skills/rune_of_fire.png")
+			elif type in [1, 2]:
+				slot_tex = TEX_HEAL
+			elif type in [3, 4]:
+				slot_tex = TEX_MANA
+			elif type in [5, 6, 7]:
+				slot_tex = TEX_REJUV
+			elif diablo_bridge.has_method("get_belt_item_texture"):
 				slot_tex = diablo_bridge.get_belt_item_texture(i)
-			if not slot_tex:
-				match type:
-					1, 2: slot_tex = TEX_HEAL
-					3, 4: slot_tex = TEX_MANA
-					5, 6, 7: slot_tex = TEX_REJUV
-					8: slot_tex = TEX_SCROLL
-					9: slot_tex = TEX_OIL
 			if icon:
 				icon.texture = slot_tex
 				icon.visible = (slot_tex != null)
@@ -544,16 +632,47 @@ func _load_hd_texture(path: String) -> Texture2D:
 	return null
 
 func _apply_hd_hud_assets() -> void:
-	var unified_bg = _load_hd_texture("res://assets/hud/hud_gothic_unified.png")
-	if center_gothic_frame and unified_bg:
-		center_gothic_frame.texture = unified_bg
+	var console_bg = _load_hd_texture("res://assets/hud/hud_gothic_clean_master.png")
+	if not console_bg:
+		console_bg = _load_hd_texture("res://assets/hud/hud_gothic_d3_frame.png")
+	if not console_bg:
+		console_bg = _load_hd_texture("res://assets/hud/hud_gothic_unified.png")
+	if not console_bg:
+		console_bg = _load_hd_texture("res://assets/hud/center_bar.png")
+	if center_gothic_frame and console_bg:
+		center_gothic_frame.texture = console_bg
+
+	var orb_left = _load_hd_texture("res://assets/hud/frame_orb_left_stone_clean.png")
+	if not orb_left:
+		orb_left = _load_hd_texture("res://assets/hud/frame_orb_left_stone.png")
+	var orb_right = _load_hd_texture("res://assets/hud/frame_orb_right_stone_clean.png")
+	if not orb_right:
+		orb_right = _load_hd_texture("res://assets/hud/frame_orb_right_stone.png")
+
+	var lf = find_child("LifeFrame", true, false) as TextureRect
+	if lf and orb_left:
+		lf.texture = orb_left
+	var mf = find_child("ManaFrame", true, false) as TextureRect
+	if mf and orb_right:
+		mf.texture = orb_right
 
 	var pillar = find_child("CenterPillar", true, false) as TextureRect
 	var pillar_tex = _load_hd_texture("res://assets/hud/pillar_divider.png")
 	if pillar and pillar_tex:
 		pillar.texture = pillar_tex
 
-	var slot_tex = _load_hd_texture("res://assets/hud/slot_frame_gothic.png")
+	# If console background is the full unified gothic frame, it already has the stone orb bezels and carved center altar!
+	var is_unified_frame = (console_bg != null and console_bg.get_width() >= 1200)
+	if pillar:
+		pillar.visible = not is_unified_frame
+	if lf:
+		lf.visible = not is_unified_frame
+	if mf:
+		mf.visible = not is_unified_frame
+
+	var slot_tex = _load_hd_texture("res://assets/hud/gothic_bar_frame.png")
+	if not slot_tex:
+		slot_tex = _load_hd_texture("res://assets/hud/slot_frame.png")
 	if slot_tex:
 		for s in skill_slots:
 			if s:
@@ -569,6 +688,8 @@ func _apply_hd_hud_assets() -> void:
 				if f: f.texture = slot_tex
 
 	var tab_tex = _load_hd_texture("res://assets/hud/badge_tab_gothic.png")
+	if not tab_tex:
+		tab_tex = _load_hd_texture("res://assets/hud/badge_tab_gothic_hd.png")
 	if tab_tex:
 		var all_slots = skill_slots + [hp_potion_slot, mana_potion_slot, rejuv_potion_slot, town_portal_slot] + belt_slots
 		for s in all_slots:
@@ -720,6 +841,18 @@ func _input(event: InputEvent):
 					var vp_mouse = get_viewport()
 					if vp_mouse: vp_mouse.set_input_as_handled()
 					return
+		elif event.button_index == MOUSE_BUTTON_LEFT:
+			if diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
+				var cid = diablo_bridge.get_cursor_id()
+				if cid > 1 and cid < 12:
+					if root_node and root_node.visible:
+						var r_rect = root_node.get_global_rect()
+						if r_rect.has_point(event.position):
+							if diablo_bridge.has_method("cancel_targeting_cursor"):
+								diablo_bridge.cancel_targeting_cursor()
+							var vp_mouse = get_viewport()
+							if vp_mouse: vp_mouse.set_input_as_handled()
+							return
 
 		if is_speedbook_showing:
 			if skill_selector and skill_selector.visible:
@@ -1028,6 +1161,7 @@ func _process(delta: float):
 	update_smart_town_portal()
 	update_smart_potions()
 	update_quick_skills()
+	update_belt_slots()
 	update_enemy_health_bar(delta)
 	update_item_tooltip()
 	update_durability_warnings(delta)
@@ -1633,7 +1767,8 @@ func update_panels():
 		if level_up_btn: level_up_btn.visible = false
 		return
 
-	var vp_size = get_viewport().get_visible_rect().size
+	var vp = get_viewport()
+	var vp_size = vp.get_visible_rect().size if vp else Vector2(1920, 1080)
 
 	# Geometry for Unified Tabbed Menu (Docked on Top-Right)
 	if tabbed_menu:
@@ -1661,7 +1796,15 @@ func update_panels():
 
 	# Engine bridge sync for Tabbed Menu:
 	if tabbed_menu:
-		if diablo_bridge.has_method("get_active_ui_panel"):
+		var in_targeting = false
+		if diablo_bridge.has_method("get_cursor_id"):
+			var cid = diablo_bridge.get_cursor_id()
+			if cid > 1 and cid < 12:
+				in_targeting = true
+				if not tabbed_menu.visible:
+					tabbed_menu.open_tab(1)
+
+		if not in_targeting and diablo_bridge.has_method("get_active_ui_panel"):
 			var active_engine_panel = diablo_bridge.get_active_ui_panel()
 			if active_engine_panel >= 0:
 				if not tabbed_menu.visible or tabbed_menu.get_current_tab() != active_engine_panel:
@@ -1770,8 +1913,15 @@ func update_custom_cursor():
 		var tex: Texture2D = null
 		if diablo_bridge.has_method("get_cursor_texture"):
 			tex = diablo_bridge.get_cursor_texture(cid)
+		if not tex and cid == 2:
+			tex = TEX_SCROLL
 		if tex:
-			Input.set_custom_mouse_cursor(tex, Input.CURSOR_ARROW, Vector2.ZERO)
+			var hotspot = Vector2.ZERO
+			if cid == 9: # Teleport / crosshair targeting cursor
+				hotspot = Vector2(tex.get_width() * 0.5, tex.get_height() * 0.5)
+			else:
+				hotspot = Vector2(4.0, 4.0)
+			Input.set_custom_mouse_cursor(tex, Input.CURSOR_ARROW, hotspot)
 		else:
 			Input.set_custom_mouse_cursor(null)
 	else:

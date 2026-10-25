@@ -104,13 +104,24 @@ func get_dungeon_piece_texture(pid):
 	# In Cathedral, make (25, 25) a solid wall
 	bridge.sol[25 * 112 + 25] = 2
 	bridge.grid[25 * 112 + 25] = 168
-	sandbox.rebuild_dungeon_if_needed(true)
 
+	# Test 2a: Modular 3D Kit active (Task 3.1)
+	sandbox.modular_3d_walls_enabled = true
+	sandbox.set_theme_aaa_certified("cathedral", true)
+	sandbox.rebuild_dungeon_if_needed(true)
 	assert(not sandbox.town_base_ground.visible, "ERROR: TownBaseGroundPlane must be hidden in dungeons!")
-	var d_wall_count = sandbox.wall_mmi.multimesh.instance_count + sandbox.wall_ns_mmi.multimesh.instance_count + sandbox.wall_ew_mmi.multimesh.instance_count
-	assert(d_wall_count == 0, "ERROR: Modular wall cubes must remain 0 (replaced by unified billboard scenery)!")
-	assert(sandbox.town_scenery_nodes.size() > 0, "ERROR: Unified billboard scenery sprites must be built in Cathedral!")
-	print("  [PASS] Clean transition to Cathedral unified billboard scenery (modular cubes disabled)!")
+	var d_wall_count_3d = sandbox.wall_mmi.multimesh.instance_count + sandbox.wall_ns_mmi.multimesh.instance_count + sandbox.wall_ew_mmi.multimesh.instance_count + sandbox.pillar_mmi.multimesh.instance_count
+	assert(d_wall_count_3d > 0, "ERROR: Cathedral modular 3D walls must be populated when modular_3d_walls_enabled is true!")
+	print("  [PASS] Clean transition to Cathedral modular 3D walls (%d 3D wall instances)!" % d_wall_count_3d)
+
+	# Test 2b: Billboard scenery fallback
+	sandbox.modular_3d_walls_enabled = false
+	sandbox.set_theme_aaa_certified("cathedral", false)
+	sandbox.rebuild_dungeon_if_needed(true)
+	var d_wall_count_bb = sandbox.wall_mmi.multimesh.instance_count + sandbox.wall_ns_mmi.multimesh.instance_count + sandbox.wall_ew_mmi.multimesh.instance_count
+	assert(d_wall_count_bb == 0, "ERROR: Modular wall cubes must remain 0 when modular_3d_walls_enabled is false!")
+	assert(sandbox.town_scenery_nodes.size() > 0, "ERROR: Unified billboard scenery sprites must be built in fallback mode!")
+	print("  [PASS] Clean fallback to Cathedral unified billboard scenery when modular walls disabled!")
 
 	print("\n[Step 3: Test Mode Switching Deactivation]")
 	sandbox.deactivate()

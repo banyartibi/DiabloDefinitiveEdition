@@ -64,6 +64,7 @@ func _init():
 	var mock = MockBridge.new()
 	sandbox.diablo_bridge = mock
 	sandbox.setup_scene_nodes()
+	sandbox.modular_3d_walls_enabled = false
 
 	# 1. Test Cathedral (Level 1)
 	mock.cur_lvl = 1

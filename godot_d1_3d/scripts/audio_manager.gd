@@ -147,7 +147,8 @@ func play_music(raw_path: String) -> void:
 	
 	incoming_player.stream = stream
 	incoming_player.volume_db = -80.0
-	incoming_player.play()
+	if incoming_player.is_inside_tree():
+		incoming_player.play()
 	
 	if music_tween and music_tween.is_valid():
 		music_tween.kill()
@@ -189,11 +190,13 @@ func play_speech(raw_path: String, vol_offset: int = 0) -> void:
 	if speech_player:
 		speech_player.volume_db = sfx_volume_db + clamp(float(vol_offset) / 100.0, -20.0, 6.0)
 		speech_player.stream = stream
-		speech_player.play()
+		if speech_player.is_inside_tree():
+			speech_player.play()
 
 func stop_speech() -> void:
-	if speech_player and speech_player.playing:
-		speech_player.stop()
+	if speech_player:
+		if speech_player.playing:
+			speech_player.stop()
 		speech_player.stream = null
 
 func play_sfx(raw_path: String, tile_x: int, tile_y: int, has_pos: bool, player_tile: Vector2i, vol_offset: int = 0) -> void:
@@ -220,7 +223,8 @@ func play_sfx(raw_path: String, tile_x: int, tile_y: int, has_pos: bool, player_
 		p3.position = Vector3(iso_x, iso_y, 0.0)
 		p3.volume_db = sfx_volume_db + clamp(float(vol_offset) / 100.0, -20.0, 6.0)
 		p3.stream = stream
-		p3.play()
+		if p3.is_inside_tree():
+			p3.play()
 	else:
 		# Play via 2D Non-Positional Pool (UI, menus, speech)
 		var p2 = get_idle_2d_player()
@@ -228,7 +232,8 @@ func play_sfx(raw_path: String, tile_x: int, tile_y: int, has_pos: bool, player_
 			return
 		p2.volume_db = sfx_volume_db + clamp(float(vol_offset) / 100.0, -20.0, 6.0)
 		p2.stream = stream
-		p2.play()
+		if p2.is_inside_tree():
+			p2.play()
 
 func get_idle_2d_player() -> AudioStreamPlayer:
 	for p in sfx_2d_pool:

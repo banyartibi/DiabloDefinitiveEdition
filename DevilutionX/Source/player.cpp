@@ -2325,11 +2325,15 @@ void CreatePlayer(Player &player, HeroClass c)
 	SpellID s = playerData.skill;
 	player._pAblSpells = GetSpellBitmask(s);
 	player._pRSpell = s;
+	player._pPrevRSpell = s;
+	player._pPrevRSplType = SpellType::Skill;
 
 	if (c == HeroClass::Sorcerer) {
 		player._pMemSpells = GetSpellBitmask(SpellID::Firebolt);
 		player._pRSplType = SpellType::Spell;
 		player._pRSpell = SpellID::Firebolt;
+		player._pPrevRSpell = SpellID::Firebolt;
+		player._pPrevRSplType = SpellType::Spell;
 	} else {
 		player._pMemSpells = 0;
 	}
@@ -2553,6 +2557,14 @@ void InitPlayer(Player &player, bool firstTime)
 
 	SpellID s = PlayersData[static_cast<size_t>(player._pClass)].skill;
 	player._pAblSpells = GetSpellBitmask(s);
+	if (player._pRSpell == SpellID::Invalid && s != SpellID::Invalid) {
+		player._pRSpell = s;
+		player._pRSplType = SpellType::Skill;
+	}
+	if (player._pPrevRSpell == SpellID::Invalid && s != SpellID::Invalid) {
+		player._pPrevRSpell = s;
+		player._pPrevRSplType = SpellType::Skill;
+	}
 
 	player._pNextExper = ExpLvlsTbl[std::min<int8_t>(player._pLevel, MaxCharacterLevel - 1)];
 	player._pInvincible = false;

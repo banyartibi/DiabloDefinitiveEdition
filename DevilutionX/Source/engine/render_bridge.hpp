@@ -136,6 +136,14 @@ bool IsPlayerDeadLive();
 std::vector<uint8_t> GetSpellIconRgba(int spellId, int spellType);
 std::vector<AvailableSpellItem> GetAvailableSpells();
 void SelectSpell(int spellId, int spellType);
+struct BeltItemData {
+	int slot = 0;
+	int type = 0;
+	int count = 0;
+	char name[64] = { 0 };
+};
+
+std::vector<BeltItemData> GetBeltItemsLive();
 void UseBeltSlot(int slotIndex);
 void ClickBeltSlot(int slotIndex);
 
@@ -445,6 +453,8 @@ struct D1MonsterEntityData {
 	int mode = 0;
 	int animFrame = 0;
 	bool isVisible = true;
+	char action[16] = { 0 };
+	float hpPct = 1.0f;
 };
 
 struct D1PlayerEntityData {
@@ -456,6 +466,13 @@ struct D1PlayerEntityData {
 	bool isWalking = false;
 	int mode = 0;
 	int animFrame = 0;
+	char action[16] = { 0 };
+	int hp = 0;
+	int maxHp = 0;
+	int mana = 0;
+	int maxMana = 0;
+	int playerClass = 0;
+	char name[32] = { 0 };
 };
 
 D1PlayerEntityData GetPlayerEntityData();
@@ -514,6 +531,9 @@ struct D1ObjectInfo {
 	bool selectable;
 	int width;
 	int height;
+	bool isOpen = false;
+	bool isBroken = false;
+	char category[16] = { 0 };
 };
 
 struct D1ObjectSpriteRgba {
@@ -613,6 +633,7 @@ struct D1ItemInfo {
 	int width;
 	int height;
 	int animFrame;
+	char qualityName[16] = { 0 };
 };
 
 struct D1ItemSpriteRgba {
