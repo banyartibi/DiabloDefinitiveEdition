@@ -329,6 +329,37 @@ std::vector<D1EngineLight> GetActiveEngineLights();
 std::vector<D1WallOccluder> GetActiveWallOccluders();
 std::vector<D1VisualEvent> DrainVisualEvents();
 
+// Native Godot 3D Combat Events & Floating Combat Text (Task 5.2)
+enum class D1CombatEventType : uint32_t {
+	DamageToMonster = 1,
+	DamageToPlayer = 2,
+	MonsterDeath = 3,
+	PlayerDeath = 4,
+	PlayerBlock = 5,
+	CombatMiss = 6,
+	PlayerLevelUp = 7
+};
+
+struct D1CombatEvent {
+	uint32_t type = 0;
+	int32_t sourceId = -1;
+	int32_t targetId = -1;
+	int32_t tileX = 0;
+	int32_t tileY = 0;
+	int32_t damage = 0;
+	int32_t targetHp = 0;
+	int32_t targetMaxHp = 0;
+	int32_t damageType = 0;
+	bool isCrit = false;
+	int32_t expGained = 0;
+	int32_t newLevel = 0;
+};
+
+void PushCombatEvent(const D1CombatEvent &event);
+std::vector<D1CombatEvent> DrainCombatEvents();
+void SetNextHitIsCrit(bool isCrit);
+bool GetAndClearNextHitIsCrit();
+
 struct D1ItemIconRgba {
 	int width = 0;
 	int height = 0;

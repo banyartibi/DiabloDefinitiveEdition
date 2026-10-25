@@ -322,6 +322,7 @@ public:
 	Array get_active_lights() const;
 	Array get_wall_occluders() const;
 	Array poll_visual_events();
+	Array poll_combat_events();
 };
 
 } // namespace godot

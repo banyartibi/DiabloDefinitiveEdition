@@ -270,6 +270,7 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_active_lights"), &DiabloBridge::get_active_lights);
 	ClassDB::bind_method(D_METHOD("get_wall_occluders"), &DiabloBridge::get_wall_occluders);
 	ClassDB::bind_method(D_METHOD("poll_visual_events"), &DiabloBridge::poll_visual_events);
+	ClassDB::bind_method(D_METHOD("poll_combat_events"), &DiabloBridge::poll_combat_events);
 }
 
 DiabloBridge::DiabloBridge() {
@@ -1213,6 +1214,27 @@ Array DiabloBridge::poll_visual_events() {
 		d["tile"] = Vector2i(ev.tileX, ev.tileY);
 		d["dir"] = Vector2(ev.dirX, ev.dirY);
 		d["intensity"] = ev.intensity;
+		arr.append(d);
+	}
+	return arr;
+}
+
+Array DiabloBridge::poll_combat_events() {
+	Array arr;
+	auto events = devilution::DrainCombatEvents();
+	for (const auto &ev : events) {
+		Dictionary d;
+		d["type"] = static_cast<int>(ev.type);
+		d["source_id"] = ev.sourceId;
+		d["target_id"] = ev.targetId;
+		d["tile"] = Vector2i(ev.tileX, ev.tileY);
+		d["damage"] = ev.damage;
+		d["target_hp"] = ev.targetHp;
+		d["target_max_hp"] = ev.targetMaxHp;
+		d["damage_type"] = ev.damageType;
+		d["is_crit"] = ev.isCrit;
+		d["exp_gained"] = ev.expGained;
+		d["new_level"] = ev.newLevel;
 		arr.append(d);
 	}
 	return arr;

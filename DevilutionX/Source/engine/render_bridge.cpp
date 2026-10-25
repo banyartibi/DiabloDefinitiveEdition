@@ -1281,6 +1281,22 @@ void QuickCastHotkey(int slotIdx)
 static std::mutex g_VisualEventMutex;
 static std::vector<D1VisualEvent> g_VisualEventQueue;
 
+static std::mutex g_CombatEventMutex;
+static std::vector<D1CombatEvent> g_CombatEventQueue;
+static bool g_NextHitIsCrit = false;
+
+void SetNextHitIsCrit(bool isCrit)
+{
+	g_NextHitIsCrit = isCrit;
+}
+
+bool GetAndClearNextHitIsCrit()
+{
+	bool c = g_NextHitIsCrit;
+	g_NextHitIsCrit = false;
+	return c;
+}
+
 static bool IsTorchOrFireObject(int objType)
 {
 	switch (objType) {
@@ -1352,6 +1368,22 @@ std::vector<D1VisualEvent> DrainVisualEvents()
 	std::vector<D1VisualEvent> result;
 	std::lock_guard<std::mutex> lock(g_VisualEventMutex);
 	result.swap(g_VisualEventQueue);
+	return result;
+}
+
+void PushCombatEvent(const D1CombatEvent &event)
+{
+	std::lock_guard<std::mutex> lock(g_CombatEventMutex);
+	if (g_CombatEventQueue.size() < 128) {
+		g_CombatEventQueue.push_back(event);
+	}
+}
+
+std::vector<D1CombatEvent> DrainCombatEvents()
+{
+	std::vector<D1CombatEvent> result;
+	std::lock_guard<std::mutex> lock(g_CombatEventMutex);
+	result.swap(g_CombatEventQueue);
 	return result;
 }
 

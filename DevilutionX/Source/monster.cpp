@@ -3591,6 +3591,25 @@ void ApplyMonsterDamage(DamageType damageType, Monster &monster, int damage)
 {
 	AddFloatingNumber(damageType, monster, damage);
 
+	// Native Godot 3D Combat Event (Task 5.2)
+	int damPts = std::max(1, damage >> 6);
+	int curHp = std::max(0, (monster.hitPoints - damage) >> 6);
+	int maxHp = std::max(1, monster.maxHitPoints >> 6);
+	bool isCrit = GetAndClearNextHitIsCrit();
+
+	D1CombatEvent ev;
+	ev.type = static_cast<uint32_t>(D1CombatEventType::DamageToMonster);
+	ev.sourceId = (MyPlayer != nullptr) ? MyPlayer->getId() : -1;
+	ev.targetId = monster.getId();
+	ev.tileX = monster.position.tile.x;
+	ev.tileY = monster.position.tile.y;
+	ev.damage = damPts;
+	ev.targetHp = curHp;
+	ev.targetMaxHp = maxHp;
+	ev.damageType = static_cast<int32_t>(damageType);
+	ev.isCrit = isCrit;
+	PushCombatEvent(ev);
+
 	monster.hitPoints -= damage;
 
 	if (monster.hitPoints >> 6 <= 0) {
@@ -3697,6 +3716,19 @@ void MonsterDeath(Monster &monster, Direction md, bool sendmsg)
 		DiabloDeath(monster, true);
 	else
 		PlayEffect(monster, MonsterSound::Death);
+
+	// Native Godot 3D Combat Event (Task 5.2)
+	D1CombatEvent ev;
+	ev.type = static_cast<uint32_t>(D1CombatEventType::MonsterDeath);
+	ev.sourceId = (MyPlayer != nullptr) ? MyPlayer->getId() : -1;
+	ev.targetId = monster.getId();
+	ev.tileX = monster.position.tile.x;
+	ev.tileY = monster.position.tile.y;
+	ev.damage = 0;
+	ev.targetHp = 0;
+	ev.targetMaxHp = std::max(1, monster.maxHitPoints >> 6);
+	ev.expGained = monster.exp(sgGameInitInfo.nDifficulty);
+	PushCombatEvent(ev);
 
 	// Native Godot 3D Combat Death Gore Burst
 	uint32_t deathType = (monster.data().monsterClass == MonsterClass::Undead) ? 2 : 1;

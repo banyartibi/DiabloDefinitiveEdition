@@ -123,6 +123,15 @@ var click_fade: float = 0.0
 var hovered_entity: Dictionary = {}
 var last_hovered_item: Node3D = null
 
+# --- Floating Combat Text & Hit VFX (Task 5.2) ---
+const FloatingCombatTextManager = preload("res://scripts/floating_combat_text.gd")
+var fct_manager: Node3D = null
+var camera_trauma: float = 0.0
+var flashing_entities: Dictionary = {}
+var blood_splatter_scene: PackedScene = preload("res://scenes/effects/blood_splatter.tscn")
+var bone_shards_scene: PackedScene = preload("res://scenes/effects/bone_shards.tscn")
+var torch_sparks_scene: PackedScene = preload("res://scenes/effects/torch_sparks.tscn")
+
 # --- Coordinate Math & Scale Constants ---
 const TILE_SCALE: float = 0.75
 const ENTITY_SCALE_MULT: float = 1.15        # Balanced heroic scale (fixes miniature cast & oversized idle)
@@ -260,6 +269,11 @@ func setup_scene_nodes():
 
 	# 7. Click Marker
 	setup_click_marker()
+
+	# 7.5 Floating Combat Text Manager (Task 5.2)
+	fct_manager = FloatingCombatTextManager.new()
+	fct_manager.name = "FCTManager"
+	add_child(fct_manager)
 
 	# 8. Tactical Camera with Isolated Environment (True 2:1 Isometric Orthogonal standard)
 	if not camera:
@@ -2781,6 +2795,10 @@ func _process(delta: float):
 	update_missiles(delta)
 	update_corpses()
 
+	# Native Godot 3D Combat Events & Floating Combat Text (Task 5.2)
+	process_combat_events(delta)
+	update_flashing(delta)
+
 	# Update interactive 3D props & environmental torches (every 0.2s)
 	if last_prop_check_timer >= 0.2:
 		last_prop_check_timer = 0.0
@@ -2816,6 +2834,8 @@ func update_camera_tracking(delta: float):
 	if not camera:
 		return
 	camera_target = camera_target.lerp(player_target_pos, delta * 7.5)
+	if camera_trauma > 0.0:
+		camera_trauma = maxf(0.0, camera_trauma - delta * 2.5)
 	update_camera_transform()
 
 func update_camera_transform():
@@ -2829,7 +2849,12 @@ func update_camera_transform():
 	var cam_rot = rot_yaw * rot_pitch
 	var cam_offset = cam_rot * Vector3(0, 0, camera_distance)
 
-	camera.position = camera_target + cam_offset
+	var shake_offset = Vector3.ZERO
+	if camera_trauma > 0.0:
+		var shake_amount = camera_trauma * camera_trauma * 0.12
+		shake_offset = Vector3(randf_range(-shake_amount, shake_amount), randf_range(-shake_amount, shake_amount), 0.0)
+
+	camera.position = camera_target + cam_offset + shake_offset
 	if camera.is_inside_tree():
 		camera.look_at(camera_target + Vector3(0, 0.75, 0), Vector3.UP)
 
@@ -3217,3 +3242,146 @@ func _set_item_hover(node: Node3D, hover: bool) -> void:
 
 func _reset_item_hover(node: Node3D) -> void:
 	_set_item_hover(node, false)
+
+# ==============================================================================
+# Native Combat Events & Floating Combat Text (Task 5.2)
+# ==============================================================================
+
+func process_combat_events(delta: float) -> void:
+	if not diablo_bridge or not diablo_bridge.has_method("poll_combat_events"):
+		return
+	var events: Array = diablo_bridge.poll_combat_events()
+	for ev in events:
+		var ev_type = int(ev.get("type", 0))
+		var tid = int(ev.get("target_id", -1))
+		var sid = int(ev.get("source_id", -1))
+		var tile = ev.get("tile", Vector2i.ZERO)
+		var dam = int(ev.get("damage", 0))
+		var cur_hp = int(ev.get("target_hp", 0))
+		var max_hp = int(ev.get("target_max_hp", 1))
+		var is_crit = bool(ev.get("is_crit", false))
+		var exp_g = int(ev.get("exp_gained", 0))
+		var new_lvl = int(ev.get("new_level", 0))
+
+		var world_pos = tile_to_world_3d(float(tile.x), float(tile.y))
+		if ev_type == 1 or ev_type == 3: # Monster target
+			if monster_instances.has(tid) and is_instance_valid(monster_instances[tid]):
+				world_pos = monster_instances[tid].global_position
+		elif player_root:
+			world_pos = player_root.global_position
+
+		match ev_type:
+			1: # DAMAGE_TO_MONSTER
+				var txt = ("CRIT -" if is_crit else "-") + str(dam) + ("!" if is_crit else "")
+				if fct_manager:
+					fct_manager.spawn_fct(world_pos, txt, ev_type, is_crit)
+
+				if is_crit:
+					camera_trauma = minf(camera_trauma + 0.35, 1.0)
+
+				if monster_instances.has(tid) and is_instance_valid(monster_instances[tid]):
+					var mnode = monster_instances[tid]
+					flash_entity(mnode, Color(2.5, 0.45, 0.45, 1.0))
+
+					# Instant overhead HP bar update
+					var hp_fg = mnode.get_node_or_null("HPRoot/HPBar") as MeshInstance3D
+					if hp_fg and hp_fg.mesh is QuadMesh:
+						var pct = clampf(float(cur_hp) / float(maxi(1, max_hp)), 0.0, 1.0)
+						(hp_fg.mesh as QuadMesh).size.x = 0.80 * pct
+						hp_fg.position.x = -0.40 * (1.0 - pct)
+
+					# Monster flinch state
+					var mc = mnode.get_node_or_null("Monster3DController")
+					if mc and mc.has_method("set_action"):
+						mc.set_action("HIT")
+
+					# Spawn blood or bone particle burst
+					var mname = str(mnode.get_meta("name", "")).to_lower()
+					var is_undead = mname.contains("skeleton") or mname.contains("bone") or mname.contains("zombie")
+					var p_scene = bone_shards_scene if is_undead else blood_splatter_scene
+					if p_scene:
+						var p_inst = p_scene.instantiate()
+						p_inst.position = world_pos + Vector3(0, 0.75, 0)
+						p_inst.scale = Vector3.ONE * (1.4 if is_crit else 1.0)
+						add_child(p_inst)
+
+			2: # DAMAGE_TO_PLAYER
+				if fct_manager:
+					fct_manager.spawn_fct(world_pos, "-" + str(dam), ev_type, false)
+
+				camera_trauma = minf(camera_trauma + 0.45, 1.0)
+				if player_root:
+					flash_entity(player_root, Color(2.4, 0.4, 0.4, 1.0))
+				if warrior_controller and warrior_controller.has_method("set_action"):
+					warrior_controller.set_action("HIT")
+
+				if blood_splatter_scene:
+					var p_inst = blood_splatter_scene.instantiate()
+					p_inst.position = world_pos + Vector3(0, 0.8, 0)
+					add_child(p_inst)
+
+			3: # MONSTER_DEATH
+				if exp_g > 0 and fct_manager:
+					fct_manager.spawn_fct(world_pos, "+" + str(exp_g) + " XP", ev_type, false)
+
+				if monster_instances.has(tid) and is_instance_valid(monster_instances[tid]):
+					var mnode = monster_instances[tid]
+					var mc = mnode.get_node_or_null("Monster3DController")
+					if mc and mc.has_method("trigger_death"):
+						mc.trigger_death()
+
+			5: # PLAYER_BLOCK
+				if fct_manager:
+					fct_manager.spawn_fct(world_pos, "BLOCKED", ev_type, false)
+				if warrior_controller and warrior_controller.has_method("set_action"):
+					warrior_controller.set_action("BLOCK")
+				if torch_sparks_scene:
+					var sparks = torch_sparks_scene.instantiate()
+					sparks.position = world_pos + Vector3(0, 0.7, 0)
+					add_child(sparks)
+
+			6: # COMBAT_MISS
+				if fct_manager:
+					fct_manager.spawn_fct(world_pos, "MISS", ev_type, false)
+
+			7: # PLAYER_LEVEL_UP
+				if fct_manager:
+					fct_manager.spawn_fct(world_pos, "★ LEVEL UP! (Lvl " + str(new_lvl) + ") ★", ev_type, false)
+				camera_trauma = minf(camera_trauma + 0.5, 1.0)
+				if torch_sparks_scene:
+					var sparks = torch_sparks_scene.instantiate()
+					sparks.position = world_pos + Vector3(0, 1.2, 0)
+					sparks.scale = Vector3.ONE * 2.0
+					add_child(sparks)
+
+func flash_entity(node: Node3D, flash_col: Color) -> void:
+	if not is_instance_valid(node):
+		return
+	var sprite: Sprite3D = null
+	if node == player_root:
+		sprite = player_sprite
+	else:
+		sprite = node.get_node_or_null("MonsterSprite3D") as Sprite3D
+
+	if sprite:
+		if not flashing_entities.has(node):
+			flashing_entities[node] = {
+				"timer": 0.08,
+				"sprite": sprite,
+				"orig": sprite.modulate
+			}
+		else:
+			flashing_entities[node]["timer"] = 0.08
+		sprite.modulate = flash_col
+
+func update_flashing(delta: float) -> void:
+	if flashing_entities.is_empty():
+		return
+	var keys = flashing_entities.keys()
+	for node in keys:
+		var data = flashing_entities[node]
+		data.timer -= delta
+		if data.timer <= 0.0:
+			if is_instance_valid(data.sprite):
+				data.sprite.modulate = data.orig
+			flashing_entities.erase(node)
