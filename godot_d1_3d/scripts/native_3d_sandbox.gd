@@ -1345,7 +1345,7 @@ func rebuild_dungeon_if_needed(force: bool = false):
 
 			# 2. Wall & Scenery Geometry:
 			# If modular 3D walls are enabled in Dungeon: generate true 3D modular meshes for solid walls
-			if is_wall_scenery and not is_door_tile:
+			if is_wall_scenery and (not can_3d_walls or not is_door_tile):
 				if can_3d_walls:
 					if val == 2:
 						var has_wall_nx = (x > 0 and (solidity[y * 112 + (x - 1)] == 2 or door_tiles.has(Vector2i(x - 1, y))))
@@ -1374,7 +1374,7 @@ func rebuild_dungeon_if_needed(force: bool = false):
 					spr.texture = tex
 					spr.centered = true
 					spr.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-					spr.rotation.x = deg_to_rad(-camera_pitch)
+					spr.rotation.x = 0.0
 					spr.rotation.y = deg_to_rad(camera_yaw)
 					spr.shaded = false
 					spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
@@ -1397,14 +1397,15 @@ func rebuild_dungeon_if_needed(force: bool = false):
 					aspr.texture = arch_tex
 					aspr.centered = true
 					aspr.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-					aspr.rotation.x = deg_to_rad(-camera_pitch)
+					aspr.rotation.x = 0.0
 					aspr.rotation.y = deg_to_rad(camera_yaw)
 					aspr.shaded = false
 					aspr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 					aspr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 					aspr.pixel_size = 1.50 / float(arch_tex.get_width())
 					aspr.offset = Vector2(0.0, float(arch_tex.get_height()) * 0.5)
-					aspr.position = Vector3(wpos.x, 0.02, wpos.z)
+					aspr.position = Vector3(wpos.x, 0.02, wpos.z + 0.005)
+					aspr.sorting_offset = 1.0
 					aspr.modulate = Color(1.48, 1.44, 1.36)
 					town_scenery_root.add_child(aspr)
 					special_scenery_nodes[idx] = aspr
@@ -1717,39 +1718,39 @@ func update_monster_entities(delta: float):
 						m_sprite.pixel_size = PIXEL_SIZE_HD if mw >= 200 else PIXEL_SIZE_1X
 						m_sprite.offset = Vector2(0, float(mh) * 0.5)
 
-					# Dynamic HP bar & name label height
-					var m_scale = m_sprite.pixel_size if m_sprite else PIXEL_SIZE_1X
-					var head_y = float(mh) * m_scale + 0.20
-					var hp_r = node.get_node_or_null("HPRoot")
-					if hp_r:
-						hp_r.position.y = head_y
-					var n_lbl = node.get_node_or_null("NameLabel")
-					if n_lbl:
-						n_lbl.position.y = head_y + 0.22
-
 		var cur_lvl = diablo_bridge.get_current_level() if diablo_bridge.has_method("get_current_level") else 1
 		var is_town = (cur_lvl == 0)
+		var is_active_alive = (not is_town) and (hp > 0)
 
-		# Update HP Bar (Dungeon monsters only; hide on friendly Town NPCs)
+		# Dynamic HP bar & name label height (computed every frame above monster head)
+		var m_scale = m_sprite.pixel_size if m_sprite else PIXEL_SIZE_1X
+		var spr_h = cur_tex.get_height() if cur_tex else 96
+		var head_y = float(spr_h) * m_scale + 0.22
+
+		# Update HP Bar (Dungeon monsters only; hide on friendly Town NPCs or dead corpses)
 		var hp_r = node.get_node_or_null("HPRoot")
 		if hp_r:
-			hp_r.visible = not is_town
+			hp_r.position.y = head_y
+			hp_r.visible = is_active_alive
 		var hp_bar = node.get_node_or_null("HPRoot/HPBar") as MeshInstance3D
-		if hp_bar and not is_town:
+		if hp_bar and is_active_alive:
 			var ratio = clamp(float(hp) / float(max_hp), 0.0, 1.0)
-			hp_bar.scale.x = max(0.01, ratio)
+			if hp_bar.mesh is QuadMesh:
+				(hp_bar.mesh as QuadMesh).size.x = 0.80 * ratio
+			hp_bar.position.x = -0.40 * (1.0 - ratio)
 			var fg_mat = hp_bar.material_override as StandardMaterial3D
 			if fg_mat:
 				if ratio > 0.5:
-					fg_mat.albedo_color = Color(0.2, 0.85, 0.25).lerp(Color(0.9, 0.8, 0.1), (1.0 - ratio) * 2.0)
+					fg_mat.albedo_color = Color(0.22, 0.88, 0.28).lerp(Color(0.96, 0.76, 0.14), (1.0 - ratio) * 2.0)
 				else:
-					fg_mat.albedo_color = Color(0.9, 0.8, 0.1).lerp(Color(0.9, 0.15, 0.15), (0.5 - ratio) * 2.0)
+					fg_mat.albedo_color = Color(0.96, 0.76, 0.14).lerp(Color(0.92, 0.12, 0.12), (0.5 - ratio) * 2.0)
 
-		# Update Name Label (Dungeon monsters only; hide on friendly Town NPCs)
+		# Update Name Label (Dungeon monsters only; hide on friendly Town NPCs or dead corpses)
 		var label = node.get_node_or_null("NameLabel") as Label3D
 		if label:
-			label.visible = not is_town
-			if not is_town:
+			label.position.y = head_y + 0.24
+			label.visible = is_active_alive
+			if is_active_alive:
 				label.text = "%s [%d/%d]" % [m_name, hp, max_hp]
 
 	# Prune inactive / despawned monsters cleanly
@@ -1803,17 +1804,20 @@ func get_or_create_monster_node(m_id: int) -> Node3D:
 		mc.visible = false
 		node.add_child(mc)
 
-	# Floating 3D Name Label
+	# Floating 3D Name Label (Authentic Exocet font, crisp readable sizing and render priority)
 	var label = Label3D.new()
 	label.name = "NameLabel"
 	label.position = Vector3(0, 1.85, 0)
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
-	label.font_size = 17
-	label.modulate = Color(1.0, 0.90, 0.55)
-	label.outline_render_priority = 1
-	label.outline_size = 4
-	label.outline_modulate = Color(0.0, 0.0, 0.0, 0.95)
+	label.font = FONT_EXOCET
+	label.font_size = 20
+	label.pixel_size = 0.0075
+	label.modulate = Color(1.0, 0.92, 0.65)
+	label.outline_render_priority = 26
+	label.outline_size = 3
+	label.outline_modulate = Color(0.0, 0.0, 0.0, 0.98)
+	label.render_priority = 27
 	node.add_child(label)
 
 	# Floating 3D HP Bar
@@ -1821,28 +1825,49 @@ func get_or_create_monster_node(m_id: int) -> Node3D:
 	hp_root.name = "HPRoot"
 	hp_root.position = Vector3(0, 1.60, 0)
 
+	# 1. Outer Frame / Border Quad
+	var hp_border = MeshInstance3D.new()
+	hp_border.name = "HPBorder"
+	var q_border = QuadMesh.new()
+	q_border.size = Vector2(0.92, 0.16)
+	hp_border.mesh = q_border
+	var border_mat = StandardMaterial3D.new()
+	border_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	border_mat.albedo_color = Color(0.02, 0.02, 0.02, 0.96)
+	border_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	border_mat.no_depth_test = true
+	border_mat.render_priority = 20
+	hp_border.material_override = border_mat
+	hp_root.add_child(hp_border)
+
+	# 2. Dark Slate Background Quad
 	var hp_bg = MeshInstance3D.new()
+	hp_bg.name = "HPBg"
 	var q_bg = QuadMesh.new()
-	q_bg.size = Vector2(0.82, 0.08)
+	q_bg.size = Vector2(0.86, 0.12)
 	hp_bg.mesh = q_bg
 	var bg_mat = StandardMaterial3D.new()
 	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	bg_mat.albedo_color = Color(0.08, 0.08, 0.08, 0.85)
+	bg_mat.albedo_color = Color(0.08, 0.08, 0.10, 0.92)
 	bg_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	bg_mat.no_depth_test = true
+	bg_mat.render_priority = 21
 	hp_bg.material_override = bg_mat
 	hp_root.add_child(hp_bg)
 
+	# 3. Dynamic Health Foreground Quad (pinned left, drains to right)
 	var hp_fg = MeshInstance3D.new()
 	var q_fg = QuadMesh.new()
-	q_fg.size = Vector2(0.80, 0.06)
+	q_fg.size = Vector2(0.80, 0.08)
 	hp_fg.mesh = q_fg
 	hp_fg.name = "HPBar"
+	hp_fg.position = Vector3(0.0, 0.0, 0.005)
 	var fg_mat = StandardMaterial3D.new()
 	fg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	fg_mat.albedo_color = Color(0.85, 0.15, 0.15, 0.95)
+	fg_mat.albedo_color = Color(0.88, 0.14, 0.14, 0.98)
 	fg_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	fg_mat.no_depth_test = true
+	fg_mat.render_priority = 22
 	hp_fg.material_override = fg_mat
 	hp_root.add_child(hp_fg)
 
@@ -2928,20 +2953,19 @@ func update_camera_transform():
 	if camera.is_inside_tree():
 		camera.look_at(camera_target + Vector3(0, 0.75, 0), Vector3.UP)
 
-	# Keep all scenery and special archways aligned uniformly in parallel with camera yaw and pitch
+	# Keep all scenery and special archways aligned uniformly in parallel with camera yaw (strictly upright on Y)
 	# Eliminates domino/blinds saw-tooth slicing when orbiting across ALL levels
 	if is_sandbox_active:
 		var yaw_rad = deg_to_rad(camera_yaw)
-		var pitch_rad = deg_to_rad(-camera_pitch)
 		if abs(yaw_rad - last_applied_scenery_yaw) > 0.001:
 			last_applied_scenery_yaw = yaw_rad
 			for spr in town_scenery_nodes.values():
 				if is_instance_valid(spr):
-					spr.rotation.x = pitch_rad
+					spr.rotation.x = 0.0
 					spr.rotation.y = yaw_rad
 			for aspr in special_scenery_nodes.values():
 				if is_instance_valid(aspr):
-					aspr.rotation.x = pitch_rad
+					aspr.rotation.x = 0.0
 					aspr.rotation.y = yaw_rad
 
 # ==============================================================================
