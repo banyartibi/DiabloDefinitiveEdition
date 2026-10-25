@@ -19,6 +19,7 @@ var _gate_canary: int = 0
 var logic_authority = null  # injected in tests; otherwise the /root/logic_authority autoload
 var transition_logic = preload("res://scripts/logic/d1_level_transition_logic.gd").new()
 const FONT_EXOCET = preload("res://assets/fonts/Exocet.ttf")
+const LAVA_3D_SHADER = preload("res://shaders/d1de_3d_lava.gdshader")
 var main_receiver = null
 var is_sandbox_active: bool = false
 
@@ -623,7 +624,28 @@ func _add_skirt_quad(verts: PackedVector3Array, norms: PackedVector3Array, uvs: 
 	uvs.append_array([uv_l, uv_r, uv_r, uv_l])
 	idxs.append_array([base_idx, base_idx + 1, base_idx + 2, base_idx, base_idx + 2, base_idx + 3])
 
-func get_floor_material(piece_id: int, cur_level: int) -> StandardMaterial3D:
+func _is_lava_piece(img: Image, theme: String) -> bool:
+	if theme != "caves" and theme != "hell":
+		return false
+	if img == null or img.is_empty():
+		return false
+	var w = img.get_width()
+	var h = img.get_height()
+	var sample_step = max(1, w / 8)
+	var red_dominant_count = 0
+	var total_sampled = 0
+	for y in range(0, h, sample_step):
+		for x in range(0, w, sample_step):
+			var c = img.get_pixel(x, y)
+			if c.a > 0.10:
+				total_sampled += 1
+				if c.r > 0.28 and c.r > c.b * 1.5 and c.g > c.b * 1.1:
+					red_dominant_count += 1
+	if total_sampled > 0 and float(red_dominant_count) / float(total_sampled) > 0.35:
+		return true
+	return false
+
+func get_floor_material(piece_id: int, cur_level: int) -> Material:
 	var f_key = "%d_%d" % [cur_level, piece_id]
 	if floor_material_cache.has(f_key):
 		return floor_material_cache[f_key]
@@ -720,6 +742,19 @@ func get_floor_material(piece_id: int, cur_level: int) -> StandardMaterial3D:
 		mat.normal_texture = norm_tex
 		mat.normal_scale = 0.90
 		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+
+	# Check for incandescent flowing lava in Caves & Hell
+	if is_dungeon and (theme == "caves" or theme == "hell") and alb_tex != null:
+		var img = alb_tex.get_image()
+		if _is_lava_piece(img, theme):
+			var l_mat = ShaderMaterial.new()
+			l_mat.shader = LAVA_3D_SHADER
+			l_mat.set_shader_parameter("albedo_texture", alb_tex)
+			l_mat.set_shader_parameter("is_hell", theme == "hell")
+			if norm_tex:
+				l_mat.set_shader_parameter("normal_texture", norm_tex)
+			floor_material_cache[f_key] = l_mat
+			return l_mat
 
 	floor_material_cache[f_key] = mat
 	return mat
@@ -2692,7 +2727,7 @@ func update_corpses():
 		var node = Node3D.new()
 		node.name = "Corpse_" + c_key
 		var c_pos = tile_to_world_3d(tx, ty)
-		c_pos.y = 0.02
+		c_pos.y = 0.04
 		node.position = c_pos
 		corpses_root.add_child(node)
 
@@ -2701,8 +2736,9 @@ func update_corpses():
 		spr.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 		spr.pixel_size = PIXEL_SIZE_1X
 		spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		spr.shaded = true
+		spr.shaded = false
 		spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+		spr.modulate = Color(1.35, 1.32, 1.25)
 		node.add_child(spr)
 
 		if diablo_bridge.has_method("get_corpse_sprite_data"):
@@ -2714,6 +2750,8 @@ func update_corpses():
 				var c_img = Image.create_from_data(cw, ch, false, Image.FORMAT_RGBA8, c_rgba)
 				c_img.generate_mipmaps()
 				spr.texture = ImageTexture.create_from_image(c_img)
+				spr.pixel_size = PIXEL_SIZE_HD if cw >= 200 else PIXEL_SIZE_1X
+				spr.offset = Vector2(0, float(ch) * 0.5)
 
 		corpse_instances[c_key] = node
 
