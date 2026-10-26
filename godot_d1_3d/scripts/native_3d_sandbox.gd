@@ -20,6 +20,8 @@ var logic_authority = null  # injected in tests; otherwise the /root/logic_autho
 var transition_logic = preload("res://scripts/logic/d1_level_transition_logic.gd").new()
 const FONT_EXOCET = preload("res://assets/fonts/Exocet.ttf")
 const LAVA_3D_SHADER = preload("res://shaders/d1de_3d_lava.gdshader")
+const ENTITY_HD_3D_SHADER = preload("res://shaders/entity_hd_upscaler_3d.gdshader")
+const UpscalerModelConfig = preload("res://scripts/upscaler_model_config.gd")
 var main_receiver = null
 
 func _get_hud():
@@ -58,6 +60,10 @@ var pillar_mmi: MultiMeshInstance3D
 var arch_mmi: MultiMeshInstance3D
 var modular_3d_walls_enabled: bool = false # Modular 3D .glb boxes (disabled by default in favor of authentic 4K PBR gothic architecture)
 var modular_3d_props_enabled: bool = false # Placeholder .glb props (disabled by default in favor of authentic gothic Blizzard North art with 3D lights)
+var current_upscaler_mode: int = 0
+var current_tile_model: int = 0
+var hd_graphics_enabled: bool = true
+var entity_materials: Dictionary = {} # Sprite3D -> ShaderMaterial
 
 # --- Scenery Billboards (Town Buildings & Trees, Dungeon Walls & Arches) ---
 var town_scenery_root: Node3D = null
@@ -143,6 +149,8 @@ var flashing_entities: Dictionary = {}
 var blood_splatter_scene: PackedScene = preload("res://scenes/effects/blood_splatter.tscn")
 var bone_shards_scene: PackedScene = preload("res://scenes/effects/bone_shards.tscn")
 var torch_sparks_scene: PackedScene = preload("res://scenes/effects/torch_sparks.tscn")
+var fireball_explosion_scene: PackedScene = preload("res://scenes/effects/fireball_explosion.tscn")
+var effects_root: Node3D = null
 
 # --- Coordinate Math & Scale Constants ---
 const TILE_SCALE: float = 0.75
@@ -279,6 +287,11 @@ func setup_scene_nodes():
 	corpses_root.name = "CorpsesRoot"
 	add_child(corpses_root)
 
+	# 6.9 Visual Effects & Particles Container
+	effects_root = Node3D.new()
+	effects_root.name = "EffectsRoot"
+	add_child(effects_root)
+
 	# 7. Click Marker
 	setup_click_marker()
 
@@ -393,6 +406,107 @@ func set_prop_aaa_certified(prop_key: String, certified: bool):
 
 func set_mesh_aaa_certified(path: String, certified: bool):
 	aaa_certified_meshes[path] = certified
+
+func set_upscaler_mode(mode: int) -> void:
+	current_upscaler_mode = clampi(mode, 0, 4)
+	for mat in entity_materials.values():
+		if is_instance_valid(mat):
+			mat.set_shader_parameter("upscaler_mode", current_upscaler_mode)
+			mat.set_shader_parameter("hd_enabled", hd_graphics_enabled)
+	var filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST if current_upscaler_mode == 4 else BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	if player_sprite:
+		player_sprite.texture_filter = filter
+	for m_node in monster_instances.values():
+		if is_instance_valid(m_node):
+			var spr = m_node.get_node_or_null("MonsterSprite3D") as Sprite3D
+			if spr: spr.texture_filter = filter
+	for p_node in prop_instances.values():
+		if is_instance_valid(p_node):
+			var spr = p_node.get_node_or_null("ObjectSprite3D") as Sprite3D
+			if spr: spr.texture_filter = filter
+	for it_node in item_instances.values():
+		if is_instance_valid(it_node):
+			var spr = it_node.get_node_or_null("ItemSprite") as Sprite3D
+			if spr == null:
+				spr = it_node.get_node_or_null("ItemSprite3D") as Sprite3D
+			if spr: spr.texture_filter = filter
+	for mis_node in missile_instances.values():
+		if is_instance_valid(mis_node):
+			var spr = mis_node.get_node_or_null("Sprite3D") as Sprite3D
+			if spr: spr.texture_filter = filter
+	for c_node in corpse_instances.values():
+		if is_instance_valid(c_node):
+			var spr = c_node.get_node_or_null("CorpseSprite") as Sprite3D
+			if spr: spr.texture_filter = filter
+	for spr in town_scenery_nodes.values():
+		if is_instance_valid(spr):
+			spr.texture_filter = filter
+	for aspr in special_scenery_nodes.values():
+		if is_instance_valid(aspr):
+			aspr.texture_filter = filter
+	for f_mat in floor_material_cache.values():
+		if f_mat is BaseMaterial3D:
+			f_mat.texture_filter = filter
+
+func set_tile_model(model_id: int) -> void:
+	var new_id = clampi(model_id, 0, UpscalerModelConfig.get_model_count() - 1)
+	if current_tile_model == new_id:
+		return
+	current_tile_model = new_id
+	floor_material_cache.clear()
+	base_floor_texture_cache.clear()
+	scenery_texture_cache.clear()
+	scenery_special_cache.clear()
+	rebuild_dungeon_if_needed(true)
+	print("[Native 3D Sandbox] Tile Model switched to: %s" % UpscalerModelConfig.get_model_short_name(current_tile_model))
+
+func get_tile_model() -> int:
+	return current_tile_model
+
+func set_hd_graphics_enabled(enabled: bool) -> void:
+	if hd_graphics_enabled == enabled:
+		return
+	hd_graphics_enabled = enabled
+	floor_material_cache.clear()
+	base_floor_texture_cache.clear()
+	scenery_texture_cache.clear()
+	scenery_special_cache.clear()
+	for mat in entity_materials.values():
+		if is_instance_valid(mat):
+			mat.set_shader_parameter("hd_enabled", hd_graphics_enabled)
+	rebuild_dungeon_if_needed(true)
+
+func get_hd_graphics_enabled() -> bool:
+	return hd_graphics_enabled
+
+func apply_all_d1de_settings(torch: bool, fog: int, upscaler: int, relief: int, wet: bool, hdr: int = 1, tile_model: int = 0) -> void:
+	set_upscaler_mode(upscaler)
+	set_tile_model(tile_model)
+
+func apply_all_resurrected_settings(torch: bool, fog: int, upscaler: int, relief: int, wet: bool, hdr: int = 1, tile_model: int = 0) -> void:
+	apply_all_d1de_settings(torch, fog, upscaler, relief, wet, hdr, tile_model)
+
+func apply_entity_hd_material(spr: Sprite3D, tex: Texture2D) -> void:
+	if spr == null or tex == null:
+		return
+	var mat = entity_materials.get(spr, null) as ShaderMaterial
+	if mat == null:
+		mat = ShaderMaterial.new()
+		mat.shader = ENTITY_HD_3D_SHADER
+		entity_materials[spr] = mat
+		spr.material_override = mat
+		if not spr.tree_exited.is_connected(_on_entity_sprite_tree_exited):
+			spr.tree_exited.connect(_on_entity_sprite_tree_exited.bind(spr))
+
+	mat.set_shader_parameter("albedo_texture", tex)
+	mat.set_shader_parameter("hd_enabled", hd_graphics_enabled)
+	mat.set_shader_parameter("upscaler_mode", current_upscaler_mode)
+	mat.set_shader_parameter("brightness", 1.0)
+	var filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST if current_upscaler_mode == 4 else BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	spr.texture_filter = filter
+
+func _on_entity_sprite_tree_exited(spr: Sprite3D) -> void:
+	entity_materials.erase(spr)
 
 func get_or_load_mesh(path: String) -> Mesh:
 	if mesh_cache.has(path):
@@ -656,7 +770,7 @@ func _is_lava_piece(img: Image, theme: String) -> bool:
 	return false
 
 func get_floor_material(piece_id: int, cur_level: int) -> Material:
-	var f_key = "%d_%d" % [cur_level, piece_id]
+	var f_key = "%d_%d_%d_%s" % [cur_level, piece_id, current_tile_model, str(hd_graphics_enabled)]
 	if floor_material_cache.has(f_key):
 		return floor_material_cache[f_key]
 
@@ -672,19 +786,25 @@ func get_floor_material(piece_id: int, cur_level: int) -> Material:
 	var alb_tex: Texture2D = null
 	var norm_tex: Texture2D = null
 
-	if is_dungeon:
-		var pbr_folder = "res://assets/dungeon_pbr_%s_4x" % theme
+	if is_dungeon and hd_graphics_enabled:
+		var pbr_folder = UpscalerModelConfig.get_tile_folder(cur_level, current_tile_model)
+		if current_tile_model > 0 and pbr_folder != "":
+			var alb_dir = pbr_folder + "/albedo"
+			if not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(alb_dir)):
+				pbr_folder = UpscalerModelConfig.get_tile_folder(cur_level, 0)
+
 		var alb_p = "%s/albedo/piece_%d.png" % [pbr_folder, piece_id]
 		var norm_p = "%s/normal/piece_%d_n.png" % [pbr_folder, piece_id]
 		var spec_p = "%s/specular/piece_%d_s.png" % [pbr_folder, piece_id]
 
-		if not FileAccess.file_exists(alb_p) and theme == "cathedral":
-			var fb_folder = "res://assets/dungeon_pbr_4x"
-			if FileAccess.file_exists("%s/albedo/piece_%d.png" % [fb_folder, piece_id]):
-				pbr_folder = fb_folder
-				alb_p = "%s/albedo/piece_%d.png" % [pbr_folder, piece_id]
-				norm_p = "%s/normal/piece_%d_n.png" % [pbr_folder, piece_id]
-				spec_p = "%s/specular/piece_%d_s.png" % [pbr_folder, piece_id]
+		if not FileAccess.file_exists(alb_p):
+			var fb_folder = UpscalerModelConfig.get_fallback_tile_folder(cur_level, current_tile_model)
+			if fb_folder == "" or not FileAccess.file_exists("%s/albedo/piece_%d.png" % [fb_folder, piece_id]):
+				fb_folder = UpscalerModelConfig.get_fallback_tile_folder(cur_level, 0)
+			if fb_folder != "" and FileAccess.file_exists("%s/albedo/piece_%d.png" % [fb_folder, piece_id]):
+				alb_p = "%s/albedo/piece_%d.png" % [fb_folder, piece_id]
+				norm_p = "%s/normal/piece_%d_n.png" % [fb_folder, piece_id]
+				spec_p = "%s/specular/piece_%d_s.png" % [fb_folder, piece_id]
 
 		if FileAccess.file_exists(alb_p):
 			var img = Image.load_from_file(ProjectSettings.globalize_path(alb_p))
@@ -741,7 +861,8 @@ func get_floor_material(piece_id: int, cur_level: int) -> Material:
 
 	if alb_tex:
 		mat.albedo_texture = alb_tex
-		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		var filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST if current_upscaler_mode == 4 else BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		mat.texture_filter = filter
 		# Town uses warm natural daylight; dungeons use balanced natural reflectance
 		mat.albedo_color = Color(1.10, 1.08, 1.02) if cur_level == 0 else Color(1.12, 1.10, 1.08)
 	else:
@@ -751,7 +872,8 @@ func get_floor_material(piece_id: int, cur_level: int) -> Material:
 		mat.normal_enabled = true
 		mat.normal_texture = norm_tex
 		mat.normal_scale = 0.90
-		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		var filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST if current_upscaler_mode == 4 else BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		mat.texture_filter = filter
 
 	# Check for incandescent flowing lava in Caves & Hell
 	if is_dungeon and (theme == "caves" or theme == "hell") and alb_tex != null:
@@ -770,21 +892,28 @@ func get_floor_material(piece_id: int, cur_level: int) -> Material:
 	return mat
 
 func get_scenery_piece_texture(piece_id: int, cur_level: int) -> Texture2D:
-	var s_key = "%d_%d" % [cur_level, piece_id]
+	var s_key = "%d_%d_%d_%s" % [cur_level, piece_id, current_tile_model, str(hd_graphics_enabled)]
 	if scenery_texture_cache.has(s_key):
 		return scenery_texture_cache[s_key]
 
 	var tex: Texture2D = null
 	var is_dungeon = (cur_level > 0)
 
-	if is_dungeon:
+	if is_dungeon and hd_graphics_enabled:
 		var theme = get_theme_name(cur_level)
-		var pbr_folder = "res://assets/dungeon_pbr_%s_4x" % theme
+		var pbr_folder = UpscalerModelConfig.get_tile_folder(cur_level, current_tile_model)
+		if current_tile_model > 0 and pbr_folder != "":
+			var alb_dir = pbr_folder + "/albedo"
+			if not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(alb_dir)):
+				pbr_folder = UpscalerModelConfig.get_tile_folder(cur_level, 0)
+
 		var alb_p = "%s/albedo/piece_%d.png" % [pbr_folder, piece_id]
 
-		if not FileAccess.file_exists(alb_p) and theme == "cathedral":
-			var fb_folder = "res://assets/dungeon_pbr_4x"
-			if FileAccess.file_exists("%s/albedo/piece_%d.png" % [fb_folder, piece_id]):
+		if not FileAccess.file_exists(alb_p):
+			var fb_folder = UpscalerModelConfig.get_fallback_tile_folder(cur_level, current_tile_model)
+			if fb_folder == "" or not FileAccess.file_exists("%s/albedo/piece_%d.png" % [fb_folder, piece_id]):
+				fb_folder = UpscalerModelConfig.get_fallback_tile_folder(cur_level, 0)
+			if fb_folder != "" and FileAccess.file_exists("%s/albedo/piece_%d.png" % [fb_folder, piece_id]):
 				alb_p = "%s/albedo/piece_%d.png" % [fb_folder, piece_id]
 
 		if FileAccess.file_exists(alb_p):
@@ -802,7 +931,7 @@ func get_scenery_piece_texture(piece_id: int, cur_level: int) -> Texture2D:
 	return tex
 
 func get_scenery_special_texture(special_id: int, cur_level: int) -> Texture2D:
-	var spec_key = "%d_%d" % [cur_level, special_id]
+	var spec_key = "%d_%d_%d_%s" % [cur_level, special_id, current_tile_model, str(hd_graphics_enabled)]
 	if scenery_special_cache.has(spec_key):
 		return scenery_special_cache[spec_key]
 
@@ -811,15 +940,25 @@ func get_scenery_special_texture(special_id: int, cur_level: int) -> Texture2D:
 		return null
 
 	var tex: Texture2D = null
-	var alb_p = "res://assets/dungeon_pbr_cathedral_4x/albedo/special_%d.png" % special_id
-	if not FileAccess.file_exists(alb_p):
-		alb_p = "res://assets/dungeon_pbr_4x/albedo/special_%d.png" % special_id
+	if hd_graphics_enabled:
+		var cath_folder = UpscalerModelConfig.get_tile_folder(cur_level, current_tile_model)
+		if current_tile_model > 0 and cath_folder != "":
+			if not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(cath_folder + "/albedo")):
+				cath_folder = UpscalerModelConfig.get_tile_folder(cur_level, 0)
 
-	if FileAccess.file_exists(alb_p):
-		var img = Image.load_from_file(ProjectSettings.globalize_path(alb_p))
-		if img and not img.is_empty():
-			img.generate_mipmaps()
-			tex = ImageTexture.create_from_image(img)
+		var alb_p = "%s/albedo/special_%d.png" % [cath_folder, special_id]
+		if not FileAccess.file_exists(alb_p):
+			var fb_folder = UpscalerModelConfig.get_fallback_tile_folder(cur_level, current_tile_model)
+			if fb_folder == "" or not FileAccess.file_exists("%s/albedo/special_%d.png" % [fb_folder, special_id]):
+				fb_folder = UpscalerModelConfig.get_fallback_tile_folder(cur_level, 0)
+			if fb_folder != "" and FileAccess.file_exists("%s/albedo/special_%d.png" % [fb_folder, special_id]):
+				alb_p = "%s/albedo/special_%d.png" % [fb_folder, special_id]
+
+		if FileAccess.file_exists(alb_p):
+			var img = Image.load_from_file(ProjectSettings.globalize_path(alb_p))
+			if img and not img.is_empty():
+				img.generate_mipmaps()
+				tex = ImageTexture.create_from_image(img)
 
 	if tex == null and diablo_bridge and diablo_bridge.has_method("get_special_cel_texture"):
 		tex = diablo_bridge.get_special_cel_texture(special_id)
@@ -1186,6 +1325,17 @@ func _on_level_changed(new_lvl: int):
 			c.queue_free()
 	corpse_instances.clear()
 
+	# 5.6 Clear visual effects
+	if effects_root:
+		for c in effects_root.get_children():
+			c.queue_free()
+
+	# Preserve player material while clearing freed entity materials
+	var p_mat = entity_materials.get(player_sprite, null)
+	entity_materials.clear()
+	if player_sprite and p_mat:
+		entity_materials[player_sprite] = p_mat
+
 	# 6. Clear all props & torches
 	if props_root:
 		for c in props_root.get_children():
@@ -1382,7 +1532,8 @@ func rebuild_dungeon_if_needed(force: bool = false):
 					spr.rotation.y = deg_to_rad(camera_yaw)
 					spr.shaded = false
 					spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
-					spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+					var sc_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST if current_upscaler_mode == 4 else BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+					spr.texture_filter = sc_filter
 					var p_scale = 1.50 / float(tw)
 					spr.pixel_size = p_scale
 					spr.offset = Vector2(0.0, float(th) * 0.5)
@@ -1405,7 +1556,7 @@ func rebuild_dungeon_if_needed(force: bool = false):
 					aspr.rotation.y = deg_to_rad(camera_yaw)
 					aspr.shaded = false
 					aspr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
-					aspr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+					aspr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST if current_upscaler_mode == 4 else BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 					aspr.pixel_size = 1.50 / float(arch_tex.get_width())
 					aspr.offset = Vector2(0.0, float(arch_tex.get_height()) * 0.5)
 					aspr.position = Vector3(wpos.x, 0.02, wpos.z + 0.005)
@@ -1624,6 +1775,10 @@ func update_player_entity(delta: float):
 					player_texture.update(img)
 				player_sprite.pixel_size = PIXEL_SIZE_HD if sw >= 200 else PIXEL_SIZE_1X
 				player_sprite.offset = Vector2(0, float(sh) * 0.5)
+				apply_entity_hd_material(player_sprite, player_texture)
+
+	if player_sprite and player_texture and player_sprite.material_override == null:
+		apply_entity_hd_material(player_sprite, player_texture)
 
 	# Healthy illumination modulation (Rule #4 in GEMINI.md)
 	var cur_lvl = diablo_bridge.get_current_level() if diablo_bridge.has_method("get_current_level") else 1
@@ -1721,6 +1876,10 @@ func update_monster_entities(delta: float):
 					if m_sprite:
 						m_sprite.pixel_size = PIXEL_SIZE_HD if mw >= 200 else PIXEL_SIZE_1X
 						m_sprite.offset = Vector2(0, float(mh) * 0.5)
+						apply_entity_hd_material(m_sprite, cur_tex)
+
+		if m_sprite and cur_tex and m_sprite.material_override == null:
+			apply_entity_hd_material(m_sprite, cur_tex)
 
 		var cur_lvl = diablo_bridge.get_current_level() if diablo_bridge.has_method("get_current_level") else 1
 		var is_town = (cur_lvl == 0)
@@ -1998,6 +2157,10 @@ func update_props(delta: float):
 							obj_spr.pixel_size = PIXEL_SIZE_HD
 						else:
 							obj_spr.pixel_size = PIXEL_SIZE_1X
+						apply_entity_hd_material(obj_spr, obj_spr.texture)
+
+			if obj_spr.texture and obj_spr.material_override == null:
+				apply_entity_hd_material(obj_spr, obj_spr.texture)
 
 	# Clean up inactive props
 	for id in prop_instances.keys():
@@ -2234,6 +2397,8 @@ func _attach_universal_object_sprite(node: Node3D, o_id: int):
 				spr.pixel_size = PIXEL_SIZE_HD
 			else:
 				spr.pixel_size = PIXEL_SIZE_1X
+			if spr.texture:
+				apply_entity_hd_material(spr, spr.texture)
 	node.add_child(spr)
 
 func update_environmental_torches(delta: float):
@@ -2581,6 +2746,7 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 	if tex:
 		spr.texture = tex
 		spr.offset = Vector2(0, float(tex.get_height()) * 0.5)
+		apply_entity_hd_material(spr, tex)
 	spr.modulate = Color(1.35, 1.35, 1.35)
 	node.add_child(spr)
 
@@ -2768,11 +2934,13 @@ func update_missiles(delta: float):
 
 		node.position = pos_3d
 
-		# Dynamic animation update on frame change
+		# Dynamic animation update on frame or direction change
 		var spr = node.get_node_or_null("Sprite3D") as Sprite3D
 		var last_frame = node.get_meta("last_anim_frame", -1)
-		if spr and (spr.texture == null or anim_frame != last_frame) and diablo_bridge.has_method("get_missile_sprite_data"):
+		var last_dir = node.get_meta("last_anim_dir", -1)
+		if spr and (spr.texture == null or anim_frame != last_frame or m_dir != last_dir) and diablo_bridge.has_method("get_missile_sprite_data"):
 			node.set_meta("last_anim_frame", anim_frame)
+			node.set_meta("last_anim_dir", m_dir)
 			var ms_data = diablo_bridge.get_missile_sprite_data(m_id)
 			var mw = ms_data.get("width", 0)
 			var mh = ms_data.get("height", 0)
@@ -2785,6 +2953,28 @@ func update_missiles(delta: float):
 					spr.offset = Vector2(0, float(mh) * 0.5)
 				else:
 					spr.offset = Vector2.ZERO
+				apply_entity_hd_material(spr, spr.texture)
+
+		if spr and spr.texture and spr.material_override == null:
+			apply_entity_hd_material(spr, spr.texture)
+
+		# Dynamic 3D particle emitters for spell missiles
+		# Fire missiles (Fireball, Fire Wall, Flame Wave, etc.)
+		if m_type in [1, 5, 6, 9, 14, 21, 27, 44, 48, 67, 72]:
+			var fire_p = node.get_node_or_null("MissileFireParticles") as GPUParticles3D
+			if fire_p == null:
+				fire_p = create_ember_particles()
+				fire_p.name = "MissileFireParticles"
+				node.add_child(fire_p)
+		# Lightning missiles (Lightning Wall, Charged Bolt, Lightning, Nova)
+		elif m_type in [8, 15, 23, 42, 52, 56, 70]:
+			var spark_p = node.get_node_or_null("MissileSparkParticles") as GPUParticles3D
+			if spark_p == null and torch_sparks_scene:
+				spark_p = torch_sparks_scene.instantiate()
+				spark_p.name = "MissileSparkParticles"
+				spark_p.amount = 8
+				spark_p.lifetime = 0.25
+				node.add_child(spark_p)
 
 		# Dynamic 3D lighting & forward+ HDR illumination
 		var m_light = node.get_node_or_null("MissileLight") as OmniLight3D
@@ -2889,6 +3079,7 @@ func update_corpses():
 				spr.texture = ImageTexture.create_from_image(c_img)
 				spr.pixel_size = PIXEL_SIZE_HD if cw >= 200 else PIXEL_SIZE_1X
 				spr.offset = Vector2(0, float(ch) * 0.5)
+				apply_entity_hd_material(spr, spr.texture)
 
 		corpse_instances[c_key] = node
 
@@ -3040,6 +3231,7 @@ func _process(delta: float):
 	# Native Godot 3D Combat Events & Floating Combat Text (Task 5.2)
 	process_combat_events(delta)
 	update_flashing(delta)
+	update_visual_effects()
 
 	# Update interactive 3D props & environmental torches (every 0.2s)
 	if last_prop_check_timer >= 0.2:
@@ -3692,3 +3884,52 @@ func update_flashing(delta: float) -> void:
 			if is_instance_valid(data.sprite):
 				data.sprite.modulate = data.orig
 			flashing_entities.erase(node)
+
+func update_visual_effects() -> void:
+	if not diablo_bridge or not diablo_bridge.has_method("poll_visual_events") or effects_root == null:
+		return
+
+	var events: Array = diablo_bridge.poll_visual_events()
+	for ev in events:
+		var ev_type = int(ev.get("type", 0))
+		if ev_type <= 0 or not ev.has("tile"):
+			continue
+		var tile = ev.get("tile", Vector2i(-1, -1))
+		if tile.x < 0 or tile.y < 0:
+			continue
+
+		var wpos = tile_to_world_3d(float(tile.x), float(tile.y))
+		wpos.y = 0.75 # Standard character hit center height
+		var ev_scale = clampf(float(ev.get("intensity", 1.0)), 0.8, 2.0)
+		var p_inst: GPUParticles3D = null
+
+		if ev_type == 1: # Blood Splatter
+			p_inst = blood_splatter_scene.instantiate()
+		elif ev_type == 2: # Bone Shards
+			p_inst = bone_shards_scene.instantiate()
+		elif ev_type == 3: # Fireball / Spell Explosion
+			p_inst = fireball_explosion_scene.instantiate()
+		elif ev_type == 4: # Hit sparks / deflection
+			p_inst = torch_sparks_scene.instantiate()
+			p_inst.amount = 12
+			p_inst.one_shot = true
+			p_inst.explosiveness = 0.9
+			var timer = get_tree().create_timer(p_inst.lifetime + 0.1)
+			timer.timeout.connect(p_inst.queue_free)
+
+		if p_inst:
+			p_inst.position = wpos
+			p_inst.scale = Vector3(ev_scale, ev_scale, ev_scale)
+			effects_root.add_child(p_inst)
+
+			# On heavy hit (intensity >= 1.5), add secondary burst
+			if ev_type == 1 and ev_scale >= 1.5:
+				var extra_bld = blood_splatter_scene.instantiate()
+				extra_bld.position = wpos + Vector3(randf_range(-0.15, 0.15), randf_range(-0.1, 0.1), randf_range(-0.15, 0.15))
+				extra_bld.scale = Vector3(ev_scale * 1.15, ev_scale * 1.15, ev_scale * 1.15)
+				effects_root.add_child(extra_bld)
+			elif ev_type == 2 and ev_scale >= 1.5:
+				var extra_bone = bone_shards_scene.instantiate()
+				extra_bone.position = wpos + Vector3(randf_range(-0.15, 0.15), randf_range(-0.1, 0.1), randf_range(-0.15, 0.15))
+				extra_bone.scale = Vector3(ev_scale * 1.1, ev_scale * 1.1, ev_scale * 1.1)
+				effects_root.add_child(extra_bone)

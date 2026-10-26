@@ -355,6 +355,16 @@ func _ready():
 	game_view.add_child(sandbox_instance)
 	sandbox_instance.diablo_bridge = diablo_bridge
 	sandbox_instance.main_receiver = self
+	if sandbox_instance.has_method("apply_all_d1de_settings"):
+		sandbox_instance.apply_all_d1de_settings(
+			hero_light_enabled,
+			current_fog_mode,
+			current_upscaler_mode,
+			current_relief_mode,
+			wet_floor,
+			current_hdr_level,
+			current_tile_model
+		)
 	sandbox_instance.deactivate()
 
 	# Set up the GameView SubViewport composite + global brightness (must run so the
@@ -525,6 +535,8 @@ func apply_upscaler_mode():
 
 	if native_25d_instance and native_25d_instance.has_method("set_upscaler_mode"):
 		native_25d_instance.set_upscaler_mode(current_upscaler_mode)
+	if sandbox_instance and sandbox_instance.has_method("set_upscaler_mode"):
+		sandbox_instance.set_upscaler_mode(current_upscaler_mode)
 
 	update_shader_params()
 
@@ -619,6 +631,8 @@ func set_hd_graphics_enabled(enabled: bool) -> void:
 	hd_graphics_enabled = enabled
 	if native_25d_instance and native_25d_instance.has_method("set_hd_graphics_enabled"):
 		native_25d_instance.set_hd_graphics_enabled(enabled)
+	if sandbox_instance and sandbox_instance.has_method("set_hd_graphics_enabled"):
+		sandbox_instance.set_hd_graphics_enabled(enabled)
 
 func toggle_hd_graphics() -> bool:
 	set_hd_graphics_enabled(not get_hd_graphics_enabled())
@@ -641,6 +655,8 @@ func set_tile_model(model_id: int) -> void:
 			diablo_bridge.save_settings()
 	if native_25d_instance and native_25d_instance.has_method("set_tile_model"):
 		native_25d_instance.set_tile_model(current_tile_model)
+	if sandbox_instance and sandbox_instance.has_method("set_tile_model"):
+		sandbox_instance.set_tile_model(current_tile_model)
 	show_osd("Tile Model: " + UpscalerModelConfig.get_model_display_name(current_tile_model), 2.5)
 
 func _apply_environment_glow():
@@ -913,6 +929,8 @@ func _process(delta: float):
 				current_tile_model = new_tile_model
 				if native_25d_instance and native_25d_instance.has_method("set_tile_model"):
 					native_25d_instance.set_tile_model(current_tile_model)
+				if sandbox_instance and sandbox_instance.has_method("set_tile_model"):
+					sandbox_instance.set_tile_model(current_tile_model)
 				show_osd("Tile Model: " + tile_model_names[current_tile_model], 2.5)
 	if osd_timer > 0.0:
 		osd_timer -= delta
@@ -1306,6 +1324,16 @@ func apply_display_mode():
 		if modal_layer and diablo_bridge and diablo_bridge.has_method("is_modal_active"):
 			modal_layer.visible = diablo_bridge.is_modal_active()
 		if sandbox_instance:
+			if sandbox_instance.has_method("apply_all_d1de_settings"):
+				sandbox_instance.apply_all_d1de_settings(
+					hero_light_enabled,
+					current_fog_mode,
+					current_upscaler_mode,
+					current_relief_mode,
+					wet_floor,
+					current_hdr_level,
+					current_tile_model
+				)
 			sandbox_instance.activate()
 		show_osd("Display Mode: Native 3D Engine (Forward+ Vulkan, Real 3D Geometry, Q/E Orbit)", 3.5)
 
@@ -1690,6 +1718,16 @@ func _on_main_menu_settings_saved() -> void:
 
 		if native_25d_instance and native_25d_instance.has_method("apply_all_d1de_settings"):
 			native_25d_instance.apply_all_d1de_settings(
+				hero_light_enabled,
+				current_fog_mode,
+				current_upscaler_mode,
+				current_relief_mode,
+				wet_floor,
+				current_hdr_level,
+				current_tile_model
+			)
+		if sandbox_instance and sandbox_instance.has_method("apply_all_d1de_settings"):
+			sandbox_instance.apply_all_d1de_settings(
 				hero_light_enabled,
 				current_fog_mode,
 				current_upscaler_mode,
