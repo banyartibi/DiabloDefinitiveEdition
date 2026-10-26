@@ -63,6 +63,7 @@ var modular_3d_props_enabled: bool = false # Placeholder .glb props (disabled by
 var town_scenery_root: Node3D = null
 var town_scenery_nodes: Dictionary = {}  # tile_idx (int) -> Sprite3D
 var special_scenery_nodes: Dictionary = {} # tile_idx (int) -> Sprite3D
+var translucent_scenery_indices: Dictionary = {} # tile_idx (int) -> true
 var scenery_texture_cache: Dictionary = {} # piece_id (int) -> Texture2D
 var scenery_special_cache: Dictionary = {} # special_id (int) -> Texture2D
 var town_base_ground: MeshInstance3D = null
@@ -1146,6 +1147,7 @@ func _on_level_changed(new_lvl: int):
 			c.queue_free()
 	town_scenery_nodes.clear()
 	special_scenery_nodes.clear()
+	translucent_scenery_indices.clear()
 	scenery_texture_cache.clear()
 	scenery_special_cache.clear()
 
@@ -1234,6 +1236,7 @@ func rebuild_dungeon_if_needed(force: bool = false):
 			c.queue_free()
 	town_scenery_nodes.clear()
 	special_scenery_nodes.clear()
+	translucent_scenery_indices.clear()
 
 	# Clear previous stairs
 	if stairs_root:
@@ -1262,7 +1265,8 @@ func rebuild_dungeon_if_needed(force: bool = false):
 		var oty = obj.get("tile_y", -1)
 		if otx >= 0 and oty >= 0:
 			var pos_k = Vector2i(otx, oty)
-			if o_type in [1, 2, 148, 149, 180, 181, 211, 212]:
+			var cat = str(obj.get("category", ""))
+			if cat == "DOOR" or (o_type in [1, 2, 42, 43, 74, 75, 83, 84]):
 				door_tiles[pos_k] = obj
 
 	var floor_piece_transforms: Dictionary = {} # piece_id (int) -> Array[Transform3D]
@@ -1324,7 +1328,7 @@ func rebuild_dungeon_if_needed(force: bool = false):
 			if is_door_tile and can_3d_walls:
 				var d_obj = door_tiles[tile_pos_i]
 				var o_type = d_obj.get("type", 1)
-				var is_l_door = (o_type in [1, 148, 180, 211])
+				var is_l_door = (o_type in [1, 42, 74, 83])
 				var arch_basis = basis_tile.rotated(Vector3.UP, deg_to_rad(-90.0)) if is_l_door else basis_tile
 				arch_transforms.append(Transform3D(arch_basis, Vector3(wpos.x, 0.0, wpos.z)))
 
@@ -1889,6 +1893,12 @@ func update_props(delta: float):
 	var objects: Array = diablo_bridge.get_active_objects()
 	var seen_ids: Dictionary = {}
 
+	var cur_lvl = diablo_bridge.get_current_level() if diablo_bridge.has_method("get_current_level") else 1
+	var flags_grid: PackedByteArray = diablo_bridge.get_dungeon_flags_grid() if diablo_bridge.has_method("get_dungeon_flags_grid") else PackedByteArray()
+	var light_grid: PackedByteArray = diablo_bridge.get_dungeon_light_grid() if diablo_bridge.has_method("get_dungeon_light_grid") else PackedByteArray()
+	var has_flags = (flags_grid.size() >= 112 * 112)
+	var has_light = (light_grid.size() >= 112 * 112)
+
 	for obj in objects:
 		var o_id = obj.get("id", -1)
 		if o_id < 0:
@@ -1899,19 +1909,50 @@ func update_props(delta: float):
 		var tx = obj.get("tile_x", 0)
 		var ty = obj.get("tile_y", 0)
 		var anim_frame = obj.get("anim_frame", 1)
+		var category = str(obj.get("category", ""))
 
-		var prop = get_or_create_prop_node(o_id, o_type, tx, ty)
-		prop.visible = true
+		var prop = get_or_create_prop_node(o_id, o_type, tx, ty, category)
 		prop.set_meta("tile_x", tx)
 		prop.set_meta("tile_y", ty)
 
+		# Visibility / Fog-of-war gating for dungeon props
+		var is_prop_visible = true
+		if cur_lvl > 0 and has_flags:
+			var t_idx = clamp(ty, 0, 111) * 112 + clamp(tx, 0, 111)
+			var fl = flags_grid[t_idx]
+			var is_visible = (fl & 2) != 0       # DungeonFlag::Visible
+			var is_explored = (fl & 128) != 0    # DungeonFlag::Explored
+
+			# Check neighbor tiles for wall-mounted objects (doors, torches, wall fixtures)
+			if not is_visible and not is_explored:
+				for noff in [-1, 1, -112, 112]:
+					var n_idx = t_idx + noff
+					if n_idx >= 0 and n_idx < 112 * 112:
+						var n_fl = flags_grid[n_idx]
+						if (n_fl & 2) != 0:
+							is_visible = true
+							break
+						if (n_fl & 128) != 0:
+							is_explored = true
+
+			var is_gore = (o_type in [29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40])
+			if is_gore:
+				# Torture victims, impaled corpses, and naked bodies require active line-of-sight
+				is_prop_visible = is_visible
+			else:
+				# Static props require either active line-of-sight OR previous exploration
+				is_prop_visible = is_visible or is_explored
+
+		prop.visible = is_prop_visible
+		if not is_prop_visible:
+			continue
+
 		# Update object animations & interactive states
-		var category = str(obj.get("category", ""))
 		var is_open = bool(obj.get("is_open", false)) or bool(obj.get("pre_flag", false)) or (anim_frame > 1) or (not bool(obj.get("solid", true)))
-		var is_door = (category == "DOOR") or (o_type in [1, 2, 148, 149, 180, 181, 211, 212])
-		var is_chest = (category == "CHEST") or (o_type in [5, 6, 7, 174, 175, 176])
-		var is_sarc = (category == "SARCOPHAGUS") or (o_type in [154, 214])
-		var is_fire = (category == "TORCH") or (o_type in [0, 3, 8, 9, 10, 106, 109, 114, 115, 116, 120, 121, 150, 151, 152, 153, 155, 171, 193, 210])
+		var is_door = (category == "DOOR") or (o_type in [1, 2, 42, 43, 74, 75, 83, 84])
+		var is_chest = (category == "CHEST") or (o_type in [5, 6, 7, 68, 69, 70])
+		var is_sarc = (category == "SARCOPHAGUS") or (o_type in [48, 96])
+		var is_fire = (category == "TORCH") or (o_type in [0, 3, 8, 9, 10, 44, 45, 46, 47, 49, 85, 95])
 
 		if is_chest:
 			var lid = prop.get_node_or_null("ChestLid")
@@ -1963,7 +2004,7 @@ func update_props(delta: float):
 		if not seen_ids.has(id):
 			prop_instances[id].visible = false
 
-func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int) -> Node3D:
+func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int, category: String = "") -> Node3D:
 	if prop_instances.has(o_id):
 		return prop_instances[o_id]
 
@@ -1976,13 +2017,14 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int) -> Node3D
 	node.set_meta("tile_x", tx)
 	node.set_meta("tile_y", ty)
 
-	var is_door = (o_type in [1, 2, 148, 149, 180, 181, 211, 212])
-	var is_wall_torch = (o_type in [150, 151, 152, 153])
-	var is_standing_fire = (o_type in [0, 3, 8, 9, 10, 106, 109, 114, 115, 116, 120, 121, 155, 171, 193, 210])
-	var is_chest = (o_type in [5, 6, 7, 174, 175, 176])
-	var is_sarc = (o_type in [154, 214])
-	var is_barrel = (o_type in [163, 164])
-	var is_shrine = (o_type in [165, 166, 185, 186])
+	var is_door = (category == "DOOR") or (o_type in [1, 2, 42, 43, 74, 75, 83, 84])
+	var is_wall_torch = (category == "TORCH") or (o_type in [0, 44, 45, 46, 47])
+	var is_standing_fire = (o_type in [3, 8, 9, 10, 49, 85, 95])
+	var is_chest = (category == "CHEST") or (o_type in [5, 6, 7, 68, 69, 70])
+	var is_sarc = (category == "SARCOPHAGUS") or (o_type in [48, 96])
+	var is_barrel = (category == "BARREL") or (o_type in [57, 58])
+	var is_shrine = (category == "SHRINE") or (o_type in [59, 60, 88, 89])
+	node.set_meta("is_door", is_door)
 
 	if is_door:
 		# Door visuals are rendered natively by the authentic dungeon tile / archway graphics.
@@ -1991,7 +2033,7 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int) -> Node3D
 
 	elif is_wall_torch:
 		var basis_tile = Basis().rotated(Vector3.UP, deg_to_rad(-45.0))
-		var is_l_torch = (o_type in [150, 152])
+		var is_l_torch = (o_type in [0, 44, 46])
 		var rot: Basis
 		var offset: Vector3
 		var wall_step = 1.06066
@@ -2003,15 +2045,23 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int) -> Node3D
 			is_wall_tile = (last_solidity_grid[ty * 112 + tx] == 2)
 
 		if is_wall_tile:
-			# Placed directly on the wall tile. Wall front face is at +0.14m from center:
-			if is_l_torch:
-				# Left wall torch: mounted on wall along Y (wall_ew), facing +X into room
-				rot = basis_tile.rotated(Vector3.UP, deg_to_rad(90.0))
-				offset = basis_tile * Vector3(wall_h_thick, 1.35, 0.0)
-			else:
-				# Right wall torch: mounted on wall along X (wall_ns), facing +Z into room
+			var open_px = (tx < 111 and last_solidity_grid.size() >= 112 * 112 and last_solidity_grid[ty * 112 + (tx + 1)] != 2)
+			var open_py = (ty < 111 and last_solidity_grid.size() >= 112 * 112 and last_solidity_grid[(ty + 1) * 112 + tx] != 2)
+			var open_nx = (tx > 0 and last_solidity_grid.size() >= 112 * 112 and last_solidity_grid[ty * 112 + (tx - 1)] != 2)
+			var open_ny = (ty > 0 and last_solidity_grid.size() >= 112 * 112 and last_solidity_grid[(ty - 1) * 112 + tx] != 2)
+
+			if open_py or (!is_l_torch and not open_px):
 				rot = basis_tile
 				offset = basis_tile * Vector3(0.0, 1.35, wall_h_thick)
+			elif open_px or is_l_torch:
+				rot = basis_tile.rotated(Vector3.UP, deg_to_rad(90.0))
+				offset = basis_tile * Vector3(wall_h_thick, 1.35, 0.0)
+			elif open_ny:
+				rot = basis_tile.rotated(Vector3.UP, deg_to_rad(180.0))
+				offset = basis_tile * Vector3(0.0, 1.35, -wall_h_thick)
+			else:
+				rot = basis_tile.rotated(Vector3.UP, deg_to_rad(-90.0))
+				offset = basis_tile * Vector3(-wall_h_thick, 1.35, 0.0)
 		else:
 			# Placed on adjacent floor tile: find which neighbor tile contains the wall
 			if is_l_torch:
@@ -2200,6 +2250,8 @@ func update_environmental_torches(delta: float):
 
 	var lights: Array = diablo_bridge.get_active_lights()
 	var seen_indices: Dictionary = {}
+	var flags_grid: PackedByteArray = diablo_bridge.get_dungeon_flags_grid() if diablo_bridge.has_method("get_dungeon_flags_grid") else PackedByteArray()
+	var has_flags = (flags_grid.size() >= 112 * 112)
 
 	# Index 0 is player lantern; index 1..N are environmental torches, braziers, and spells
 	for i in range(1, lights.size()):
@@ -2208,6 +2260,13 @@ func update_environmental_torches(delta: float):
 		var ty = l_info.get("tile_y", -1)
 		if tx < 0 or ty < 0:
 			continue
+
+		# Fog of war: suppress dynamic engine lights located inside completely unexplored areas
+		if cur_lvl > 0 and has_flags:
+			var t_idx = clamp(ty, 0, 111) * 112 + clamp(tx, 0, 111)
+			var fl = flags_grid[t_idx]
+			if (fl & (2 | 128)) == 0:
+				continue
 
 		# If an active prop (wall torch, brazier) already exists at or adjacent to this tile, let the prop illuminate it!
 		var has_prop_light = false
@@ -2312,6 +2371,79 @@ func create_ember_particles() -> GPUParticles3D:
 
 	return particles
 
+func update_scenery_transparency():
+	if not is_sandbox_active or not diablo_bridge:
+		return
+	var cur_lvl = diablo_bridge.get_current_level() if diablo_bridge.has_method("get_current_level") else 1
+	if cur_lvl == 0:
+		if not translucent_scenery_indices.is_empty():
+			for idx in translucent_scenery_indices.keys():
+				var spr = town_scenery_nodes.get(idx, null)
+				if spr:
+					spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+					spr.modulate.a = 1.0
+				var aspr = special_scenery_nodes.get(idx, null)
+				if aspr:
+					aspr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+					aspr.modulate.a = 1.0
+			translucent_scenery_indices.clear()
+		return
+
+	if not diablo_bridge.has_method("get_dungeon_trans_grid") or not diablo_bridge.has_method("get_dungeon_trans_mask") or not diablo_bridge.has_method("get_trans_list"):
+		return
+
+	var trans_grid: PackedByteArray = diablo_bridge.get_dungeon_trans_grid()
+	var trans_mask: PackedByteArray = diablo_bridge.get_dungeon_trans_mask()
+	var trans_list: PackedByteArray = diablo_bridge.get_trans_list()
+
+	if trans_grid.size() < 112 * 112 or trans_mask.size() < 112 * 112 or trans_list.size() < 256:
+		return
+
+	var ppos = diablo_bridge.get_player_continuous_pos() if diablo_bridge.has_method("get_player_continuous_pos") else {}
+	var ptx = int(round(float(ppos.get("pos_x", 0.0))))
+	var pty = int(round(float(ppos.get("pos_y", 0.0))))
+
+	var min_x = maxi(0, ptx - 18)
+	var max_x = mini(111, ptx + 18)
+	var min_y = maxi(0, pty - 18)
+	var max_y = mini(111, pty + 18)
+
+	var new_translucent: Dictionary = {}
+
+	for y in range(min_y, max_y + 1):
+		for x in range(min_x, max_x + 1):
+			var idx = y * 112 + x
+			if trans_mask[idx] != 0:
+				var t_val = trans_grid[idx]
+				if t_val > 0 and t_val < trans_list.size() and trans_list[t_val] != 0:
+					new_translucent[idx] = true
+
+	# Restore walls that are no longer translucent
+	for idx in translucent_scenery_indices.keys():
+		if not new_translucent.has(idx):
+			var spr = town_scenery_nodes.get(idx, null)
+			if spr:
+				spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+				spr.modulate.a = 1.0
+			var aspr = special_scenery_nodes.get(idx, null)
+			if aspr:
+				aspr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+				aspr.modulate.a = 1.0
+
+	# Apply soft transparency to new translucent walls
+	for idx in new_translucent.keys():
+		if not translucent_scenery_indices.has(idx):
+			var spr = town_scenery_nodes.get(idx, null)
+			if spr:
+				spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
+				spr.modulate.a = 0.45
+			var aspr = special_scenery_nodes.get(idx, null)
+			if aspr:
+				aspr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
+				aspr.modulate.a = 0.45
+
+	translucent_scenery_indices = new_translucent
+
 # ==============================================================================
 # Ground Items & Loot Drops Pipeline
 # ==============================================================================
@@ -2322,6 +2454,10 @@ func update_ground_items(delta: float):
 
 	var items: Array = diablo_bridge.get_active_items()
 	var seen_ids: Dictionary = {}
+
+	var cur_lvl = diablo_bridge.get_current_level() if diablo_bridge.has_method("get_current_level") else 1
+	var flags_grid: PackedByteArray = diablo_bridge.get_dungeon_flags_grid() if diablo_bridge.has_method("get_dungeon_flags_grid") else PackedByteArray()
+	var has_flags = (flags_grid.size() >= 112 * 112)
 
 	for item in items:
 		var i_id = item.get("id", -1)
@@ -2337,7 +2473,18 @@ func update_ground_items(delta: float):
 		var anim_frame = item.get("anim_frame", 0)
 
 		var node = get_or_create_item_node(i_id, curs_id, anim_frame, quality, iname, tx, ty, item)
-		node.visible = true
+
+		# Visibility / Fog-of-war gating for ground items
+		var is_item_visible = true
+		if cur_lvl > 0 and has_flags:
+			var t_idx = clamp(ty, 0, 111) * 112 + clamp(tx, 0, 111)
+			var fl = flags_grid[t_idx]
+			is_item_visible = (fl & (2 | 128)) != 0
+
+		node.visible = is_item_visible
+		if not is_item_visible:
+			continue
+
 		node.set_meta("tile_x", tx)
 		node.set_meta("tile_y", ty)
 
@@ -2900,6 +3047,9 @@ func _process(delta: float):
 		update_props(delta)
 		update_environmental_torches(delta)
 
+	# Update wall transparency (every frame for smooth responsive camera transitions)
+	update_scenery_transparency()
+
 	# Dynamic torch flame flicker animation
 	for t_node in torch_instances.values():
 		if is_instance_valid(t_node) and t_node.visible:
@@ -3301,7 +3451,7 @@ func find_entity_under_ray(mouse_pos: Vector2) -> Dictionary:
 				var pty = pnode.get_meta("tile_y", -999)
 				if ptx == g_tile.x and pty == g_tile.y:
 					var p_type = pnode.get_meta("prop_type", 0)
-					if p_type in [1, 2, 148, 149, 180, 181, 211, 212]:
+					if p_type in [1, 2, 42, 43, 74, 75, 83, 84] or pnode.get_meta("is_door", false):
 						best_type = "OBJECT"
 						best_id = p_id
 						best_node = pnode

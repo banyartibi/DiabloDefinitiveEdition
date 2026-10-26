@@ -2189,7 +2189,8 @@ func update_objects(light_grid: PackedByteArray, player_pos: Dictionary):
 		spr.modulate.a = 1.0
 
 		var tile_idx = clamp(ty, 0, 111) * 112 + clamp(tx, 0, 111)
-		var is_door = (o_type in [1, 2, 148, 149, 180, 181, 211, 212])
+		var category = str(obj.get("category", ""))
+		var is_door = (category == "DOOR") or (o_type in [1, 2, 42, 43, 74, 75, 83, 84])
 		if is_door:
 			_sync_door_tile_if_changed(tx, ty)
 			_sync_door_tile_if_changed(tx + 1, ty)
@@ -2200,8 +2201,8 @@ func update_objects(light_grid: PackedByteArray, player_pos: Dictionary):
 				spr.visible = false
 				continue
 
-		var is_flame = (o_type in [0, 3, 8, 9, 10, 106, 109, 114, 115, 116, 120, 121, 150, 151, 152, 153, 155, 171, 193, 210])
-		var is_sarc = (o_type in [154, 214])
+		var is_flame = (category == "TORCH") or (o_type in [0, 3, 8, 9, 10, 44, 45, 46, 47, 49, 85, 95])
+		var is_sarc = (category == "SARCOPHAGUS") or (o_type in [48, 96])
 		var is_town = (last_level_idx == 0)
 
 		var flame_mod = Color(1.0, 0.96, 0.92)
