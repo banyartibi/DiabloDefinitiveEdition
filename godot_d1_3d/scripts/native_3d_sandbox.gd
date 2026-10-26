@@ -2181,8 +2181,8 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int, category:
 	node.set_meta("tile_y", ty)
 
 	var is_door = (category == "DOOR") or (o_type in [1, 2, 42, 43, 74, 75, 83, 84])
-	var is_wall_torch = (category == "TORCH") or (o_type in [0, 44, 45, 46, 47])
-	var is_standing_fire = (o_type in [3, 8, 9, 10, 49, 85, 95])
+	var is_wall_torch = (o_type in [44, 45, 46, 47])
+	var is_standing_fire = (o_type in [0, 3, 8, 9, 10, 49, 85, 95])
 	var is_chest = (category == "CHEST") or (o_type in [5, 6, 7, 68, 69, 70])
 	var is_sarc = (category == "SARCOPHAGUS") or (o_type in [48, 96])
 	var is_barrel = (category == "BARREL") or (o_type in [57, 58])
@@ -2196,7 +2196,7 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int, category:
 
 	elif is_wall_torch:
 		var basis_tile = Basis().rotated(Vector3.UP, deg_to_rad(-45.0))
-		var is_l_torch = (o_type in [0, 44, 46])
+		var is_l_torch = (o_type in [44, 46])
 		var rot: Basis
 		var offset: Vector3
 		var wall_step = 1.06066
@@ -2286,11 +2286,14 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int, category:
 		else:
 			_attach_universal_object_sprite(node, o_id)
 
+		var fire_y = 1.25 if o_type == 0 else 0.45
+		var ember_y = 1.15 if o_type == 0 else 0.35
+
 		var light = OmniLight3D.new()
 		light.name = "TorchLight"
-		light.position = Vector3(0, 1.15, 0)
+		light.position = Vector3(0, fire_y, 0)
 		light.light_color = Color(1.0, 0.68, 0.35)
-		light.light_energy = 1.75
+		light.light_energy = 1.85
 		light.omni_range = 9.5
 		light.omni_attenuation = 1.20
 		light.shadow_enabled = true
@@ -2299,7 +2302,7 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int, category:
 		node.add_child(light)
 
 		var embers = create_ember_particles()
-		embers.position = Vector3(0, 1.05, 0)
+		embers.position = Vector3(0, ember_y, 0)
 		node.add_child(embers)
 
 	elif is_chest:
@@ -2399,6 +2402,10 @@ func _attach_universal_object_sprite(node: Node3D, o_id: int):
 				spr.pixel_size = PIXEL_SIZE_1X
 			if spr.texture:
 				apply_entity_hd_material(spr, spr.texture)
+	var p_type = node.get_meta("prop_type", -1)
+	if p_type == 0:
+		spr.position = Vector3(0, 1.05, 0)
+
 	node.add_child(spr)
 
 func update_environmental_torches(delta: float):
@@ -2467,8 +2474,15 @@ func get_or_create_env_torch(idx: int, tx: int, ty: int, l_type: int = 1) -> Nod
 	var h_offset = 0.65 if l_type == 2 else 1.35
 	var wpos = tile_to_world_3d(float(tx), float(ty))
 
-	# If placed directly on a solid wall tile, shift outwards into the adjacent room/floor
-	if last_solidity_grid.size() >= 112 * 112 and last_solidity_grid[ty * 112 + tx] == 2:
+	# If placed directly on a solid vertical wall tile, shift outwards into the adjacent room/floor
+	var is_actual_wall = false
+	var pid = diablo_bridge.get_dungeon_tile(tx, ty) if diablo_bridge and diablo_bridge.has_method("get_dungeon_tile") else -1
+	if pid > 0:
+		var tex = get_scenery_piece_texture(pid, last_level_idx)
+		if tex and tex.get_height() > int(round(float(tex.get_width()) * 0.5)):
+			is_actual_wall = true
+
+	if is_actual_wall and last_solidity_grid.size() >= 112 * 112 and last_solidity_grid[ty * 112 + tx] == 2:
 		var basis_tile = Basis().rotated(Vector3.UP, deg_to_rad(-45.0))
 		if ty < 111 and last_solidity_grid[(ty + 1) * 112 + tx] != 2:
 			wpos += basis_tile * Vector3(0.0, 0.0, 0.45)
@@ -2568,10 +2582,12 @@ func update_scenery_transparency():
 	var ptx = int(round(float(ppos.get("pos_x", 0.0))))
 	var pty = int(round(float(ppos.get("pos_y", 0.0))))
 
-	var min_x = maxi(0, ptx - 18)
-	var max_x = mini(111, ptx + 18)
-	var min_y = maxi(0, pty - 18)
-	var max_y = mini(111, pty + 18)
+	# Generous transparency scan radius covering current camera viewport plus +40% margin
+	var vis_rad = int(ceil(maxf(camera_distance * 2.2, 38.0)))
+	var min_x = maxi(0, ptx - vis_rad)
+	var max_x = mini(111, ptx + vis_rad)
+	var min_y = maxi(0, pty - vis_rad)
+	var max_y = mini(111, pty + vis_rad)
 
 	var new_translucent: Dictionary = {}
 

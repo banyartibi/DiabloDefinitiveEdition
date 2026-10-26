@@ -1181,8 +1181,8 @@ func update_lighting_and_transparency(light_grid: PackedByteArray, solidity_grid
 
 	var z = camera.zoom.x if camera else 1.0
 	var zoom_boost = clampf(1.5 / z, 1.0, 2.2)
-	var rad_x = int(clamp(60.0 / z, 44.0, 80.0))
-	var rad_y = int(clamp(50.0 / z, 36.0, 70.0))
+	var rad_x = int(clamp(90.0 / z, 68.0, 111.0))
+	var rad_y = int(clamp(75.0 / z, 56.0, 111.0))
 	var min_x = max(0, p_tx - rad_x)
 	var max_x = min(111, p_tx + rad_x)
 	var min_y = max(0, p_ty - rad_y)
