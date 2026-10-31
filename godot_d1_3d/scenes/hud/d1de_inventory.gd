@@ -686,14 +686,18 @@ func _show_item_tooltip(item: Dictionary, global_pos: Vector2):
 	tooltip.visible = true
 	tooltip.reset_size()
 
-	# Position tooltip to the left of the inventory panel
+	# Position tooltip directly above hovered slot, clamped to screen
 	var tt_w = tooltip.size.x
 	var tt_h = tooltip.size.y
-	var panel_global_x = global_position.x
-	var target_x = panel_global_x - tt_w - 12.0
-	var target_y = clampf(global_pos.y - tt_h * 0.3, 20.0, get_viewport_rect().size.y - tt_h - 20.0)
-	if target_x < 10.0:
-		target_x = 10.0
+	var target_x = global_pos.x + 20.0 - tt_w * 0.5
+	var target_y = global_pos.y - tt_h - 10.0
+	var vp_size = get_viewport_rect().size
+	if target_y < 15.0:
+		target_y = global_pos.y + 45.0
+	if target_x + tt_w > vp_size.x - 12.0:
+		target_x = vp_size.x - tt_w - 12.0
+	if target_x < 12.0:
+		target_x = 12.0
 	tooltip.global_position = Vector2(target_x, target_y)
 
 func _on_item_mouse_exited():

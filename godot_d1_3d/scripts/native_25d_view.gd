@@ -8,6 +8,7 @@ const UpscalerModelConfig = preload("res://scripts/upscaler_model_config.gd")
 
 var diablo_bridge = null
 var is_active: bool = false
+var main_receiver = null
 
 # Nodes
 var camera: Camera2D = null
@@ -2834,6 +2835,13 @@ func handle_input(event: InputEvent) -> bool:
 			if diablo_bridge and diablo_bridge.has_method("has_held_item") and diablo_bridge.has_held_item():
 				if diablo_bridge.has_method("drop_held_item"):
 					diablo_bridge.drop_held_item()
+					var hud = main_receiver.get("d1de_hud") if main_receiver else null
+					if hud == null and main_receiver:
+						hud = main_receiver.get("modern_hud")
+					if hud and hud.tabbed_menu and hud.tabbed_menu.visible:
+						var inv = hud.tabbed_menu.get_node_or_null("MainMargin/MainVBox/ViewsContainer/InventoryPanel")
+						if inv and inv.has_method("update_inventory"):
+							inv.update_inventory()
 					return true
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			btn = 3

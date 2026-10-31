@@ -1264,7 +1264,7 @@ func update_modular_dungeon_assets(level_idx: int):
 				player_lantern.light_energy = 2.40
 			player_lantern.omni_range = 16.0
 			player_lantern.omni_attenuation = 1.05
-			player_lantern.shadow_enabled = true
+			player_lantern.shadow_enabled = false
 
 func _on_level_changed(new_lvl: int):
 	last_level_idx = new_lvl
@@ -1699,7 +1699,7 @@ func setup_player_entity():
 	player_lantern.light_energy = 1.80
 	player_lantern.omni_range = 14.0
 	player_lantern.omni_attenuation = 1.25
-	player_lantern.shadow_enabled = true
+	player_lantern.shadow_enabled = false
 	player_root.add_child(player_lantern)
 
 	# Direction Indicator Arrow (disabled by default for clean gothic immersion)
@@ -2402,9 +2402,6 @@ func _attach_universal_object_sprite(node: Node3D, o_id: int):
 				spr.pixel_size = PIXEL_SIZE_1X
 			if spr.texture:
 				apply_entity_hd_material(spr, spr.texture)
-	var p_type = node.get_meta("prop_type", -1)
-	if p_type == 0:
-		spr.position = Vector3(0, 1.05, 0)
 
 	node.add_child(spr)
 
@@ -2758,7 +2755,7 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 	# Generous +75% item scale boost ensures dropped items are clearly visible and legible in 3D
 	var item_scale_boost = 1.75
 	spr.pixel_size = (PIXEL_SIZE_HD if item_is_hd else PIXEL_SIZE_1X) * item_scale_boost
-	spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if tex:
 		spr.texture = tex
 		spr.offset = Vector2(0, float(tex.get_height()) * 0.5)

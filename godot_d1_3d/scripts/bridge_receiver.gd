@@ -1434,6 +1434,11 @@ func _unhandled_input(event: InputEvent):
 			if diablo_bridge and diablo_bridge.has_method("has_held_item") and diablo_bridge.has_held_item():
 				if diablo_bridge.has_method("drop_held_item"):
 					diablo_bridge.drop_held_item()
+					var hud = d1de_hud if d1de_hud else modern_hud
+					if hud and hud.tabbed_menu and hud.tabbed_menu.visible:
+						var inv = hud.tabbed_menu.get_node_or_null("MainMargin/MainVBox/ViewsContainer/InventoryPanel")
+						if inv and inv.has_method("update_inventory"):
+							inv.update_inventory()
 					return
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			btn = 3

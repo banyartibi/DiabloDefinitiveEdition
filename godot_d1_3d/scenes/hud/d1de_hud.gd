@@ -1775,13 +1775,14 @@ func update_item_tooltip():
 		target_pos.x = (vp_size.x - tooltip_w) * 0.5
 		target_pos.y = 28.0
 	else:
-		# Ground / Belt hover: next to mouse cursor
-		target_pos.x = cur_mouse.x + 18.0
-		target_pos.y = cur_mouse.y + 12.0
+		# Centered directly above cursor (ground / belt / hotbar hover)
+		target_pos.x = cur_mouse.x - tooltip_w * 0.5
+		target_pos.y = cur_mouse.y - tooltip_h - 16.0
+		if target_pos.y < 12.0:
+			# If too close to top edge, display beneath cursor
+			target_pos.y = cur_mouse.y + 24.0
 		if target_pos.x + tooltip_w > vp_size.x - 10.0:
-			target_pos.x = cur_mouse.x - tooltip_w - 14.0
-		if target_pos.y + tooltip_h > vp_size.y - 10.0:
-			target_pos.y = vp_size.y - tooltip_h - 10.0
+			target_pos.x = vp_size.x - tooltip_w - 10.0
 		if target_pos.x < 10.0: target_pos.x = 10.0
 		if target_pos.y < 10.0: target_pos.y = 10.0
 
