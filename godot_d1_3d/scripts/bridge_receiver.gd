@@ -1573,7 +1573,8 @@ func update_dynamic_lighting(delta: float) -> void:
 		var sparks = torch_sparks_scene.instantiate()
 		sparks.name = "TorchSparks"
 		o_light.add_child(sparks)
-		sparks.position = Vector3(0, 0, 0.05)
+		# Position visual sparks right on the 2D display quad plane (z = 0.01) to completely eliminate perspective parallax offset
+		sparks.position = Vector3(0, 0, -0.29)
 		torch_container.add_child(o_light)
 		pooled_torch_lights.append(o_light)
 

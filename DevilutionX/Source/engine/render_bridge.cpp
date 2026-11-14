@@ -968,7 +968,7 @@ void ClickBeltSlot(int slotIndex)
 	if (slotIndex < 0 || slotIndex >= 8)
 		return;
 	Player &player = *MyPlayer;
-	if (player._pmode > PM_WALK_SIDEWAYS)
+	if (player._pmode == PM_DEATH || player._pmode == PM_QUIT)
 		return;
 
 	if (player.HoldItem.isEmpty()) {
@@ -1415,9 +1415,11 @@ std::vector<D1EngineLight> GetActiveEngineLights()
 		Point screenPos = TileToScreenCoords(obj.position);
 		int yOffset = 22;
 		if (obj._otype == OBJ_TORCHL || obj._otype == OBJ_TORCHR || obj._otype == OBJ_TORCHL2 || obj._otype == OBJ_TORCHR2) {
-			yOffset = 28;
-		} else if (obj._otype == OBJ_SKFIRE || obj._otype == OBJ_L1LIGHT) {
-			yOffset = 24;
+			yOffset = 60;
+		} else if (obj._otype == OBJ_L1LIGHT) {
+			yOffset = 76;
+		} else if (obj._otype == OBJ_SKFIRE) {
+			yOffset = 32;
 		}
 
 		if (CurrentZoomMode == ZoomMode::Balanced_1_5x) yOffset = (yOffset * 3) / 2;
@@ -2240,7 +2242,7 @@ void ClickInventorySlot(int slotType, int slotIdx, bool isShift, bool isCtrl)
 		return;
 
 	Player &player = *MyPlayer;
-	if (player._pmode > PM_WALK_SIDEWAYS)
+	if (player._pmode == PM_DEATH || player._pmode == PM_QUIT)
 		return;
 
 	// Targeting cursors (CURSOR_IDENTIFY, CURSOR_REPAIR, CURSOR_RECHARGE, CURSOR_OIL)
@@ -2347,7 +2349,7 @@ void UseInventorySlot(int slotType, int slotIdx)
 		return;
 
 	Player &player = *MyPlayer;
-	if (player._pmode > PM_WALK_SIDEWAYS)
+	if (player._pmode == PM_DEATH || player._pmode == PM_QUIT)
 		return;
 
 	// Right-click while targeting cancels targeting mode
@@ -3408,12 +3410,21 @@ std::vector<D1ItemInfo> GetActiveItemsList()
 			info.name[sizeof(info.name) - 1] = '\0';
 			info.width = 0;
 			info.height = 0;
-			info.animFrame = item.AnimInfo.sprites.has_value() ? item.AnimInfo.currentFrame : 0;
+			size_t frameToUse = 0;
 			if (item.AnimInfo.sprites.has_value()) {
-				const ClxSprite sprite = item.AnimInfo.currentSprite();
+				if (!item._iAnimFlag && item.AnimInfo.numberOfFrames > 0) {
+					frameToUse = static_cast<size_t>(item.AnimInfo.numberOfFrames - 1);
+				} else {
+					frameToUse = static_cast<size_t>(item.AnimInfo.currentFrame);
+				}
+				if (frameToUse >= (*item.AnimInfo.sprites).numSprites()) {
+					frameToUse = (*item.AnimInfo.sprites).numSprites() - 1;
+				}
+				const ClxSprite sprite = (*item.AnimInfo.sprites)[frameToUse];
 				info.width = sprite.width();
 				info.height = sprite.height();
 			}
+			info.animFrame = static_cast<int>(frameToUse);
 
 			// Rich ARPG Item Stats (D4 Tooltip)
 			info.itemType = static_cast<int>(item._itype);
@@ -3483,7 +3494,17 @@ D1ItemSpriteRgba GetGroundItemSpriteRgba(int itemId)
 	}
 	if (!item.AnimInfo.sprites.has_value()) return result;
 
-	const ClxSprite sprite = item.AnimInfo.currentSprite();
+	size_t frameToUse = 0;
+	if (!item._iAnimFlag && item.AnimInfo.numberOfFrames > 0) {
+		frameToUse = static_cast<size_t>(item.AnimInfo.numberOfFrames - 1);
+	} else {
+		frameToUse = static_cast<size_t>(item.AnimInfo.getFrameToUseForRendering());
+	}
+	if (frameToUse >= (*item.AnimInfo.sprites).numSprites()) {
+		frameToUse = (*item.AnimInfo.sprites).numSprites() - 1;
+	}
+
+	const ClxSprite sprite = (*item.AnimInfo.sprites)[frameToUse];
 	RasterizeClxSpriteRgba(sprite, result.width, result.height, result.rgba);
 	return result;
 }

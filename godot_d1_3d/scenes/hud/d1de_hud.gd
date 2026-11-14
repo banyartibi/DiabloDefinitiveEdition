@@ -186,7 +186,8 @@ func _auth() -> Node:
 func _shadow_use(item: Dictionary) -> void:
 	if diablo_bridge == null or item.is_empty():
 		return
-	if _auth().get_authority("inventory_item_use") == _auth().AUTH_CPP:
+	var auth = _auth()
+	if auth != null and (not auth.validation_enabled or auth.get_authority("inventory_item_use") == auth.AUTH_CPP):
 		return
 	var ctx = {"hellfire": diablo_bridge.is_hellfire() if diablo_bridge.has_method("is_hellfire") else false}
 	if not item_logic.is_usable(item, ctx):
@@ -197,7 +198,7 @@ func _shadow_use(item: Dictionary) -> void:
 		"seq_before": diablo_bridge.get_last_action_seq() if diablo_bridge.has_method("get_last_action_seq") else 0,
 		"deadline": Time.get_ticks_msec() + 2000,
 	}
-	if _auth().get_authority("inventory_item_use") == _auth().AUTH_NATIVE:
+	if auth.get_authority("inventory_item_use") == auth.AUTH_NATIVE:
 		var seed_val = diablo_bridge.get_rng_seed() if diablo_bridge.has_method("get_rng_seed") else 12345
 		var pred_now = item_logic.predict_use_item(
 			item, _pending_prediction["before"], rng_class.new(seed_val), ctx)
@@ -207,6 +208,10 @@ func _shadow_use(item: Dictionary) -> void:
 			apply_optimistic_item_delta(d_hp, d_mana, int(_pending_prediction["seq_before"]))
 
 func _shadow_verify() -> void:
+	var auth = _auth()
+	if auth != null and not auth.validation_enabled:
+		_pending_prediction = {}
+		return
 	if _pending_prediction.is_empty() or diablo_bridge == null:
 		return
 	var seq_before := int(_pending_prediction.get("seq_before", 0))
@@ -835,8 +840,8 @@ func _input(event: InputEvent):
 				tabbed_menu.toggle_tab(1)
 			if vp: vp.set_input_as_handled()
 			return
-		# Quest Log / Journal (hotkey J by default)
-		elif kc == KEY_J:
+		# Quest Log / Journal (classic D1 'L' and modern 'J')
+		elif kc == KEY_J or kc == KEY_L:
 			if tabbed_menu:
 				tabbed_menu.toggle_tab(3)
 			if vp: vp.set_input_as_handled()
@@ -1215,7 +1220,10 @@ func update_health_and_mana(delta: float):
 	if max_hp <= 0: max_hp = 1
 	if max_mana <= 0: max_mana = 1
 
-	if not _optimistic.is_empty():
+	var auth = _auth()
+	if auth != null and not auth.validation_enabled:
+		_optimistic = {}
+	elif not _optimistic.is_empty():
 		if diablo_bridge != null and diablo_bridge.get_last_action_seq() > int(_optimistic.get("seq", 0)):
 			_optimistic = {}
 		elif Time.get_ticks_msec() > int(_optimistic.get("until", 0)):

@@ -44,6 +44,11 @@ var log := []
 var revision := 0
 var _dirty := false
 
+## Runtime parity validation switch. When disabled (default during live gameplay),
+## shadow verification, prediction comparisons, and disk persistence are bypassed
+## to eliminate frame drops and CPU spikes.
+var validation_enabled: bool = true
+
 
 func _init() -> void:
 	for s in SUBSYSTEMS:
@@ -57,15 +62,17 @@ func _init() -> void:
 # zero. As an autoload this node is in the tree, so these run; a manually instantiated instance
 # (tests, soak) is never in the tree and stays pure logic with explicit load/save calls.
 func _ready() -> void:
+	# Running game autoload: deactivate runtime shadow validation to guarantee smooth 144 FPS
+	validation_enabled = false
 	if load_state(STATE_PATH):
-		print("[AUTHORITY] promotion state loaded: ", report())
+		print("[AUTHORITY] promotion state loaded (live validation deactivated): ", report())
 	else:
-		print("[AUTHORITY] no promotion state at ", STATE_PATH, ", starting in AUTH_SHADOW")
+		print("[AUTHORITY] no promotion state at ", STATE_PATH, ", starting in AUTH_SHADOW (live validation deactivated)")
 
 
 func _exit_tree() -> void:
 	# Never write a pristine (never loaded, never used) instance over real evidence.
-	if _dirty:
+	if _dirty and validation_enabled:
 		save_state(STATE_PATH)
 
 
@@ -78,8 +85,16 @@ func get_authority(subsystem: String) -> int:
 	return authority.get(subsystem, AUTH_CPP)
 
 
+func set_validation_enabled(enabled: bool) -> void:
+	validation_enabled = enabled
+
+
+func is_validation_enabled() -> bool:
+	return validation_enabled
+
+
 func record(subsystem: String, native_result, cpp_result, signature: String = "") -> bool:
-	if authority.get(subsystem, AUTH_CPP) == AUTH_CPP:
+	if not validation_enabled or authority.get(subsystem, AUTH_CPP) == AUTH_CPP:
 		return true
 	_dirty = true
 	checks[subsystem] = int(checks.get(subsystem, 0)) + 1

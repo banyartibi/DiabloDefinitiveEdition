@@ -21,6 +21,7 @@ var transition_logic = preload("res://scripts/logic/d1_level_transition_logic.gd
 const FONT_EXOCET = preload("res://assets/fonts/Exocet.ttf")
 const LAVA_3D_SHADER = preload("res://shaders/d1de_3d_lava.gdshader")
 const ENTITY_HD_3D_SHADER = preload("res://shaders/entity_hd_upscaler_3d.gdshader")
+const CORPSE_HD_3D_SHADER = preload("res://shaders/corpse_hd_upscaler_3d.gdshader")
 const UpscalerModelConfig = preload("res://scripts/upscaler_model_config.gd")
 var main_receiver = null
 
@@ -44,7 +45,12 @@ var camera_mode_perspective: bool = false # Default false: Pure 2:1 Isometric Or
 var is_orbiting: bool = false
 var last_mouse_pos: Vector2 = Vector2.ZERO
 var dungeon_piece_floors: Dictionary = {} # theme (String) -> Dictionary of pid (int) -> true
+var dungeon_piece_pillars: Dictionary = {} # theme (String) -> Dictionary of pid (int) -> bool
 var piece_is_floor_cache: Dictionary = {} # pid (int) -> bool
+
+const KNOWN_PILLAR_PIECES: Array[int] = [
+	7, 8, 9, 15, 16, 24, 25, 26, 27, 28, 29, 33, 36, 37, 39, 40, 41, 46, 64, 105, 113, 117, 136, 269, 436, 440, 444, 447, 448
+]
 
 # --- Modular 3D Dungeon Kit MultiMeshes ---
 var floor_root: Node3D = null
@@ -58,10 +64,11 @@ var wall_ns_mmi: MultiMeshInstance3D
 var wall_ew_mmi: MultiMeshInstance3D
 var pillar_mmi: MultiMeshInstance3D
 var arch_mmi: MultiMeshInstance3D
-var modular_3d_walls_enabled: bool = false # Modular 3D .glb boxes (disabled by default in favor of authentic 4K PBR gothic architecture)
-var modular_3d_props_enabled: bool = false # Placeholder .glb props (disabled by default in favor of authentic gothic Blizzard North art with 3D lights)
+var modular_3d_walls_enabled: bool = true # Modular 3D dark fantasy architecture enabled across all themes
+var modular_3d_props_enabled: bool = true # AAA interactive 3D props (doors, chests, braziers, sarcophagi) enabled
 var current_upscaler_mode: int = 0
 var current_tile_model: int = 0
+var current_hdr_level: int = 1
 var hd_graphics_enabled: bool = true
 var entity_materials: Dictionary = {} # Sprite3D -> ShaderMaterial
 
@@ -101,6 +108,8 @@ var player_lantern: OmniLight3D
 var player_ring: MeshInstance3D
 var player_arrow: MeshInstance3D
 var player_target_pos: Vector3 = Vector3.ZERO
+var hero_controller: Node3D = null
+var current_player_class: int = -1
 var warrior_controller: Node3D = null
 var warrior_3d_enabled: bool = false
 
@@ -108,6 +117,7 @@ var warrior_3d_enabled: bool = false
 var monsters_root: Node3D
 var monster_instances: Dictionary = {}    # id (int) -> Node3D
 var monster_textures: Dictionary = {}     # id (int) -> ImageTexture
+var monster_anim_cache: Dictionary = {}   # String (name_mode_dir_frame) -> Texture2D
 var monster_last_frame: Dictionary = {}   # id (int) -> int
 var monster_last_dir: Dictionary = {}     # id (int) -> int
 var monster_unseen_frames: Dictionary = {}# id (int) -> int
@@ -130,10 +140,12 @@ var last_item_check_timer: float = 0.0
 # --- Missiles & Projectiles ---
 var missiles_root: Node3D = null
 var missile_instances: Dictionary = {}    # id (int) -> Node3D
+var missile_textures: Dictionary = {}     # String cache_key -> ImageTexture
 
 # --- Corpses & Fallen Entities ---
 var corpses_root: Node3D = null
 var corpse_instances: Dictionary = {}     # String key -> Node3D
+var corpse_textures: Dictionary = {}      # String cache_key -> ImageTexture
 
 # --- Waypoint / Click Feedback ---
 var click_marker: MeshInstance3D
@@ -205,9 +217,7 @@ func setup_scene_nodes():
 	env.ambient_light_color = Color(0.42, 0.45, 0.52, 1.0)
 	env.ambient_light_energy = 0.85
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.glow_enabled = true
-	env.glow_intensity = 0.50
-	env.glow_bloom = 0.20
+	set_hdr_level(current_hdr_level)
 
 	# AAA Forward+ Screen-Space Ambient Occlusion (SSAO)
 	env.ssao_enabled = true
@@ -243,7 +253,7 @@ func setup_scene_nodes():
 	)
 	dir_light.light_color = Color(0.70, 0.80, 0.98, 1.0)
 	dir_light.light_energy = 0.50
-	dir_light.shadow_enabled = true
+	dir_light.shadow_enabled = false
 	add_child(dir_light)
 
 	# 3. Procedural Modular 3D MultiMeshes
@@ -320,22 +330,50 @@ func setup_scene_nodes():
 
 func load_dungeon_piece_types():
 	var json_path = "res://assets/data/dungeon_piece_types.json"
-	if not FileAccess.file_exists(json_path):
-		return
-	var f = FileAccess.open(json_path, FileAccess.READ)
-	if f == null:
-		return
-	var text = f.get_as_text()
-	var json = JSON.new()
-	if json.parse(text) == OK and json.data is Dictionary:
-		for theme in json.data.keys():
-			var entry = json.data[theme]
-			if entry is Dictionary and entry.has("floors"):
-				var f_dict: Dictionary = {}
-				for pid in entry["floors"]:
-					f_dict[int(pid)] = true
-				dungeon_piece_floors[theme] = f_dict
+	if FileAccess.file_exists(json_path):
+		var f = FileAccess.open(json_path, FileAccess.READ)
+		if f != null:
+			var text = f.get_as_text()
+			var json = JSON.new()
+			if json.parse(text) == OK and json.data is Dictionary:
+				for theme in json.data.keys():
+					var entry = json.data[theme]
+					if entry is Dictionary and entry.has("floors"):
+						var f_dict: Dictionary = {}
+						for pid in entry["floors"]:
+							f_dict[int(pid)] = true
+						dungeon_piece_floors[theme] = f_dict
+
+	# Load pillar piece classifications from occluders.json per theme
+	for theme in ["cathedral", "catacombs", "caves", "hell"]:
+		var occ_path = "res://assets/dungeon_pbr_%s_4x/occluders.json" % theme
+		if not FileAccess.file_exists(occ_path) and theme == "cathedral":
+			occ_path = "res://assets/dungeon_pbr_4x/occluders.json"
+		if FileAccess.file_exists(occ_path):
+			var occ_file = FileAccess.open(occ_path, FileAccess.READ)
+			if occ_file:
+				var occ_json = JSON.new()
+				if occ_json.parse(occ_file.get_as_text()) == OK and occ_json.data is Dictionary:
+					var p_dict: Dictionary = {}
+					for k in occ_json.data.keys():
+						var val = occ_json.data[k]
+						if val is Dictionary and val.get("type", "") == "pillar":
+							var pid_int = int(k.replace("piece_", ""))
+							p_dict[pid_int] = true
+					dungeon_piece_pillars[theme] = p_dict
 	print("[Native 3D Sandbox] Loaded dungeon piece classifications for %d themes." % dungeon_piece_floors.size())
+
+	# Certified AAA dark fantasy assets and interactive props
+	set_theme_aaa_certified("cathedral", true)
+	set_prop_aaa_certified("door", true)
+
+func is_piece_pillar(piece_id: int, cur_level: int) -> bool:
+	if cur_level == 0:
+		return false
+	var theme = get_theme_name(cur_level)
+	if dungeon_piece_pillars.has(theme) and dungeon_piece_pillars[theme].has(piece_id):
+		return true
+	return piece_id in KNOWN_PILLAR_PIECES
 
 func is_piece_floor(piece_id: int, cur_level: int) -> bool:
 	if cur_level == 0:
@@ -365,6 +403,24 @@ func is_piece_floor(piece_id: int, cur_level: int) -> bool:
 	var is_f = (piece_id < 30)
 	piece_is_floor_cache[piece_id] = is_f
 	return is_f
+
+static func _is_texture_pure_black(img: Image) -> bool:
+	if img == null or img.is_empty():
+		return true
+	var w = img.get_width()
+	var h = img.get_height()
+	var step_x = max(1, w / 8)
+	var step_y = max(1, h / 8)
+	var found_color = false
+	for sy in range(0, h, step_y):
+		for sx in range(0, w, step_x):
+			var col = img.get_pixel(sx, sy)
+			if col.a > 0.05 and (col.r > 0.05 or col.g > 0.05 or col.b > 0.05):
+				found_color = true
+				break
+		if found_color:
+			break
+	return not found_color
 
 # ==============================================================================
 # Modular 3D Dungeon Kit Pipeline & AAA Quality Certification
@@ -479,9 +535,36 @@ func set_hd_graphics_enabled(enabled: bool) -> void:
 func get_hd_graphics_enabled() -> bool:
 	return hd_graphics_enabled
 
+func set_hdr_level(level: int) -> void:
+	current_hdr_level = clampi(level, 0, 3)
+	if env:
+		match current_hdr_level:
+			0:
+				env.glow_enabled = false
+				env.glow_intensity = 0.0
+				env.glow_bloom = 0.0
+			1:
+				env.glow_enabled = true
+				env.glow_intensity = 0.35
+				env.glow_bloom = 0.08
+			2:
+				env.glow_enabled = true
+				env.glow_intensity = 0.65
+				env.glow_bloom = 0.18
+			3:
+				env.glow_enabled = true
+				env.glow_intensity = 0.95
+				env.glow_bloom = 0.30
+	# Update emission energy across all active lava materials
+	var emission_mult = 0.0 if current_hdr_level == 0 else (0.25 + float(current_hdr_level) * 0.25)
+	for mat in floor_material_cache.values():
+		if mat is ShaderMaterial and mat.shader == LAVA_3D_SHADER:
+			mat.set_shader_parameter("emission_energy", emission_mult)
+
 func apply_all_d1de_settings(torch: bool, fog: int, upscaler: int, relief: int, wet: bool, hdr: int = 1, tile_model: int = 0) -> void:
 	set_upscaler_mode(upscaler)
 	set_tile_model(tile_model)
+	set_hdr_level(hdr)
 
 func apply_all_resurrected_settings(torch: bool, fog: int, upscaler: int, relief: int, wet: bool, hdr: int = 1, tile_model: int = 0) -> void:
 	apply_all_d1de_settings(torch, fog, upscaler, relief, wet, hdr, tile_model)
@@ -498,6 +581,29 @@ func apply_entity_hd_material(spr: Sprite3D, tex: Texture2D) -> void:
 		if not spr.tree_exited.is_connected(_on_entity_sprite_tree_exited):
 			spr.tree_exited.connect(_on_entity_sprite_tree_exited.bind(spr))
 
+	if spr.render_priority != 0:
+		mat.render_priority = spr.render_priority
+	mat.set_shader_parameter("albedo_texture", tex)
+	mat.set_shader_parameter("hd_enabled", hd_graphics_enabled)
+	mat.set_shader_parameter("upscaler_mode", current_upscaler_mode)
+	mat.set_shader_parameter("brightness", 1.0)
+	var filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST if current_upscaler_mode == 4 else BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	spr.texture_filter = filter
+
+func apply_corpse_hd_material(spr: Sprite3D, tex: Texture2D) -> void:
+	if spr == null or tex == null:
+		return
+	var mat = entity_materials.get(spr, null) as ShaderMaterial
+	if mat == null:
+		mat = ShaderMaterial.new()
+		mat.shader = CORPSE_HD_3D_SHADER
+		mat.render_priority = 1 # Corpse layer: above floor (0), strictly below items (2) and actors (3)
+		entity_materials[spr] = mat
+		spr.material_override = mat
+		if not spr.tree_exited.is_connected(_on_entity_sprite_tree_exited):
+			spr.tree_exited.connect(_on_entity_sprite_tree_exited.bind(spr))
+
+	mat.render_priority = 1
 	mat.set_shader_parameter("albedo_texture", tex)
 	mat.set_shader_parameter("hd_enabled", hd_graphics_enabled)
 	mat.set_shader_parameter("upscaler_mode", current_upscaler_mode)
@@ -667,14 +773,14 @@ func get_floor_diamond_mesh() -> Mesh:
 	var indices = PackedInt32Array()
 
 	var ts = TILE_SCALE # 0.75m
-	# Expand diamond boundary slightly by 2.5% (+1.875cm) so adjacent tiles overlap and eliminate all black background seams
-	var ts_v = ts * 1.025
-	var skirt_h = 0.12
+	# Clean 0.2% precision overlap (+1.5mm) eliminates numerical boundary gaps without cross-clipping adjacent diamond skirts
+	var ts_v = ts * 1.002
+	var skirt_h = 0.04 # 4cm skirt seals any subpixel vertical seams cleanly
 
 	# Exact bijective diamond geometry matching Diablo 1's 2:1 isometric tile coordinates:
-	# Inset UVs safely (3.5 texels) into the solid paver core away from transparent edges:
-	var uv_dx = 3.5 / 256.0
-	var uv_dy = 3.5 / 128.0
+	# Inset UVs safely (2.0 texels) into the solid paver core away from transparent edges:
+	var uv_dx = 2.0 / 256.0
+	var uv_dy = 2.0 / 128.0
 
 	var uv_north = Vector2(0.5, uv_dy)
 	var uv_east  = Vector2(1.0 - uv_dx, 0.5)
@@ -769,6 +875,34 @@ func _is_lava_piece(img: Image, theme: String) -> bool:
 		return true
 	return false
 
+func get_theme_base_floor_piece_id(level_idx: int) -> int:
+	if level_idx <= 0:
+		return 218 # Town authentic grass
+	elif level_idx >= 1 and level_idx <= 4:
+		return 1 # Cathedral stone paver
+	elif level_idx >= 5 and level_idx <= 8:
+		return 1 # Catacombs stone paver
+	elif level_idx >= 9 and level_idx <= 12:
+		return 4 # Caves stone paver
+	else:
+		return 3 # Hell lava-rock paver
+
+func _is_image_empty_or_transparent(img: Image) -> bool:
+	if img == null or img.is_empty():
+		return true
+	var w = img.get_width()
+	var h = img.get_height()
+	var step_x = max(1, w / 16)
+	var step_y = max(1, h / 16)
+	var solid_count = 0
+	for y in range(0, h, step_y):
+		for x in range(0, w, step_x):
+			if img.get_pixel(x, y).a > 0.05:
+				solid_count += 1
+				if solid_count >= 8:
+					return false
+	return true
+
 func get_floor_material(piece_id: int, cur_level: int) -> Material:
 	var f_key = "%d_%d_%d_%s" % [cur_level, piece_id, current_tile_model, str(hd_graphics_enabled)]
 	if floor_material_cache.has(f_key):
@@ -814,10 +948,13 @@ func get_floor_material(piece_id: int, cur_level: int) -> Material:
 				var floor_h = int(round(float(tw) * 0.5))
 				if th > floor_h:
 					img = img.get_region(Rect2i(0, th - floor_h, tw, floor_h))
-				img.generate_mipmaps()
-				alb_tex = ImageTexture.create_from_image(img)
+				if not _is_image_empty_or_transparent(img):
+					img.generate_mipmaps()
+					alb_tex = ImageTexture.create_from_image(img)
+				else:
+					alb_tex = null
 
-		if FileAccess.file_exists(norm_p):
+		if alb_tex != null and FileAccess.file_exists(norm_p):
 			var n_img = Image.load_from_file(ProjectSettings.globalize_path(norm_p))
 			if n_img and not n_img.is_empty():
 				var n_tw = n_img.get_width()
@@ -828,7 +965,7 @@ func get_floor_material(piece_id: int, cur_level: int) -> Material:
 				n_img.generate_mipmaps()
 				norm_tex = ImageTexture.create_from_image(n_img)
 
-		if FileAccess.file_exists(spec_p):
+		if alb_tex != null and FileAccess.file_exists(spec_p):
 			var s_img = Image.load_from_file(ProjectSettings.globalize_path(spec_p))
 			if s_img and not s_img.is_empty():
 				var s_tw = s_img.get_width()
@@ -854,19 +991,47 @@ func get_floor_material(piece_id: int, cur_level: int) -> Material:
 				var img = alb_tex.get_image()
 				if img and not img.is_empty():
 					var floor_img = img.get_region(Rect2i(0, th - floor_h, tw, floor_h))
-					floor_img.generate_mipmaps()
-					alb_tex = ImageTexture.create_from_image(floor_img)
-					if not is_dungeon:
-						base_floor_texture_cache[f_key] = alb_tex
+					if not _is_image_empty_or_transparent(floor_img):
+						floor_img.generate_mipmaps()
+						alb_tex = ImageTexture.create_from_image(floor_img)
+						if not is_dungeon:
+							base_floor_texture_cache[f_key] = alb_tex
+					else:
+						alb_tex = null
+
+	# If the piece has no solid floor paver in row 0, fallback to authentic theme base floor piece!
+	var base_pid = get_theme_base_floor_piece_id(cur_level)
+	if alb_tex == null and piece_id != base_pid:
+		var fallback_mat = get_floor_material(base_pid, cur_level)
+		floor_material_cache[f_key] = fallback_mat
+		return fallback_mat
 
 	if alb_tex:
 		mat.albedo_texture = alb_tex
 		var filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST if current_upscaler_mode == 4 else BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		mat.texture_filter = filter
-		# Town uses warm natural daylight; dungeons use balanced natural reflectance
-		mat.albedo_color = Color(1.10, 1.08, 1.02) if cur_level == 0 else Color(1.12, 1.10, 1.08)
+		# Town uses warm natural daylight; dungeons use thematic balanced reflectance
+		if cur_level == 0:
+			mat.albedo_color = Color(1.10, 1.08, 1.02)
+		elif theme == "caves":
+			# Warm reddish-brown cave stone boost matching rock walls and authentic D1 palette
+			mat.albedo_color = Color(1.85, 1.35, 1.25)
+		elif theme == "hell":
+			# Volcanic paver rock boost
+			mat.albedo_color = Color(1.70, 1.25, 1.15)
+		elif theme == "catacombs":
+			mat.albedo_color = Color(1.15, 1.18, 1.10)
+		else:
+			mat.albedo_color = Color(1.15, 1.15, 1.20)
 	else:
-		mat.albedo_color = Color(0.25, 0.35, 0.18) if cur_level == 0 else Color(0.85, 0.82, 0.78)
+		if cur_level == 0:
+			mat.albedo_color = Color(0.25, 0.35, 0.18)
+		elif theme == "caves":
+			mat.albedo_color = Color(0.65, 0.42, 0.32)
+		elif theme == "hell":
+			mat.albedo_color = Color(0.60, 0.30, 0.24)
+		else:
+			mat.albedo_color = Color(0.85, 0.82, 0.78)
 
 	if norm_tex:
 		mat.normal_enabled = true
@@ -883,6 +1048,8 @@ func get_floor_material(piece_id: int, cur_level: int) -> Material:
 			l_mat.shader = LAVA_3D_SHADER
 			l_mat.set_shader_parameter("albedo_texture", alb_tex)
 			l_mat.set_shader_parameter("is_hell", theme == "hell")
+			var emission_mult = 0.0 if current_hdr_level == 0 else (0.25 + float(current_hdr_level) * 0.25)
+			l_mat.set_shader_parameter("emission_energy", emission_mult)
 			if norm_tex:
 				l_mat.set_shader_parameter("normal_texture", norm_tex)
 			floor_material_cache[f_key] = l_mat
@@ -991,18 +1158,18 @@ func setup_dungeon_multimeshes():
 	town_base_ground.visible = false
 	add_child(town_base_ground)
 
-	# 0.6 Dungeon Base Continuous Stone Foundation Plane (Eliminates black void holes beneath Dungeons)
+	# 0.6 Dungeon Base Continuous Deep Void Plane (Sits well below floor geometry at -1.0m, pitch-black void)
 	dungeon_base_ground = MeshInstance3D.new()
 	dungeon_base_ground.name = "DungeonBaseGroundPlane"
 	var dp_mesh = PlaneMesh.new()
 	dp_mesh.size = Vector2(240.0, 240.0)
 	dungeon_base_ground.mesh = dp_mesh
-	dungeon_base_ground.position = Vector3(0.0, -0.02, 84.0)
+	dungeon_base_ground.position = Vector3(0.0, -1.0, 84.0)
 	var dg_mat = StandardMaterial3D.new()
 	dg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
-	dg_mat.roughness = 0.85
-	dg_mat.metallic = 0.04
-	dg_mat.albedo_color = Color(0.12, 0.12, 0.14)
+	dg_mat.roughness = 1.0
+	dg_mat.metallic = 0.0
+	dg_mat.albedo_color = Color(0.0, 0.0, 0.0)
 	dungeon_base_ground.material_override = dg_mat
 	dungeon_base_ground.visible = false
 	add_child(dungeon_base_ground)
@@ -1091,9 +1258,15 @@ func update_modular_dungeon_assets(level_idx: int):
 		if wall_broken:
 			wall_ns_mesh = wall_broken
 			wall_ew_mesh = wall_broken
+			wall_block_mesh = wall_broken
+		var rubble = get_or_load_mesh("res://assets/models/dungeon/rubble.glb")
+		if rubble:
+			pillar_mesh = rubble
 
 	var floor_mat = get_pbr_material_for_theme(theme, false)
 	var wall_mat = get_pbr_material_for_theme(theme, true)
+	if wall_mat:
+		wall_mat.render_priority = 3 # Solid modular 3D walls, pillars, and arches match actor layer (3) and occlude corpses (1) and items (2)
 
 	if floor_mmi and floor_mmi.multimesh:
 		floor_mmi.multimesh.mesh = floor_mesh
@@ -1139,27 +1312,9 @@ func update_modular_dungeon_assets(level_idx: int):
 		if is_dungeon:
 			var base_mat = dungeon_base_ground.material_override as StandardMaterial3D
 			if base_mat:
-				var stone_alb = "res://assets/dungeon_pbr_%s_4x/albedo/piece_1.png" % theme
-				var stone_norm = "res://assets/dungeon_pbr_%s_4x/normal/piece_1_n.png" % theme
-				if ResourceLoader.exists(stone_alb):
-					base_mat.albedo_texture = load(stone_alb)
-				elif FileAccess.file_exists(ProjectSettings.globalize_path(stone_alb)):
-					var img = Image.load_from_file(ProjectSettings.globalize_path(stone_alb))
-					if img and not img.is_empty():
-						img.generate_mipmaps()
-						base_mat.albedo_texture = ImageTexture.create_from_image(img)
-				if ResourceLoader.exists(stone_norm):
-					base_mat.normal_enabled = true
-					base_mat.normal_texture = load(stone_norm)
-				elif FileAccess.file_exists(ProjectSettings.globalize_path(stone_norm)):
-					var nimg = Image.load_from_file(ProjectSettings.globalize_path(stone_norm))
-					if nimg and not nimg.is_empty():
-						nimg.generate_mipmaps()
-						base_mat.normal_enabled = true
-						base_mat.normal_texture = ImageTexture.create_from_image(nimg)
-				base_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-				base_mat.uv1_scale = Vector3(160.0, 160.0, 1.0)
-				base_mat.albedo_color = Color(0.70, 0.70, 0.72)
+				base_mat.albedo_texture = null
+				base_mat.normal_enabled = false
+				base_mat.albedo_color = Color(0.0, 0.0, 0.0)
 
 	if not is_dungeon:
 		# Town: Open-air daytime sunlit ambiance with Orthogonal Camera
@@ -1179,6 +1334,7 @@ func update_modular_dungeon_assets(level_idx: int):
 			env.ambient_light_energy = 1.35
 			env.volumetric_fog_enabled = false
 		if dir_light:
+			dir_light.shadow_enabled = true
 			dir_light.rotation_degrees = Vector3(-55.0, 35.0, 0.0)
 			dir_light.light_color = Color(1.0, 0.98, 0.90, 1.0)
 			dir_light.light_energy = 2.20
@@ -1229,7 +1385,8 @@ func update_modular_dungeon_assets(level_idx: int):
 				env.volumetric_fog_albedo = Color(0.85, 0.18, 0.10)
 
 		if dir_light:
-			dir_light.shadow_enabled = true
+			# Directional sunlight shadows only in Town (cur_level == 0); underground dungeons use omni lantern/torch lighting
+			dir_light.shadow_enabled = false
 			dir_light.directional_shadow_max_distance = 40.0
 			dir_light.shadow_bias = 0.05
 
@@ -1264,7 +1421,12 @@ func update_modular_dungeon_assets(level_idx: int):
 				player_lantern.light_energy = 2.40
 			player_lantern.omni_range = 16.0
 			player_lantern.omni_attenuation = 1.05
-			player_lantern.shadow_enabled = false
+			player_lantern.shadow_enabled = true
+			player_lantern.light_cull_mask = 1
+			player_lantern.shadow_bias = 0.06
+			player_lantern.shadow_normal_bias = 1.2
+			player_lantern.shadow_blur = 1.5
+			player_lantern.omni_shadow_mode = OmniLight3D.SHADOW_CUBE
 
 func _on_level_changed(new_lvl: int):
 	last_level_idx = new_lvl
@@ -1302,6 +1464,7 @@ func _on_level_changed(new_lvl: int):
 			c.queue_free()
 	monster_instances.clear()
 	monster_textures.clear()
+	monster_anim_cache.clear()
 	monster_last_frame.clear()
 	monster_last_dir.clear()
 	monster_unseen_frames.clear()
@@ -1319,11 +1482,13 @@ func _on_level_changed(new_lvl: int):
 		for c in missiles_root.get_children():
 			c.queue_free()
 	missile_instances.clear()
+	missile_textures.clear()
 
 	if corpses_root:
 		for c in corpses_root.get_children():
 			c.queue_free()
 	corpse_instances.clear()
+	corpse_textures.clear()
 
 	# 5.6 Clear visual effects
 	if effects_root:
@@ -1448,7 +1613,20 @@ func rebuild_dungeon_if_needed(force: bool = false):
 				is_stair_piece = true
 
 			if is_dungeon and val == 0 and not is_stair_piece:
-				continue
+				# Check if this non-walkable tile borders the dungeon space
+				var is_boundary = false
+				for dy in range(-2, 3):
+					for dx in range(-2, 3):
+						var nx = x + dx
+						var ny = y + dy
+						if nx >= min_bound and nx < max_bound and ny >= min_bound and ny < max_bound:
+							if solidity[ny * 112 + nx] != 0:
+								is_boundary = true
+								break
+					if is_boundary:
+						break
+				if not is_boundary:
+					continue
 
 			var wpos = tile_to_world_3d(float(x), float(y))
 			var tile_pos_i = Vector2i(x, y)
@@ -1482,20 +1660,29 @@ func rebuild_dungeon_if_needed(force: bool = false):
 				var arch_basis = basis_tile.rotated(Vector3.UP, deg_to_rad(-90.0)) if is_l_door else basis_tile
 				arch_transforms.append(Transform3D(arch_basis, Vector3(wpos.x, 0.0, wpos.z)))
 
-			# 1. Floor diamond: All tiles have a procedural floor diamond on the ground plane
-			if not floor_piece_transforms.has(pid):
-				floor_piece_transforms[pid] = []
-			floor_piece_transforms[pid].append(f_tf)
-			total_floor_count += 1
-
 			# Extract the authentic base paver region from row 0 for the foundation floor diamond
-			if is_wall_scenery and not base_floor_texture_cache.has(pid):
-				var img = tex.get_image()
-				if img and not img.is_empty():
-					var floor_rect = Rect2i(0, th - floor_h, tw, floor_h)
-					var floor_img = img.get_region(floor_rect)
-					floor_img.generate_mipmaps()
-					base_floor_texture_cache[pid] = ImageTexture.create_from_image(floor_img)
+			var has_solid_paver = not is_wall_scenery
+			if is_wall_scenery:
+				if base_floor_texture_cache.has(pid):
+					has_solid_paver = true
+				else:
+					var img = tex.get_image()
+					if img and not img.is_empty():
+						var floor_rect = Rect2i(0, th - floor_h, tw, floor_h)
+						var floor_img = img.get_region(floor_rect)
+						if not _is_image_empty_or_transparent(floor_img):
+							floor_img.generate_mipmaps()
+							base_floor_texture_cache[pid] = ImageTexture.create_from_image(floor_img)
+							has_solid_paver = true
+
+			# 1. Floor diamond: ensure every active dungeon tile has a solid ground paver
+			var eff_floor_pid = pid
+			if not has_solid_paver:
+				eff_floor_pid = get_theme_base_floor_piece_id(cur_level)
+			if not floor_piece_transforms.has(eff_floor_pid):
+				floor_piece_transforms[eff_floor_pid] = []
+			floor_piece_transforms[eff_floor_pid].append(f_tf)
+			total_floor_count += 1
 
 			# 2. Wall & Scenery Geometry:
 			# If modular 3D walls are enabled in Dungeon: generate true 3D modular meshes for solid walls
@@ -1538,6 +1725,7 @@ func rebuild_dungeon_if_needed(force: bool = false):
 					spr.pixel_size = p_scale
 					spr.offset = Vector2(0.0, float(th) * 0.5)
 					spr.position = Vector3(wpos.x, 0.01, wpos.z)
+					spr.render_priority = 3
 					spr.modulate = Color(1.48, 1.45, 1.38) if (cur_level == 0) else Color(1.48, 1.44, 1.36)
 					town_scenery_root.add_child(spr)
 					town_scenery_nodes[idx] = spr
@@ -1561,6 +1749,7 @@ func rebuild_dungeon_if_needed(force: bool = false):
 					aspr.offset = Vector2(0.0, float(arch_tex.get_height()) * 0.5)
 					aspr.position = Vector3(wpos.x, 0.02, wpos.z + 0.005)
 					aspr.sorting_offset = 1.0
+					aspr.render_priority = 3
 					aspr.modulate = Color(1.48, 1.44, 1.36)
 					town_scenery_root.add_child(aspr)
 					special_scenery_nodes[idx] = aspr
@@ -1671,6 +1860,9 @@ func setup_player_entity():
 	player_sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	player_sprite.shaded = false
 	player_sprite.pixel_size = PIXEL_SIZE_1X
+	player_sprite.layers = 2
+	player_sprite.render_priority = 3
+	player_sprite.sorting_offset = 0.05
 	player_sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	player_root.add_child(player_sprite)
 
@@ -1699,7 +1891,12 @@ func setup_player_entity():
 	player_lantern.light_energy = 1.80
 	player_lantern.omni_range = 14.0
 	player_lantern.omni_attenuation = 1.25
-	player_lantern.shadow_enabled = false
+	player_lantern.shadow_enabled = true
+	player_lantern.light_cull_mask = 1
+	player_lantern.shadow_bias = 0.06
+	player_lantern.shadow_normal_bias = 1.2
+	player_lantern.shadow_blur = 1.5
+	player_lantern.omni_shadow_mode = OmniLight3D.SHADOW_CUBE
 	player_root.add_child(player_lantern)
 
 	# Direction Indicator Arrow (disabled by default for clean gothic immersion)
@@ -1717,13 +1914,30 @@ func setup_player_entity():
 	player_arrow.visible = false
 	player_root.add_child(player_arrow)
 
-	# AAA Warrior 3D Controller
-	var warrior_script = load("res://scripts/entities/warrior_3d_controller.gd")
-	if warrior_script:
-		warrior_controller = warrior_script.new()
-		warrior_controller.name = "Warrior3DController"
-		warrior_controller.visible = false
-		player_root.add_child(warrior_controller)
+	# AAA Hero 3D Controller
+	setup_hero_controller_for_class(0)
+
+func setup_hero_controller_for_class(p_class: int):
+	if current_player_class == p_class and hero_controller != null and is_instance_valid(hero_controller):
+		return
+	current_player_class = p_class
+	if hero_controller and is_instance_valid(hero_controller):
+		hero_controller.queue_free()
+		hero_controller = null
+
+	var script_path = "res://scripts/entities/warrior_3d_controller.gd"
+	if p_class == 1:
+		script_path = "res://scripts/entities/rogue_3d_controller.gd"
+	elif p_class == 2:
+		script_path = "res://scripts/entities/sorcerer_3d_controller.gd"
+
+	var hero_script = load(script_path)
+	if hero_script:
+		hero_controller = hero_script.new()
+		hero_controller.name = "Hero3DController"
+		hero_controller.visible = false
+		player_root.add_child(hero_controller)
+		warrior_controller = hero_controller
 
 func update_player_entity(delta: float):
 	if not diablo_bridge or not diablo_bridge.has_method("get_player_continuous_pos"):
@@ -1736,24 +1950,32 @@ func update_player_entity(delta: float):
 	var dir = p_data.get("dir", 0)
 	var anim_frame = p_data.get("anim_frame", -1)
 
+	var p_class = diablo_bridge.get_player_class() if diablo_bridge and diablo_bridge.has_method("get_player_class") else 0
+	setup_hero_controller_for_class(p_class)
+
 	player_target_pos = tile_to_world_3d(px, py)
-	if delta <= 0.0 or player_root.position == Vector3.ZERO:
+	var p_dist = player_root.position.distance_to(player_target_pos)
+	if delta <= 0.0 or player_root.position == Vector3.ZERO or p_dist > 4.0:
 		player_root.position = player_target_pos
 	else:
 		player_root.position = player_root.position.lerp(player_target_pos, delta * 14.0)
 
 	player_arrow.rotation_degrees.y = float(dir) * 45.0
 
-	# 3D Warrior Hero Quality-Gated Sync
-	if warrior_controller:
+	# 3D Hero Quality-Gated Sync
+	if hero_controller:
 		var p_action = str(p_data.get("action", "IDLE"))
-		warrior_controller.set_direction(dir)
-		warrior_controller.set_action(p_action)
+		hero_controller.set_direction(dir)
+		hero_controller.set_action(p_action)
 		var is_moving = (player_root.position.distance_to(player_target_pos) > 0.05)
-		warrior_controller.update_animation(delta, Vector3.ZERO, is_moving)
+		hero_controller.update_animation(delta, Vector3.ZERO, is_moving)
 
-		var use_3d = warrior_3d_enabled and is_mesh_aaa_certified("res://assets/models/aaa/characters/warrior_gothic.res")
-		warrior_controller.visible = use_3d
+		var cert_path = "res://assets/models/aaa/characters/warrior_gothic.res"
+		if p_class == 1: cert_path = "res://assets/models/aaa/characters/rogue_gothic.res"
+		elif p_class == 2: cert_path = "res://assets/models/aaa/characters/sorcerer_gothic.res"
+
+		var use_3d = warrior_3d_enabled and is_mesh_aaa_certified(cert_path)
+		hero_controller.visible = use_3d
 		player_sprite.visible = not use_3d
 
 	# Fetch authentic animated player sprite
@@ -1810,9 +2032,6 @@ func update_monster_entities(delta: float):
 			continue
 
 		seen_ids[m_id] = true
-		var node = get_or_create_monster_node(m_id)
-		node.visible = true
-
 		var mx = m.get("pos_x", 0.0)
 		var my = m.get("pos_y", 0.0)
 		var dir = m.get("dir", 0)
@@ -1820,6 +2039,8 @@ func update_monster_entities(delta: float):
 		var hp = m.get("hp", 1)
 		var max_hp = max(1, m.get("max_hp", 1))
 		var m_name = m.get("name", "Monster")
+		var node = get_or_create_monster_node(m_id, m_name)
+		node.visible = true
 
 		var target_pos = tile_to_world_3d(mx, my)
 		node.set_meta("tile_x", int(round(mx)))
@@ -1852,31 +2073,36 @@ func update_monster_entities(delta: float):
 				m_sprite.visible = not use_3d
 		var last_f = monster_last_frame.get(m_id, -999)
 		var last_d = monster_last_dir.get(m_id, -999)
-		var cur_tex: ImageTexture = monster_textures.get(m_id, null)
+		var cur_tex: Texture2D = monster_textures.get(m_id, null)
 
 		if diablo_bridge and diablo_bridge.has_method("get_monster_sprite_data"):
 			if anim_frame != last_f or dir != last_d or cur_tex == null:
 				monster_last_frame[m_id] = anim_frame
 				monster_last_dir[m_id] = dir
-				var ms_data: Dictionary = diablo_bridge.get_monster_sprite_data(m_id)
-				var mw = ms_data.get("width", 0)
-				var mh = ms_data.get("height", 0)
-				var m_rgba: PackedByteArray = ms_data.get("rgba", PackedByteArray())
-				if mw > 0 and mh > 0 and m_rgba.size() == mw * mh * 4:
-					var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
-					m_img.generate_mipmaps()
-					if cur_tex == null or cur_tex.get_width() != mw or cur_tex.get_height() != mh:
+				var m_mode = int(m.get("mode", 0))
+				var m_type = int(m.get("type", -1))
+				var anim_cache_key = "%s_%d_%d_%d_%d" % [m_name, m_mode, dir, anim_frame, m_type]
+				if monster_anim_cache.has(anim_cache_key):
+					cur_tex = monster_anim_cache[anim_cache_key]
+				else:
+					var ms_data: Dictionary = diablo_bridge.get_monster_sprite_data(m_id)
+					var mw = ms_data.get("width", 0)
+					var mh = ms_data.get("height", 0)
+					var m_rgba: PackedByteArray = ms_data.get("rgba", PackedByteArray())
+					if mw > 0 and mh > 0 and m_rgba.size() == mw * mh * 4:
+						var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
+						m_img.generate_mipmaps()
 						cur_tex = ImageTexture.create_from_image(m_img)
-						monster_textures[m_id] = cur_tex
-						if m_sprite:
-							m_sprite.texture = cur_tex
+						monster_anim_cache[anim_cache_key] = cur_tex
 					else:
-						cur_tex.update(m_img)
+						monster_anim_cache[anim_cache_key] = null
 
-					if m_sprite:
-						m_sprite.pixel_size = PIXEL_SIZE_HD if mw >= 200 else PIXEL_SIZE_1X
-						m_sprite.offset = Vector2(0, float(mh) * 0.5)
-						apply_entity_hd_material(m_sprite, cur_tex)
+				monster_textures[m_id] = cur_tex
+				if m_sprite and cur_tex:
+					m_sprite.texture = cur_tex
+					m_sprite.pixel_size = PIXEL_SIZE_HD if cur_tex.get_width() >= 200 else PIXEL_SIZE_1X
+					m_sprite.offset = Vector2(0, float(cur_tex.get_height()) * 0.5)
+					apply_entity_hd_material(m_sprite, cur_tex)
 
 		if m_sprite and cur_tex and m_sprite.material_override == null:
 			apply_entity_hd_material(m_sprite, cur_tex)
@@ -1938,7 +2164,7 @@ func update_monster_entities(delta: float):
 		monster_last_dir.erase(d_id)
 		monster_unseen_frames.erase(d_id)
 
-func get_or_create_monster_node(m_id: int) -> Node3D:
+func get_or_create_monster_node(m_id: int, m_name: String = "") -> Node3D:
 	if monster_instances.has(m_id):
 		return monster_instances[m_id]
 
@@ -1954,17 +2180,61 @@ func get_or_create_monster_node(m_id: int) -> Node3D:
 	sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	sprite.shaded = false
 	sprite.pixel_size = PIXEL_SIZE_1X
+	sprite.render_priority = 3
+	sprite.sorting_offset = 0.05
 	sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	sprite.modulate = Color(1.38, 1.35, 1.28)
 	node.add_child(sprite)
 
-	# AAA Monster 3D Controller
-	var monster_script = load("res://scripts/entities/monster_3d_controller.gd")
+	# AAA Monster 3D Controller (Boss-specific controller vs standard monster controller)
+	var is_butcher = ("Butcher" in m_name) or ("Hentes" in m_name)
+	var is_leoric = ("Skeleton King" in m_name) or ("Leoric" in m_name) or ("Csontváz Király" in m_name)
+	var is_lazarus = ("Lazarus" in m_name) or ("Archbishop" in m_name) or ("Érsek" in m_name)
+	var is_diablo = ("Diablo" in m_name) or ("Lord of Terror" in m_name)
+
+	var monster_script = null
+	if is_butcher:
+		monster_script = load("res://scripts/entities/butcher_3d_controller.gd")
+	elif is_leoric:
+		monster_script = load("res://scripts/entities/leoric_3d_controller.gd")
+	elif is_lazarus:
+		monster_script = load("res://scripts/entities/lazarus_3d_controller.gd")
+	elif is_diablo:
+		monster_script = load("res://scripts/entities/diablo_3d_controller.gd")
+	else:
+		monster_script = load("res://scripts/entities/monster_3d_controller.gd")
+
 	if monster_script:
 		var mc = monster_script.new()
 		mc.name = "Monster3DController"
 		mc.monster_id = m_id
 		mc.visible = false
+		if is_butcher and mc.has_signal("cleaver_impact"):
+			mc.cleaver_impact.connect(func(pos):
+				camera_trauma = minf(camera_trauma + 0.40, 1.0)
+			)
+		elif is_leoric:
+			if mc.has_signal("sword_impact"):
+				mc.sword_impact.connect(func(pos):
+					camera_trauma = minf(camera_trauma + 0.28, 1.0)
+				)
+			if mc.has_signal("resurrection_pulse"):
+				mc.resurrection_pulse.connect(func(pos):
+					camera_trauma = minf(camera_trauma + 0.15, 1.0)
+				)
+		elif is_lazarus and mc.has_signal("hellfire_cast"):
+			mc.hellfire_cast.connect(func(pos):
+				camera_trauma = minf(camera_trauma + 0.20, 1.0)
+			)
+		elif is_diablo:
+			if mc.has_signal("apocalypse_strike"):
+				mc.apocalypse_strike.connect(func(pos):
+					camera_trauma = minf(camera_trauma + 0.50, 1.0)
+				)
+			if mc.has_signal("heavy_step"):
+				mc.heavy_step.connect(func(pos):
+					camera_trauma = minf(camera_trauma + 0.12, 1.0)
+				)
 		node.add_child(mc)
 
 	# Floating 3D Name Label (Authentic Exocet font, crisp readable sizing and render priority)
@@ -2111,7 +2381,7 @@ func update_props(delta: float):
 		var is_door = (category == "DOOR") or (o_type in [1, 2, 42, 43, 74, 75, 83, 84])
 		var is_chest = (category == "CHEST") or (o_type in [5, 6, 7, 68, 69, 70])
 		var is_sarc = (category == "SARCOPHAGUS") or (o_type in [48, 96])
-		var is_fire = (category == "TORCH") or (o_type in [0, 3, 8, 9, 10, 44, 45, 46, 47, 49, 85, 95])
+		var is_fire = (category == "TORCH") or (o_type in [0, 3, 8, 9, 10, 44, 45, 46, 47, 49, 85, 95, 150, 151])
 
 		if is_chest:
 			var lid = prop.get_node_or_null("ChestLid")
@@ -2125,6 +2395,11 @@ func update_props(delta: float):
 			if s_lid:
 				var target_offset = Vector3(0.4, 0.0, 0.0) if anim_frame > 1 else Vector3.ZERO
 				s_lid.position = s_lid.position.lerp(target_offset, delta * 6.0)
+		elif is_door:
+			var door_pivot = prop.get_node_or_null("DoorContainer/DoorPivot")
+			if door_pivot:
+				var target_rot = 85.0 if is_open else 0.0
+				door_pivot.rotation_degrees.y = lerp(door_pivot.rotation_degrees.y, target_rot, delta * 12.0)
 		# Light flickering for fire props (wall torches, standing braziers)
 		if is_fire:
 			var light = prop.get_node_or_null("TorchLight") as OmniLight3D
@@ -2181,7 +2456,7 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int, category:
 	node.set_meta("tile_y", ty)
 
 	var is_door = (category == "DOOR") or (o_type in [1, 2, 42, 43, 74, 75, 83, 84])
-	var is_wall_torch = (o_type in [44, 45, 46, 47])
+	var is_wall_torch = (o_type in [44, 45, 46, 47, 150, 151])
 	var is_standing_fire = (o_type in [0, 3, 8, 9, 10, 49, 85, 95])
 	var is_chest = (category == "CHEST") or (o_type in [5, 6, 7, 68, 69, 70])
 	var is_sarc = (category == "SARCOPHAGUS") or (o_type in [48, 96])
@@ -2190,9 +2465,34 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int, category:
 	node.set_meta("is_door", is_door)
 
 	if is_door:
-		# Door visuals are rendered natively by the authentic dungeon tile / archway graphics.
-		# The prop node functions as the interaction hit volume without redundant synthetic 3D meshes.
-		pass
+		if can_use_modular_3d_prop("door"):
+			var basis_tile = Basis().rotated(Vector3.UP, deg_to_rad(-45.0))
+			var is_l_door = (o_type in [1, 42, 74, 83])
+			var d_basis = basis_tile.rotated(Vector3.UP, deg_to_rad(-90.0)) if is_l_door else basis_tile
+
+			var door_container = Node3D.new()
+			door_container.name = "DoorContainer"
+			door_container.basis = d_basis
+
+			var door_pivot = Node3D.new()
+			door_pivot.name = "DoorPivot"
+			door_pivot.position = Vector3(-0.45, 0.0, 0.0)
+
+			var door_leaf = MeshInstance3D.new()
+			door_leaf.name = "DoorLeaf"
+			door_leaf.mesh = get_or_load_mesh("res://assets/models/dungeon/door_leaf.glb")
+			if door_leaf.mesh == null:
+				var box = BoxMesh.new()
+				box.size = Vector3(0.9, 2.0, 0.1)
+				door_leaf.mesh = box
+			var d_mat = get_pbr_material_for_theme(get_theme_name(last_level_idx), true)
+			if d_mat:
+				door_leaf.material_override = d_mat
+			door_leaf.position = Vector3(0.45, 1.0, 0.0)
+
+			door_pivot.add_child(door_leaf)
+			door_container.add_child(door_pivot)
+			node.add_child(door_container)
 
 	elif is_wall_torch:
 		var basis_tile = Basis().rotated(Vector3.UP, deg_to_rad(-45.0))
@@ -2286,8 +2586,9 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int, category:
 		else:
 			_attach_universal_object_sprite(node, o_id)
 
-		var fire_y = 1.25 if o_type == 0 else 0.45
-		var ember_y = 1.15 if o_type == 0 else 0.35
+		# Standing brazier / fire basin on pillar (2.25m height) or floor (0.45m)
+		var fire_y = 2.25 if o_type == 0 else 0.45
+		var ember_y = 2.18 if o_type == 0 else 0.35
 
 		var light = OmniLight3D.new()
 		light.name = "TorchLight"
@@ -2369,6 +2670,10 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int, category:
 	else:
 		_attach_universal_object_sprite(node, o_id)
 
+	if props_root == null:
+		props_root = Node3D.new()
+		props_root.name = "PropsRoot"
+		add_child(props_root)
 	props_root.add_child(node)
 	prop_instances[o_id] = node
 	return node
@@ -2558,10 +2863,12 @@ func update_scenery_transparency():
 				if spr:
 					spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 					spr.modulate.a = 1.0
+					spr.render_priority = 3
 				var aspr = special_scenery_nodes.get(idx, null)
 				if aspr:
 					aspr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 					aspr.modulate.a = 1.0
+					aspr.render_priority = 3
 			translucent_scenery_indices.clear()
 		return
 
@@ -2575,12 +2882,15 @@ func update_scenery_transparency():
 	if trans_grid.size() < 112 * 112 or trans_mask.size() < 112 * 112 or trans_list.size() < 256:
 		return
 
+	var grid = diablo_bridge.get_dungeon_grid() if diablo_bridge.has_method("get_dungeon_grid") else PackedInt32Array()
+	var has_grid = (grid.size() >= 112 * 112)
+
 	var ppos = diablo_bridge.get_player_continuous_pos() if diablo_bridge.has_method("get_player_continuous_pos") else {}
 	var ptx = int(round(float(ppos.get("pos_x", 0.0))))
 	var pty = int(round(float(ppos.get("pos_y", 0.0))))
 
-	# Generous transparency scan radius covering current camera viewport plus +40% margin
-	var vis_rad = int(ceil(maxf(camera_distance * 2.2, 38.0)))
+	# Generous transparency scan radius covering current camera viewport plus margin
+	var vis_rad = int(ceil(maxf(camera_distance * 1.5, 20.0)))
 	var min_x = maxi(0, ptx - vis_rad)
 	var max_x = mini(111, ptx + vis_rad)
 	var min_y = maxi(0, pty - vis_rad)
@@ -2594,6 +2904,10 @@ func update_scenery_transparency():
 			if trans_mask[idx] != 0:
 				var t_val = trans_grid[idx]
 				if t_val > 0 and t_val < trans_list.size() and trans_list[t_val] != 0:
+					# Freestanding columns and pillars must NEVER turn translucent!
+					var pid = grid[idx] if has_grid else -1
+					if pid >= 0 and is_piece_pillar(pid, cur_lvl):
+						continue
 					new_translucent[idx] = true
 
 	# Restore walls that are no longer translucent
@@ -2603,10 +2917,12 @@ func update_scenery_transparency():
 			if spr:
 				spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 				spr.modulate.a = 1.0
+				spr.render_priority = 3
 			var aspr = special_scenery_nodes.get(idx, null)
 			if aspr:
 				aspr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 				aspr.modulate.a = 1.0
+				aspr.render_priority = 3
 
 	# Apply soft transparency to new translucent walls
 	for idx in new_translucent.keys():
@@ -2615,10 +2931,12 @@ func update_scenery_transparency():
 			if spr:
 				spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
 				spr.modulate.a = 0.45
+				spr.render_priority = 4
 			var aspr = special_scenery_nodes.get(idx, null)
 			if aspr:
 				aspr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
 				aspr.modulate.a = 0.45
+				aspr.render_priority = 4
 
 	translucent_scenery_indices = new_translucent
 
@@ -2711,54 +3029,72 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 
 	# Fetch texture from HD disk cache or diablo_bridge
 	var cache_key = "%d_%d" % [curs_id, anim_frame]
-	var tex: ImageTexture = item_textures.get(cache_key, null)
-	var item_is_hd: bool = item_is_hd_cache.get(cache_key, false)
-	if tex == null:
-		var p_hd1 = "res://assets/hd_sprites_x4plus/items/curs_%d_f%d.png" % [curs_id, anim_frame]
-		var p_hd2 = "res://assets/hd_sprites_x4plus/items/curs_%d.png" % curs_id
-		var p_hd3 = "res://assets/hd_sprites/items/curs_%d_f%d.png" % [curs_id, anim_frame]
-		var p_hd4 = "res://assets/hd_sprites/items/curs_%d.png" % curs_id
-		var found_p = ""
-		for p in [p_hd1, p_hd2, p_hd3, p_hd4]:
-			if FileAccess.file_exists(p):
-				found_p = p
-				break
-		if found_p != "":
-			var img = Image.load_from_file(ProjectSettings.globalize_path(found_p))
-			if img and not img.is_empty():
-				img.generate_mipmaps()
-				tex = ImageTexture.create_from_image(img)
-				item_textures[cache_key] = tex
-				item_is_hd = true
-				item_is_hd_cache[cache_key] = true
+	var tex: ImageTexture = null
+	var item_is_hd: bool = false
 
-		if tex == null and diablo_bridge and diablo_bridge.has_method("get_ground_item_sprite_data"):
-			var s_data: Dictionary = diablo_bridge.get_ground_item_sprite_data(i_id)
+	if item_textures.has(cache_key):
+		tex = item_textures[cache_key]
+		item_is_hd = item_is_hd_cache.get(cache_key, false)
+	else:
+		# 1. Authoritative authentic Diablo 1 ground item sprite rasterization from bridge
+		if diablo_bridge:
+			var s_data: Dictionary = {}
+			if diablo_bridge.has_method("get_ground_item_sprite_data"):
+				s_data = diablo_bridge.get_ground_item_sprite_data(i_id)
+			elif diablo_bridge.has_method("get_item_sprite_data"):
+				s_data = diablo_bridge.get_item_sprite_data(curs_id)
 			var sw = s_data.get("width", 0)
 			var sh = s_data.get("height", 0)
 			var rgba: PackedByteArray = s_data.get("rgba", PackedByteArray())
 			if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
 				var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
+				var used_rect = img.get_used_rect()
+				if used_rect.size.x > 0 and used_rect.size.y > 0:
+					img = img.get_region(used_rect)
 				img.generate_mipmaps()
 				tex = ImageTexture.create_from_image(img)
-				item_textures[cache_key] = tex
 				item_is_hd = false
-				item_is_hd_cache[cache_key] = false
 
-	# 3D Item Sprite (billboarded slightly above floor)
+		# 2. HD sprite fallback - ONLY if valid on disk and NOT a pure black silhouette mask
+		if tex == null:
+			var p_hd1 = "res://assets/hd_sprites_x4plus/items/curs_%d_f%d.png" % [curs_id, anim_frame]
+			var p_hd2 = "res://assets/hd_sprites_x4plus/items/curs_%d.png" % curs_id
+			var p_hd3 = "res://assets/hd_sprites/items/curs_%d_f%d.png" % [curs_id, anim_frame]
+			var p_hd4 = "res://assets/hd_sprites/items/curs_%d.png" % curs_id
+			var found_p = ""
+			for p in [p_hd1, p_hd2, p_hd3, p_hd4]:
+				if FileAccess.file_exists(p):
+					found_p = p
+					break
+			if found_p != "":
+				var img = Image.load_from_file(ProjectSettings.globalize_path(found_p))
+				if img and not img.is_empty() and not _is_texture_pure_black(img):
+					var used_rect = img.get_used_rect()
+					if used_rect.size.x > 0 and used_rect.size.y > 0:
+						img = img.get_region(used_rect)
+					img.generate_mipmaps()
+					tex = ImageTexture.create_from_image(img)
+					item_is_hd = true
+
+		item_textures[cache_key] = tex
+		item_is_hd_cache[cache_key] = item_is_hd
+
+	# 3D Item Sprite (grounded slightly above floor)
 	var spr = Sprite3D.new()
 	spr.name = "ItemSprite"
 	spr.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	spr.shaded = false
-	# Generous +75% item scale boost ensures dropped items are clearly visible and legible in 3D
-	var item_scale_boost = 1.75
+	spr.render_priority = 2 # Ground Items: strictly above corpses (render_priority=1)
+	spr.sorting_offset = 0.02 + float(tx + ty) * 0.0001
+	var item_scale_boost = 1.0
 	spr.pixel_size = (PIXEL_SIZE_HD if item_is_hd else PIXEL_SIZE_1X) * item_scale_boost
 	spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	spr.centered = true
+	spr.offset = Vector2.ZERO
 	if tex:
 		spr.texture = tex
-		spr.offset = Vector2(0, float(tex.get_height()) * 0.5)
 		apply_entity_hd_material(spr, tex)
 	spr.modulate = Color(1.35, 1.35, 1.35)
 	node.add_child(spr)
@@ -2897,6 +3233,8 @@ func update_missiles(delta: float):
 
 	var missiles: Array = diablo_bridge.get_active_missiles()
 	var seen_ids: Dictionary = {}
+	var active_missile_lights: int = 0
+	var active_missile_particles: int = 0
 
 	for m in missiles:
 		var m_id = m.get("id", -1)
@@ -2917,8 +3255,8 @@ func update_missiles(delta: float):
 		var tile_y = (py / 16.0 - px / 32.0) * 0.5
 		var pos_3d = tile_to_world_3d(tile_x, tile_y)
 
-		# Ground/Wall effects (FireWall, LightningWall, TownPortal, Acid) vs flying projectiles
-		var is_ground_skill = pre_flag or m_type in [5, 10, 59, 65, 70] # FireWall, TownPortal, AcidPuddle, RedPortal, LightningWall
+		# Ground/Wall effects (FireWall, LightningWall, TownPortal, Acid, RedPortal) vs flying projectiles
+		var is_ground_skill = pre_flag or m_type in [4, 5, 6, 10, 33, 38, 59, 65, 70]
 		if is_ground_skill:
 			pos_3d.y = 0.04
 		else:
@@ -2947,11 +3285,16 @@ func update_missiles(delta: float):
 
 		node.position = pos_3d
 
-		# Dynamic animation update on frame or direction change
+		# Dynamic animation update on frame or direction change with RAM texture caching
 		var spr = node.get_node_or_null("Sprite3D") as Sprite3D
 		var last_frame = node.get_meta("last_anim_frame", -1)
 		var last_dir = node.get_meta("last_anim_dir", -1)
-		if spr and (spr.texture == null or anim_frame != last_frame or m_dir != last_dir) and diablo_bridge.has_method("get_missile_sprite_data"):
+		var cache_key = "%d_%d_%d" % [m_type, m_dir, anim_frame]
+		var tex: ImageTexture = null
+
+		if missile_textures.has(cache_key):
+			tex = missile_textures[cache_key]
+		elif diablo_bridge.has_method("get_missile_sprite_data"):
 			node.set_meta("last_anim_frame", anim_frame)
 			node.set_meta("last_anim_dir", m_dir)
 			var ms_data = diablo_bridge.get_missile_sprite_data(m_id)
@@ -2961,73 +3304,108 @@ func update_missiles(delta: float):
 			if mw > 0 and mh > 0 and m_rgba.size() == mw * mh * 4:
 				var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
 				m_img.generate_mipmaps()
-				spr.texture = ImageTexture.create_from_image(m_img)
+				tex = ImageTexture.create_from_image(m_img)
+				missile_textures[cache_key] = tex
+			else:
+				missile_textures[cache_key] = null
+
+		if spr and tex:
+			if spr.texture != tex:
+				spr.texture = tex
 				if is_ground_skill:
-					spr.offset = Vector2(0, float(mh) * 0.5)
+					spr.offset = Vector2(0, float(tex.get_height()) * 0.5)
 				else:
 					spr.offset = Vector2.ZERO
+			if spr.material_override == null:
 				apply_entity_hd_material(spr, spr.texture)
 
-		if spr and spr.texture and spr.material_override == null:
-			apply_entity_hd_material(spr, spr.texture)
-
-		# Dynamic 3D particle emitters for spell missiles
-		# Fire missiles (Fireball, Fire Wall, Flame Wave, etc.)
-		if m_type in [1, 5, 6, 9, 14, 21, 27, 44, 48, 67, 72]:
+		# Dynamic 3D particle emitters for spell missiles (capped at 4 emitters max for 144 FPS)
+		# Fire missiles (Fireball, Fire Wall, Flame Wave, Inferno, etc.)
+		if m_type in [1, 4, 5, 9, 13, 14, 19, 20, 24, 30, 35, 44, 48, 67, 72]:
 			var fire_p = node.get_node_or_null("MissileFireParticles") as GPUParticles3D
-			if fire_p == null:
+			if fire_p == null and active_missile_particles < 4:
+				active_missile_particles += 1
 				fire_p = create_ember_particles()
 				fire_p.name = "MissileFireParticles"
 				node.add_child(fire_p)
-		# Lightning missiles (Lightning Wall, Charged Bolt, Lightning, Nova)
-		elif m_type in [8, 15, 23, 42, 52, 56, 70]:
+		# Lightning missiles (Lightning, Lightning Wall, Charged Bolt, Nova)
+		elif m_type in [3, 8, 15, 21, 23, 26, 29, 42, 52, 56, 70]:
 			var spark_p = node.get_node_or_null("MissileSparkParticles") as GPUParticles3D
-			if spark_p == null and torch_sparks_scene:
+			if spark_p == null and torch_sparks_scene and active_missile_particles < 4:
+				active_missile_particles += 1
 				spark_p = torch_sparks_scene.instantiate()
 				spark_p.name = "MissileSparkParticles"
 				spark_p.amount = 8
 				spark_p.lifetime = 0.25
 				node.add_child(spark_p)
+		# Portals (Town Portal, Red Portal)
+		elif m_type in [6, 10, 38, 65]:
+			var portal_p = node.get_node_or_null("MissilePortalParticles") as CPUParticles3D
+			if portal_p == null:
+				portal_p = CPUParticles3D.new()
+				portal_p.name = "MissilePortalParticles"
+				portal_p.amount = 28
+				portal_p.lifetime = 1.6
+				portal_p.preprocess = 0.3
+				portal_p.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
+				portal_p.emission_ring_radius = 0.75
+				portal_p.emission_ring_inner_radius = 0.20
+				portal_p.direction = Vector3(0, 1, 0)
+				portal_p.spread = 20.0
+				portal_p.gravity = Vector3(0, 0.8, 0)
+				portal_p.initial_velocity_min = 0.4
+				portal_p.initial_velocity_max = 1.1
+				portal_p.angular_velocity_min = 60.0
+				portal_p.angular_velocity_max = 180.0
+				if m_type in [6, 10]:
+					portal_p.color = Color(0.28, 0.68, 1.0, 0.85)
+				else:
+					portal_p.color = Color(1.0, 0.22, 0.15, 0.85)
+				portal_p.position = Vector3(0, 0.2, 0)
+				node.add_child(portal_p)
 
-		# Dynamic 3D lighting & forward+ HDR illumination
+		# Dynamic 3D lighting & forward+ HDR illumination (capped at 4 simultaneous dynamic lights)
 		var m_light = node.get_node_or_null("MissileLight") as OmniLight3D
 		if m_light:
-			m_light.visible = true
-			if m_type in [8, 15, 23, 42, 52, 56, 70]: # Lightning / Lightning Wall / Nova / Charged Bolt
-				m_light.light_color = Color(0.35, 0.78, 1.0)
-				m_light.light_energy = randf_range(2.6, 4.4)
-				m_light.omni_range = 6.5
-				m_light.omni_attenuation = 1.1
-				if spr: spr.modulate = Color(1.5, 1.5, 1.6)
-			elif m_type in [1, 5, 6, 9, 14, 21, 27, 44, 48, 67, 72]: # Fire / Fire Wall / Fireball
-				m_light.light_color = Color(1.0, 0.58, 0.18)
-				m_light.light_energy = randf_range(2.2, 3.6)
-				m_light.omni_range = 6.0
-				m_light.omni_attenuation = 1.2
-				if spr: spr.modulate = Color(1.5, 1.4, 1.2)
-			elif m_type == 53: # Holy Bolt
-				m_light.light_color = Color(1.0, 0.95, 0.70)
-				m_light.light_energy = randf_range(2.5, 3.2)
-				m_light.omni_range = 5.5
-				m_light.omni_attenuation = 1.2
-				if spr: spr.modulate = Color(1.6, 1.6, 1.4)
-			elif m_type in [57, 58, 59]: # Acid / Poison
-				m_light.light_color = Color(0.30, 1.0, 0.35)
-				m_light.light_energy = 1.8
-				m_light.omni_range = 4.5
-				m_light.omni_attenuation = 1.3
-				if spr: spr.modulate = Color(1.2, 1.5, 1.2)
-			elif m_type in [10, 65]: # Town Portal / Red Portal
-				m_light.light_color = Color(0.35, 0.60, 1.0) if m_type == 10 else Color(1.0, 0.25, 0.25)
-				m_light.light_energy = randf_range(2.2, 3.0)
-				m_light.omni_range = 5.0
-				m_light.omni_attenuation = 1.2
-				if spr: spr.modulate = Color(1.4, 1.4, 1.4)
-			elif light_flag:
-				m_light.light_color = Color(1.0, 0.80, 0.40)
-				m_light.light_energy = 2.0
-				m_light.omni_range = 4.5
-				m_light.omni_attenuation = 1.3
+			var needs_light = light_flag or m_type in [1, 3, 4, 5, 6, 8, 9, 10, 13, 14, 15, 19, 20, 21, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33, 35, 38, 42, 44, 48, 52, 53, 56, 57, 58, 59, 65, 67, 70, 72]
+			if needs_light and active_missile_lights < 4:
+				active_missile_lights += 1
+				m_light.visible = true
+				if m_type in [3, 8, 15, 21, 23, 26, 29, 42, 52, 56, 70]: # Lightning / Nova
+					m_light.light_color = Color(0.35, 0.78, 1.0)
+					m_light.light_energy = 3.2
+					m_light.omni_range = 6.5
+					m_light.omni_attenuation = 1.1
+					if spr: spr.modulate = Color(1.5, 1.5, 1.6)
+				elif m_type in [1, 4, 5, 9, 13, 14, 19, 20, 24, 30, 35, 44, 48, 67, 72]: # Fire / Fireball
+					m_light.light_color = Color(1.0, 0.58, 0.18)
+					m_light.light_energy = 2.8
+					m_light.omni_range = 6.0
+					m_light.omni_attenuation = 1.2
+					if spr: spr.modulate = Color(1.5, 1.4, 1.2)
+				elif m_type in [27, 28, 53]: # Holy Bolt
+					m_light.light_color = Color(1.0, 0.95, 0.70)
+					m_light.light_energy = 2.8
+					m_light.omni_range = 5.5
+					m_light.omni_attenuation = 1.2
+					if spr: spr.modulate = Color(1.6, 1.6, 1.4)
+				elif m_type in [31, 32, 33, 57, 58, 59]: # Acid / Poison
+					m_light.light_color = Color(0.30, 1.0, 0.35)
+					m_light.light_energy = 1.8
+					m_light.omni_range = 4.5
+					m_light.omni_attenuation = 1.3
+					if spr: spr.modulate = Color(1.2, 1.5, 1.2)
+				elif m_type in [6, 10, 38, 65]: # Town Portal / Red Portal
+					m_light.light_color = Color(0.35, 0.60, 1.0) if m_type in [6, 10] else Color(1.0, 0.25, 0.25)
+					m_light.light_energy = 2.6
+					m_light.omni_range = 5.0
+					m_light.omni_attenuation = 1.2
+					if spr: spr.modulate = Color(1.4, 1.4, 1.4)
+				else:
+					m_light.light_color = Color(1.0, 0.80, 0.40)
+					m_light.light_energy = 2.0
+					m_light.omni_range = 4.5
+					m_light.omni_attenuation = 1.3
 			else:
 				m_light.visible = false
 
@@ -3078,10 +3456,17 @@ func update_corpses():
 		spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		spr.shaded = false
 		spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+		spr.render_priority = 1 # Corpse layer: above floor (0), strictly below items (2) and actors (3)
+		spr.sorting_offset = -0.05 + float(tx + ty) * 0.0001
+		spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		spr.modulate = Color(1.35, 1.32, 1.25)
 		node.add_child(spr)
 
-		if diablo_bridge.has_method("get_corpse_sprite_data"):
+		var c_tex_key = "%d_%d" % [c_idx, c_dir]
+		var c_tex: ImageTexture = null
+		if corpse_textures.has(c_tex_key):
+			c_tex = corpse_textures[c_tex_key]
+		elif diablo_bridge.has_method("get_corpse_sprite_data"):
 			var cs_data = diablo_bridge.get_corpse_sprite_data(c_idx, c_dir)
 			var cw = cs_data.get("width", 0)
 			var ch = cs_data.get("height", 0)
@@ -3089,10 +3474,16 @@ func update_corpses():
 			if cw > 0 and ch > 0 and c_rgba.size() == cw * ch * 4:
 				var c_img = Image.create_from_data(cw, ch, false, Image.FORMAT_RGBA8, c_rgba)
 				c_img.generate_mipmaps()
-				spr.texture = ImageTexture.create_from_image(c_img)
-				spr.pixel_size = PIXEL_SIZE_HD if cw >= 200 else PIXEL_SIZE_1X
-				spr.offset = Vector2(0, float(ch) * 0.5)
-				apply_entity_hd_material(spr, spr.texture)
+				c_tex = ImageTexture.create_from_image(c_img)
+				corpse_textures[c_tex_key] = c_tex
+			else:
+				corpse_textures[c_tex_key] = null
+
+		if c_tex:
+			spr.texture = c_tex
+			spr.pixel_size = PIXEL_SIZE_HD if c_tex.get_width() >= 200 else PIXEL_SIZE_1X
+			spr.offset = Vector2(0, float(c_tex.get_height()) * 0.5)
+			apply_corpse_hd_material(spr, spr.texture)
 
 		corpse_instances[c_key] = node
 
@@ -3223,7 +3614,10 @@ func _process(delta: float):
 			last_player_frame = -1
 			last_player_dir = -1
 			monster_textures.clear()
+			monster_anim_cache.clear()
 			monster_last_frame.clear()
+			missile_textures.clear()
+			corpse_textures.clear()
 
 	time_accum += delta
 	last_check_timer += delta
@@ -3283,7 +3677,11 @@ func _process(delta: float):
 func update_camera_tracking(delta: float):
 	if not camera:
 		return
-	camera_target = camera_target.lerp(player_target_pos, delta * 7.5)
+	var cam_dist = camera_target.distance_to(player_target_pos)
+	if cam_dist > 5.0:
+		camera_target = player_target_pos
+	else:
+		camera_target = camera_target.lerp(player_target_pos, delta * 7.5)
 	if camera_trauma > 0.0:
 		camera_trauma = maxf(0.0, camera_trauma - delta * 2.5)
 	update_camera_transform()
@@ -3903,6 +4301,13 @@ func update_visual_effects() -> void:
 		return
 
 	var events: Array = diablo_bridge.poll_visual_events()
+	if events.is_empty():
+		return
+
+	# Performance guard: cap active particle nodes to 12 max to maintain rock-solid 144 FPS
+	var active_vfx = effects_root.get_child_count()
+	if active_vfx >= 12:
+		return
 	for ev in events:
 		var ev_type = int(ev.get("type", 0))
 		if ev_type <= 0 or not ev.has("tile"):

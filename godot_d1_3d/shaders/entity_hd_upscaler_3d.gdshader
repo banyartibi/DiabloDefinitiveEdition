@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_disabled, unshaded;
+render_mode blend_mix, depth_draw_always, cull_disabled, unshaded;
 
 // Diablo: Definitive Edition - 3D Entity & Billboard High-Definition Subpixel Upscaler
 // Mode 0: xBRZ (4x/5x Rule-Based Vector Contour Reconstruction)

@@ -26,10 +26,10 @@ const CELL_STEP = CELL_SIZE + CELL_GAP # 25.0
 @onready var items_overlay: Control = find_child("ItemsOverlay", true, false)
 
 # Dedicated Item Tooltip
-@onready var tooltip: PanelContainer = $Tooltip
-@onready var tooltip_title: Label = $Tooltip/Margin/VBox/TitleLabel
-@onready var tooltip_divider: ColorRect = $Tooltip/Margin/VBox/Divider
-@onready var tooltip_stats: Label = $Tooltip/Margin/VBox/StatsLabel
+@onready var tooltip: PanelContainer = get_node_or_null("Tooltip")
+@onready var tooltip_title: Label = get_node_or_null("Tooltip/Margin/VBox/TitleLabel")
+@onready var tooltip_divider: ColorRect = get_node_or_null("Tooltip/Margin/VBox/Divider")
+@onready var tooltip_stats: Label = get_node_or_null("Tooltip/Margin/VBox/StatsLabel")
 
 var hovered_item_data = null
 var last_inventory_version: int = -1
@@ -157,6 +157,10 @@ func _init_stash_cells():
 			_on_stash_cell_gui_input(cell_idx, event)
 		)
 		grid_cells.add_child(cell)
+
+func _process(_delta: float) -> void:
+	if visible or is_visible_in_tree():
+		check_and_update()
 
 func check_and_update():
 	if not diablo_bridge:

@@ -112,6 +112,10 @@ func _shadow_use(item: Dictionary) -> void:
 
 
 func _shadow_verify() -> void:
+	var auth = _auth()
+	if auth != null and not auth.validation_enabled:
+		_pending_prediction = {}
+		return
 	if _pending_prediction.is_empty() or diablo_bridge == null:
 		return
 	var seq_before := int(_pending_prediction.get("seq_before", 0))
@@ -146,7 +150,9 @@ func _process(_delta: float) -> void:
 
 
 func _exit_tree() -> void:
-	print("[PARITY REPORT] ", _auth().report())
+	var auth = _auth()
+	if auth != null and auth.validation_enabled:
+		print("[PARITY REPORT] ", auth.report())
 
 # Equipment slot indices (matching DevilutionX inv_body_loc)
 const EQUIP_HEAD = 0
@@ -198,10 +204,10 @@ const TEX_SLOT_9PATCH = preload("res://assets/hud/gothic_slot_9patch.png")
 const TEX_SOCKET_LOCKED = preload("res://assets/hud/gothic_socket_locked.png")
 
 # Dedicated Item Tooltip
-@onready var tooltip: PanelContainer = $Tooltip
-@onready var tooltip_title: Label = $Tooltip/Margin/VBox/TitleLabel
-@onready var tooltip_divider: ColorRect = $Tooltip/Margin/VBox/Divider
-@onready var tooltip_stats: Label = $Tooltip/Margin/VBox/StatsLabel
+@onready var tooltip: PanelContainer = get_node_or_null("Tooltip")
+@onready var tooltip_title: Label = get_node_or_null("Tooltip/Margin/VBox/TitleLabel")
+@onready var tooltip_divider: ColorRect = get_node_or_null("Tooltip/Margin/VBox/Divider")
+@onready var tooltip_stats: Label = get_node_or_null("Tooltip/Margin/VBox/StatsLabel")
 
 # Belt nodes (8 active sockets with 2 decorative disabled sockets on outer ends)
 @onready var belt_cells: HBoxContainer = find_child("BeltCells", true, false)
