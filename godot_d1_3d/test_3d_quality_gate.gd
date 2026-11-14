@@ -60,26 +60,45 @@ func _init():
 	# When modular walls disabled globally:
 	sandbox.modular_3d_walls_enabled = false
 	assert(not sandbox.can_use_modular_3d_walls("cathedral"), "ERROR: Cathedral theme must not allow 3D walls when globally disabled!")
-	# Uncertified themes (catacombs, caves, hell) must remain uncertified:
-	assert(not sandbox.can_use_modular_3d_walls("catacombs"), "ERROR: Catacombs must NOT be certified!")
-	assert(not sandbox.can_use_modular_3d_walls("caves"), "ERROR: Caves must NOT be certified!")
-	assert(not sandbox.can_use_modular_3d_walls("hell"), "ERROR: Hell must NOT be certified!")
-	print("  PASS: Uncertified dungeon themes safely locked behind AAA certification!")
+	assert(not sandbox.can_use_modular_3d_walls("catacombs"), "ERROR: Catacombs must not allow 3D walls when globally disabled!")
+	assert(not sandbox.can_use_modular_3d_walls("caves"), "ERROR: Caves must not allow 3D walls when globally disabled!")
+	assert(not sandbox.can_use_modular_3d_walls("hell"), "ERROR: Hell must not allow 3D walls when globally disabled!")
+
+	# Uncertified dummy theme must remain strictly uncertified:
+	sandbox.modular_3d_walls_enabled = true
+	assert(not sandbox.can_use_modular_3d_walls("uncertified_test_theme"), "ERROR: Uncertified theme must NOT be certified!")
+
+	# All 4 dungeon themes must be certified when assets loaded:
+	sandbox.update_modular_dungeon_assets(1) # Cathedral
+	assert(sandbox.can_use_modular_3d_walls("cathedral"), "ERROR: Cathedral must be certified!")
+	sandbox.update_modular_dungeon_assets(5) # Catacombs
+	assert(sandbox.can_use_modular_3d_walls("catacombs"), "ERROR: Catacombs must be certified!")
+	sandbox.update_modular_dungeon_assets(9) # Caves
+	assert(sandbox.can_use_modular_3d_walls("caves"), "ERROR: Caves must be certified!")
+	sandbox.update_modular_dungeon_assets(13) # Hell
+	assert(sandbox.can_use_modular_3d_walls("hell"), "ERROR: Hell must be certified!")
+	print("  PASS: All 4 authentic themes certified; uncertified dummy theme strictly rejected!")
 
 	# [Test 3] Quality Gate enforcement during dungeon rebuild
 	print("\n[3/4] Testing automatic fallback protection during dungeon rebuild...")
-	# For uncertified theme (Catacombs, Level 5): even with modular_3d_walls_enabled = true
-	sandbox.modular_3d_walls_enabled = true
+	# Simulate uncertified theme fallback
 	sandbox.diablo_bridge.cur_lvl = 5
 	sandbox.diablo_bridge.grid[25 * 112 + 25] = 101 # Catacombs wall piece (256x512)
 	sandbox.activate()
-	sandbox.update_modular_dungeon_assets(5) # Level 5 = Catacombs (uncertified)
+	sandbox.set_theme_aaa_certified("catacombs", false)
 	sandbox.rebuild_dungeon_if_needed(true)
 
 	var total_cubes = sandbox.wall_mmi.multimesh.instance_count + sandbox.wall_ns_mmi.multimesh.instance_count + sandbox.wall_ew_mmi.multimesh.instance_count
 	assert(total_cubes == 0, "ERROR: Quality Gate MUST prevent uncertified 3D wall cubes from spawning! Found: %d" % total_cubes)
 	assert(sandbox.town_scenery_nodes.size() > 0, "ERROR: Engine MUST maintain authentic 4K PBR scenery when uncertified!")
 	print("  PASS: Quality Gate intercepted uncertified walls: 0 toy cubes, 100% 4K PBR scenery preserved!")
+
+	# Re-certify Catacombs and test certified 3D build
+	sandbox.set_theme_aaa_certified("catacombs", true)
+	sandbox.rebuild_dungeon_if_needed(true)
+	var certified_cubes = sandbox.wall_mmi.multimesh.instance_count + sandbox.wall_ns_mmi.multimesh.instance_count + sandbox.wall_ew_mmi.multimesh.instance_count + sandbox.pillar_mmi.multimesh.instance_count
+	assert(certified_cubes > 0, "ERROR: Certified theme MUST spawn 3D modular geometry! Found: %d" % certified_cubes)
+	print("  PASS: Certified theme successfully generated %d modular 3D architectural pieces!" % certified_cubes)
 
 	# [Test 4] Prop-level quality gating
 	print("\n[4/4] Checking interactive prop quality gating...")

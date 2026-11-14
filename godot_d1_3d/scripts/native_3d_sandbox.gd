@@ -1239,29 +1239,22 @@ func update_modular_dungeon_assets(level_idx: int):
 	if arch_mesh == null or (arch_mesh is BoxMesh):
 		arch_mesh = get_or_load_mesh("res://assets/models/dungeon/arch_open.glb")
 
-	# Certified AAA Dark Fantasy Kits
-	if theme == "cathedral":
-		var aaa_ns = "res://assets/models/aaa/cathedral/wall_ns_gothic.res"
-		var aaa_ew = "res://assets/models/aaa/cathedral/wall_ew_gothic.res"
-		var aaa_corner = "res://assets/models/aaa/cathedral/wall_corner_gothic.res"
-		var aaa_pillar = "res://assets/models/aaa/cathedral/pillar_gothic.res"
-		if ResourceLoader.exists(aaa_ns) and ResourceLoader.exists(aaa_ew):
-			wall_ns_mesh = get_or_load_mesh(aaa_ns)
-			wall_ew_mesh = get_or_load_mesh(aaa_ew)
-			wall_block_mesh = get_or_load_mesh(aaa_corner)
-			pillar_mesh = get_or_load_mesh(aaa_pillar)
-			set_theme_aaa_certified("cathedral", true)
+	# Certified AAA Dark Fantasy Kits for ALL 4 Themes (Cathedral, Catacombs, Caves, Hell)
+	var theme_suffix = "gothic" if theme == "cathedral" else theme
+	var aaa_ns = "res://assets/models/aaa/%s/wall_ns_%s.res" % [theme, theme_suffix]
+	var aaa_ew = "res://assets/models/aaa/%s/wall_ew_%s.res" % [theme, theme_suffix]
+	var aaa_corner = "res://assets/models/aaa/%s/wall_corner_%s.res" % [theme, theme_suffix]
+	var aaa_pillar = "res://assets/models/aaa/%s/pillar_%s.res" % [theme, theme_suffix]
+	var aaa_arch = "res://assets/models/aaa/%s/arch_door_%s.res" % [theme, theme_suffix]
 
-	# For Caves (L9..12), use broken / organic rock walls instead of straight drywall
-	if theme == "caves":
-		var wall_broken = get_or_load_mesh("res://assets/models/dungeon/wall_broken.glb")
-		if wall_broken:
-			wall_ns_mesh = wall_broken
-			wall_ew_mesh = wall_broken
-			wall_block_mesh = wall_broken
-		var rubble = get_or_load_mesh("res://assets/models/dungeon/rubble.glb")
-		if rubble:
-			pillar_mesh = rubble
+	if ResourceLoader.exists(aaa_ns) and ResourceLoader.exists(aaa_ew):
+		wall_ns_mesh = get_or_load_mesh(aaa_ns)
+		wall_ew_mesh = get_or_load_mesh(aaa_ew)
+		wall_block_mesh = get_or_load_mesh(aaa_corner)
+		pillar_mesh = get_or_load_mesh(aaa_pillar)
+		if ResourceLoader.exists(aaa_arch):
+			arch_mesh = get_or_load_mesh(aaa_arch)
+		set_theme_aaa_certified(theme, true)
 
 	var floor_mat = get_pbr_material_for_theme(theme, false)
 	var wall_mat = get_pbr_material_for_theme(theme, true)
@@ -1687,29 +1680,28 @@ func rebuild_dungeon_if_needed(force: bool = false):
 			# 2. Wall & Scenery Geometry:
 			# If modular 3D walls are enabled in Dungeon: generate true 3D modular meshes for solid walls
 			if is_wall_scenery and (not can_3d_walls or not is_door_tile):
-				if can_3d_walls:
-					if val == 2:
-						var has_wall_nx = (x > 0 and (solidity[y * 112 + (x - 1)] == 2 or door_tiles.has(Vector2i(x - 1, y))))
-						var has_wall_px = (x < 111 and (solidity[y * 112 + (x + 1)] == 2 or door_tiles.has(Vector2i(x + 1, y))))
-						var has_wall_ny = (y > 0 and (solidity[(y - 1) * 112 + x] == 2 or door_tiles.has(Vector2i(x, y - 1))))
-						var has_wall_py = (y < 111 and (solidity[(y + 1) * 112 + x] == 2 or door_tiles.has(Vector2i(x, y + 1))))
+				if can_3d_walls and val == 2:
+					var has_wall_nx = (x > 0 and (solidity[y * 112 + (x - 1)] == 2 or door_tiles.has(Vector2i(x - 1, y))))
+					var has_wall_px = (x < 111 and (solidity[y * 112 + (x + 1)] == 2 or door_tiles.has(Vector2i(x + 1, y))))
+					var has_wall_ny = (y > 0 and (solidity[(y - 1) * 112 + x] == 2 or door_tiles.has(Vector2i(x, y - 1))))
+					var has_wall_py = (y < 111 and (solidity[(y + 1) * 112 + x] == 2 or door_tiles.has(Vector2i(x, y + 1))))
 
-						var neighbor_x_count = (1 if has_wall_nx else 0) + (1 if has_wall_px else 0)
-						var neighbor_y_count = (1 if has_wall_ny else 0) + (1 if has_wall_py else 0)
-						var total_neighbors = neighbor_x_count + neighbor_y_count
+					var neighbor_x_count = (1 if has_wall_nx else 0) + (1 if has_wall_px else 0)
+					var neighbor_y_count = (1 if has_wall_ny else 0) + (1 if has_wall_py else 0)
+					var total_neighbors = neighbor_x_count + neighbor_y_count
 
-						var w_tf = Transform3D(basis_tile, Vector3(wpos.x, 0.0, wpos.z))
+					var w_tf = Transform3D(basis_tile, Vector3(wpos.x, 0.0, wpos.z))
 
-						if total_neighbors == 0:
-							pillar_transforms.append(w_tf)
-						elif neighbor_x_count > 0 and neighbor_y_count == 0:
-							wall_ns_transforms.append(w_tf)
-						elif neighbor_y_count > 0 and neighbor_x_count == 0:
-							wall_ew_transforms.append(w_tf)
-						else:
-							wall_block_transforms.append(w_tf)
+					if total_neighbors == 0:
+						pillar_transforms.append(w_tf)
+					elif neighbor_x_count > 0 and neighbor_y_count == 0:
+						wall_ns_transforms.append(w_tf)
+					elif neighbor_y_count > 0 and neighbor_x_count == 0:
+						wall_ew_transforms.append(w_tf)
+					else:
+						wall_block_transforms.append(w_tf)
 				else:
-					# Town Buildings & Trees (Level 0), or legacy billboard fallback
+					# Town Buildings & Trees (Level 0), or non-wall boundary scenery (cliffs/stalagmites val!=2), or billboard fallback
 					var spr = Sprite3D.new()
 					spr.name = "Scenery_%d_%d" % [x, y]
 					spr.texture = tex
