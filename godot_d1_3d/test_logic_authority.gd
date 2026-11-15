@@ -132,6 +132,7 @@ func _init() -> void:
 
 	# --- 4. Authority registry ---
 	var auth = Authority.new()
+	auth.set_validation_enabled(true)
 	check("shadow mode default", auth.get_authority("inventory_item_use"), Authority.AUTH_SHADOW)
 	auth.record("inventory_item_use", p2, {"effects": {"hp": 3200}, "actions": ["restore_full_life"]})
 	check("parity recorded", auth.report()["inventory_item_use"]["checks"], 1)

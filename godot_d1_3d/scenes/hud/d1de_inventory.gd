@@ -80,35 +80,35 @@ func _find_hud() -> Node:
 func _shadow_use(item: Dictionary) -> void:
 	if diablo_bridge == null or item.is_empty():
 		return
-	if _auth().get_authority("inventory_item_use") == _auth().AUTH_CPP:
+	var auth = _auth()
+	if auth == null or auth.get_authority("inventory_item_use") == auth.AUTH_CPP:
 		return
 	var ctx = {"hellfire": diablo_bridge.is_hellfire()}
 	if not item_logic.is_usable(item, ctx):
 		return
-	# The action is only QUEUED here (PushBridgeAction). The engine thread executes it on the
-	# next drain, so we cannot compare yet: store the baseline and verify in _process() once the
-	# drain counter moves.
-	_pending_prediction = {
-		"item": item,
-		"before": _player_state(),
-		"seq_before": diablo_bridge.get_last_action_seq(),
-		"deadline": Time.get_ticks_msec() + 2000,
-	}
-	# AUTH_NATIVE handover: the mirror's prediction is trusted, so the HUD reacts on the click
-	# instead of waiting for the engine thread to drain the queued action. This does not replace the
-	# drain-time comparison in _shadow_verify(), which stays the parity record: if the two disagree,
-	# the sequence has already advanced, the offset is dropped, and the engine value takes over.
-	# The seed here is the push-time seed, not the execution-time seed, so the optimistic number can
-	# be off; that is exactly what the drain check measures.
-	if _auth().get_authority("inventory_item_use") == _auth().AUTH_NATIVE:
+
+	var seq_now = diablo_bridge.get_last_action_seq()
+	var pstate = _player_state()
+
+	# Live parity validation: only record pending prediction when validation is explicitly enabled
+	if auth.is_validation_enabled():
+		_pending_prediction = {
+			"item": item,
+			"before": pstate,
+			"seq_before": seq_now,
+			"deadline": Time.get_ticks_msec() + 2000,
+		}
+
+	# AUTH_NATIVE: optimistic native prediction directly drives HUD with zero lag
+	if auth.get_authority("inventory_item_use") == auth.AUTH_NATIVE:
 		var pred_now = item_logic.predict_use_item(
-			item, _pending_prediction["before"], rng_class.new(diablo_bridge.get_rng_seed()), ctx)
+			item, pstate, rng_class.new(diablo_bridge.get_rng_seed()), ctx)
 		var d_hp := int(pred_now.get("effects", {}).get("hp", 0))
 		var d_mana := int(pred_now.get("effects", {}).get("mana", 0))
 		if d_hp != 0 or d_mana != 0:
 			var target = _find_hud()
 			if target != null and target.has_method("apply_optimistic_item_delta"):
-				target.apply_optimistic_item_delta(d_hp, d_mana, int(_pending_prediction["seq_before"]))
+				target.apply_optimistic_item_delta(d_hp, d_mana, seq_now)
 
 
 func _shadow_verify() -> void:

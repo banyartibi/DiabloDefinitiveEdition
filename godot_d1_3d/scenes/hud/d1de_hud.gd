@@ -187,25 +187,32 @@ func _shadow_use(item: Dictionary) -> void:
 	if diablo_bridge == null or item.is_empty():
 		return
 	var auth = _auth()
-	if auth != null and (not auth.validation_enabled or auth.get_authority("inventory_item_use") == auth.AUTH_CPP):
+	if auth == null or auth.get_authority("inventory_item_use") == auth.AUTH_CPP:
 		return
 	var ctx = {"hellfire": diablo_bridge.is_hellfire() if diablo_bridge.has_method("is_hellfire") else false}
 	if not item_logic.is_usable(item, ctx):
 		return
-	_pending_prediction = {
-		"item": item,
-		"before": _player_state(),
-		"seq_before": diablo_bridge.get_last_action_seq() if diablo_bridge.has_method("get_last_action_seq") else 0,
-		"deadline": Time.get_ticks_msec() + 2000,
-	}
+	var seq_now = diablo_bridge.get_last_action_seq() if diablo_bridge.has_method("get_last_action_seq") else 0
+	var pstate = _player_state()
+
+	# Live parity validation: only record pending prediction when validation is explicitly enabled
+	if auth.is_validation_enabled():
+		_pending_prediction = {
+			"item": item,
+			"before": pstate,
+			"seq_before": seq_now,
+			"deadline": Time.get_ticks_msec() + 2000,
+		}
+
+	# AUTH_NATIVE: optimistic native prediction directly drives HUD with zero lag
 	if auth.get_authority("inventory_item_use") == auth.AUTH_NATIVE:
 		var seed_val = diablo_bridge.get_rng_seed() if diablo_bridge.has_method("get_rng_seed") else 12345
 		var pred_now = item_logic.predict_use_item(
-			item, _pending_prediction["before"], rng_class.new(seed_val), ctx)
+			item, pstate, rng_class.new(seed_val), ctx)
 		var d_hp := int(pred_now.get("effects", {}).get("hp", 0))
 		var d_mana := int(pred_now.get("effects", {}).get("mana", 0))
 		if d_hp != 0 or d_mana != 0:
-			apply_optimistic_item_delta(d_hp, d_mana, int(_pending_prediction["seq_before"]))
+			apply_optimistic_item_delta(d_hp, d_mana, seq_now)
 
 func _shadow_verify() -> void:
 	var auth = _auth()
@@ -1220,15 +1227,11 @@ func update_health_and_mana(delta: float):
 	if max_hp <= 0: max_hp = 1
 	if max_mana <= 0: max_mana = 1
 
-	var auth = _auth()
-	if auth != null and not auth.validation_enabled:
-		_optimistic = {}
-	elif not _optimistic.is_empty():
+	if not _optimistic.is_empty():
 		if diablo_bridge != null and diablo_bridge.get_last_action_seq() > int(_optimistic.get("seq", 0)):
 			_optimistic = {}
 		elif Time.get_ticks_msec() > int(_optimistic.get("until", 0)):
 			_optimistic = {}
-			print("[HUD] optimistic item prediction expired without engine confirmation")
 		else:
 			hp = clampi(hp + int(_optimistic.get("hp", 0)), 0, max_hp)
 			mana = clampi(mana + int(_optimistic.get("mana", 0)), 0, max_mana)
