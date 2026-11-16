@@ -246,9 +246,14 @@ func _init():
 		var arch_cnt = sandbox.arch_mmi.multimesh.instance_count
 		var total_3d = ns_cnt + ew_cnt + corner_cnt + pil_cnt + arch_cnt
 
-		print("  [%s (L%d)] MultiMesh 3D Pieces -> NS:%d, EW:%d, Corners:%d, Pillars:%d, Arches:%d (Total: %d)" % [
-			theme_name.to_upper(), lvl, ns_cnt, ew_cnt, corner_cnt, pil_cnt, arch_cnt, total_3d
+		print("  [%s (L%d)] MultiMesh 3D Pieces -> NS:%d, EW:%d, Corners:%d, Pillars:%d, Arches:%d (Total: %d) | Scenery Sprites: %d" % [
+			theme_name.to_upper(), lvl, ns_cnt, ew_cnt, corner_cnt, pil_cnt, arch_cnt, total_3d, sandbox.town_scenery_nodes.size()
 		])
+
+		var sc_cnt = sandbox.town_scenery_nodes.size()
+		if sc_cnt > 0:
+			printerr("  [FAIL] Dungeons with 3D modular walls must NOT spam Sprite3D nodes (found %d)!" % sc_cnt)
+			rebuild_ok = false
 
 		if total_3d == 0:
 			printerr("  [FAIL] No 3D modular pieces generated for theme %s!" % theme_name)

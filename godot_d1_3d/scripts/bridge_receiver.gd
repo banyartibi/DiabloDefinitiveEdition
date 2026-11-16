@@ -741,6 +741,10 @@ func update_shader_params():
 		if native_25d_instance.has_method("set_hdr_level"):
 			native_25d_instance.set_hdr_level(current_hdr_level)
 
+	if sandbox_instance:
+		if sandbox_instance.has_method("set_hdr_level"):
+			sandbox_instance.set_hdr_level(current_hdr_level)
+
 func update_fog_mode():
 	if world_env and world_env.environment:
 		var env = world_env.environment

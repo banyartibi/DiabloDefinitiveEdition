@@ -81,52 +81,42 @@ void fragment() {
 		METALLIC = 0.04;
 		EMISSION = vec3(0.0);
 	} else {
-		// 2. Dual-stream tectonic crust flow in world coordinates
-		vec2 flow1 = vec2(w_pos.x * 0.55 + TIME * 0.045 * flow_speed, w_pos.z * 0.55 + TIME * 0.025 * flow_speed);
-		vec2 flow2 = vec2(w_pos.x * 0.48 - TIME * 0.035 * flow_speed, w_pos.z * 0.48 + TIME * 0.038 * flow_speed);
+		// 2. Continuous multi-frequency organic fluid convection flow in world coordinates
+		vec2 flow1 = vec2(w_pos.x * 0.45 + TIME * 0.05 * flow_speed, w_pos.z * 0.45 + TIME * 0.03 * flow_speed);
+		vec2 flow2 = vec2(w_pos.x * 0.65 - TIME * 0.04 * flow_speed, w_pos.z * 0.65 + TIME * 0.045 * flow_speed);
 
-		vec2 v1 = voronoi_cells(flow1 * 1.25);
-		vec2 v2 = voronoi_cells(flow2 * 1.25 + vec2(17.4, 9.2));
+		float n1 = sin(flow1.x * 3.5 + sin(flow1.y * 2.8)) * cos(flow1.y * 3.2 + cos(flow1.x * 2.5));
+		float n2 = sin(flow2.x * 5.2 - flow2.y * 4.1 + TIME * 0.8 * flow_speed);
+		float fluid_current = (n1 * 0.6 + n2 * 0.4) * 0.5 + 0.5;
 
-		// Intersecting crust fissure edge distance
-		float edge1 = v1.y - v1.x;
-		float edge2 = v2.y - v2.x;
-		float min_edge = min(edge1, edge2);
+		// Convective boiling centers and bubbling thermal plumes (authentic D1 fluid)
+		float bubble = sin(w_pos.x * 6.5 + TIME * 2.2 * flow_speed) * cos(w_pos.z * 6.5 + TIME * 1.8 * flow_speed);
+		float hot_crests = smoothstep(0.42, 0.82, fluid_current + bubble * 0.20);
+		float molten_flow = smoothstep(0.18, 0.58, fluid_current);
 
-		// Fissure detection: where crust plates pull apart, glowing magma erupts
-		float fissure_factor = 1.0 - smoothstep(0.02, 0.20, min_edge);
-		float deep_core = 1.0 - smoothstep(0.01, 0.10, min_edge);
+		// 3. Authentic Volcanic Magma Spectrum (matching classic D1 Caves palette in Image 2)
+		// Cooled basalt crust -> deep molten magma -> incandescent fiery gold
+		vec3 dark_crust = is_hell ? vec3(0.18, 0.04, 0.02) : vec3(0.20, 0.08, 0.03);
+		vec3 magma_deep = is_hell ? vec3(0.95, 0.22, 0.03) : vec3(0.98, 0.35, 0.05);
+		vec3 molten_core = is_hell ? vec3(1.22, 0.42, 0.05) : vec3(1.28, 0.58, 0.08);
+		vec3 searing_gold = is_hell ? vec3(1.38, 0.68, 0.10) : vec3(1.42, 0.82, 0.14);
 
-		// Convective thermal currents in the mantle
-		float flux1 = sin(dot(w_pos.xz, vec2(0.38, 0.22)) - TIME * flow_speed * 1.4);
-		float flux2 = cos(dot(w_pos.xz, vec2(-0.28, 0.35)) + TIME * flow_speed * 1.0);
-		float flux = clamp((flux1 * 0.55 + flux2 * 0.45) * 0.5 + 0.5, 0.0, 1.0);
-
-		// 3. Volcanic thermal color spectrum (Authentic Dark Fantasy Magma)
-		// Cooled basalt crust -> incandescent orange -> glowing fiery gold (no blown-out white)
-		vec3 dark_crust = is_hell ? vec3(0.10, 0.03, 0.02) : vec3(0.12, 0.05, 0.03);
-		vec3 glowing_crust_edge = is_hell ? vec3(0.80, 0.18, 0.03) : vec3(0.85, 0.25, 0.04);
-		vec3 magma_orange = is_hell ? vec3(1.25, 0.40, 0.05) : vec3(1.30, 0.55, 0.06);
-		vec3 searing_gold = is_hell ? vec3(1.45, 0.70, 0.10) : vec3(1.50, 0.85, 0.12);
-
-		// Composite crust color with thermal edge illumination
-		vec3 crust_color = mix(dark_crust, glowing_crust_edge, smoothstep(0.12, 0.32, 1.0 - v1.x));
-		// Interior molten fissure color
-		vec3 molten_core = mix(magma_orange, searing_gold, deep_core * (0.65 + 0.35 * flux));
-
-		vec3 procedural_lava = mix(crust_color, molten_core, fissure_factor) * thermal_intensity;
+		// Natural liquid blending: dark crust -> molten magma -> hot crests
+		vec3 crust_blend = mix(dark_crust, magma_deep, molten_flow);
+		vec3 fluid_core = mix(crust_blend, molten_core, hot_crests * 0.85);
+		vec3 procedural_lava = mix(fluid_core, searing_gold, hot_crests * 0.45) * thermal_intensity;
 
 		// 4. Combine procedural fluid with rock shoreline
 		ALBEDO = mix(heated_rock, procedural_lava, lava_mask);
 
 		// 5. Forward+ High Dynamic Range Emission & Bloom (Calibrated against over-exposure)
-		vec3 core_emission = molten_core * emission_energy * 0.75;
-		vec3 fissure_emission = magma_orange * fissure_factor * emission_energy * 0.50;
-		vec3 shore_glow = vec3(0.40, 0.10, 0.02) * rock_heat * 0.50;
+		vec3 core_emission = molten_core * emission_energy * 0.65;
+		vec3 crest_emission = searing_gold * hot_crests * emission_energy * 0.45;
+		vec3 shore_glow = vec3(0.40, 0.10, 0.02) * rock_heat * 0.35;
 
-		EMISSION = mix(shore_glow, core_emission * fissure_factor + fissure_emission + glowing_crust_edge * 0.20, lava_mask);
+		EMISSION = mix(shore_glow, core_emission + crest_emission, lava_mask);
 
-		ROUGHNESS = mix(0.85, mix(0.88, 0.18, fissure_factor), lava_mask);
+		ROUGHNESS = mix(0.85, mix(0.70, 0.25, hot_crests), lava_mask);
 		METALLIC = mix(0.04, 0.06, lava_mask);
 
 		// 6. Dynamic wave normal perturbation for fluid specular reflections

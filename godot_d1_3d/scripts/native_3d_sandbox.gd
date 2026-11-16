@@ -452,6 +452,10 @@ func can_use_modular_3d_walls(theme: String = "") -> bool:
 func can_use_modular_3d_prop(prop_key: String) -> bool:
 	if not modular_3d_props_enabled:
 		return false
+	if prop_key in ["sarcophagus", "chest"]:
+		# Sarcophagi and chests must use authentic Blizzard North gothic 4K PBR sprites
+		# until fully certified gothic textured 3D models are provided (eliminates white bathtubs)
+		return false
 	return aaa_certified_props.get(prop_key, false)
 
 func set_theme_aaa_certified(theme: String, certified: bool):
@@ -741,7 +745,18 @@ func get_pbr_material_for_theme(theme: String, is_wall: bool = false) -> Standar
 				mat.emission = Color(0.85, 0.25, 0.05)
 				mat.emission_energy_multiplier = 0.40
 
-		mat.albedo_color = Color(1.0, 1.0, 1.0)
+		if theme == "catacombs":
+			# Ancient crypt limestone boost (compensates for dark 0.15 albedo map so walls match floor pavers)
+			mat.albedo_color = Color(1.85, 1.80, 1.65)
+		elif theme == "caves":
+			# Warm cavern stone matching rock walls and D1 palette
+			mat.albedo_color = Color(1.65, 1.30, 1.15)
+		elif theme == "hell":
+			mat.albedo_color = Color(1.45, 1.20, 1.10)
+		elif theme == "cathedral":
+			mat.albedo_color = Color(1.55, 1.50, 1.42)
+		else:
+			mat.albedo_color = Color(1.0, 1.0, 1.0)
 		mat.roughness = 0.65
 		mat.metallic = 0.04
 	elif theme != "town":
@@ -1700,8 +1715,8 @@ func rebuild_dungeon_if_needed(force: bool = false):
 						wall_ew_transforms.append(w_tf)
 					else:
 						wall_block_transforms.append(w_tf)
-				else:
-					# Town Buildings & Trees (Level 0), or non-wall boundary scenery (cliffs/stalagmites val!=2), or billboard fallback
+				elif not can_3d_walls or cur_level == 0:
+					# Town Buildings & Trees (Level 0), or legacy billboard fallback when modular 3D is disabled
 					var spr = Sprite3D.new()
 					spr.name = "Scenery_%d_%d" % [x, y]
 					spr.texture = tex

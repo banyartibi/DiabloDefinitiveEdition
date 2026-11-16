@@ -30,10 +30,10 @@ func _init():
 		dir.make_dir_recursive("assets/models/aaa/caves")
 		dir.make_dir_recursive("assets/models/aaa/hell")
 
-	build_theme_kit("cathedral", "gothic", 6, 0.012, 8, "res://assets/dungeon_pbr_cathedral_4x/albedo/piece_168.png", "res://assets/dungeon_pbr_cathedral_4x/normal/piece_168_n.png", "res://assets/dungeon_pbr_cathedral_4x/roughness/piece_168_r.png", 0.78, 1.35)
-	build_theme_kit("catacombs", "catacombs", 5, 0.018, 4, "res://assets/dungeon_pbr_catacombs_4x/albedo/piece_101.png", "res://assets/dungeon_pbr_catacombs_4x/normal/piece_101_n.png", "res://assets/dungeon_pbr_catacombs_4x/roughness/piece_101_r.png", 0.82, 1.45)
-	build_theme_kit("caves", "caves", 4, 0.035, 6, "res://assets/dungeon_pbr_caves_4x/albedo/piece_0.png", "res://assets/dungeon_pbr_caves_4x/normal/piece_0_n.png", "res://assets/dungeon_pbr_caves_4x/roughness/piece_0_r.png", 0.88, 1.50)
-	build_theme_kit("hell", "hell", 5, 0.022, 6, "res://assets/dungeon_pbr_hell_4x/albedo/piece_0.png", "res://assets/dungeon_pbr_hell_4x/normal/piece_0_n.png", "res://assets/dungeon_pbr_hell_4x/roughness/piece_0_r.png", 0.75, 1.40)
+	build_theme_kit("cathedral", "gothic", 6, 0.012, 8, "res://assets/textures/dungeon/cathedral_wall_albedo.png", "res://assets/textures/dungeon/cathedral_wall_normal.png", "res://assets/textures/dungeon/cathedral_wall_roughness.png", 0.78, 1.35)
+	build_theme_kit("catacombs", "catacombs", 5, 0.018, 4, "res://assets/textures/dungeon/catacombs_wall_albedo.png", "res://assets/textures/dungeon/catacombs_wall_normal.png", "res://assets/textures/dungeon/catacombs_wall_roughness.png", 0.82, 1.45)
+	build_theme_kit("caves", "caves", 4, 0.035, 6, "res://assets/textures/dungeon/caves_wall_albedo.jpg", "res://assets/textures/dungeon/caves_wall_normal.jpg", "res://assets/textures/dungeon/caves_wall_roughness.jpg", 0.88, 1.50)
+	build_theme_kit("hell", "hell", 5, 0.022, 6, "res://assets/textures/dungeon/hell_wall_albedo.jpg", "res://assets/textures/dungeon/hell_wall_normal.jpg", "res://assets/textures/dungeon/hell_wall_roughness.jpg", 0.75, 1.40)
 
 	print("\n=======================================================")
 	print("  ALL 4 THEMES BUILT & CERTIFIED SUCCESSFULLY!          ")
@@ -44,37 +44,47 @@ func build_theme_kit(theme: String, suffix: String, courses: int, relief_depth: 
 	print("\n--- Generating AAA Kit: [%s] ---" % theme.to_upper())
 	var folder = "res://assets/models/aaa/%s" % theme
 
+	var alb_tint = Color.WHITE
+	if theme == "catacombs":
+		alb_tint = Color(1.85, 1.80, 1.65)
+	elif theme == "caves":
+		alb_tint = Color(1.65, 1.30, 1.15)
+	elif theme == "hell":
+		alb_tint = Color(1.45, 1.20, 1.10)
+	elif theme == "cathedral":
+		alb_tint = Color(1.55, 1.50, 1.42)
+
 	# 1. Wall NS
 	var wall_ns = build_wall_mesh(true, courses, relief_depth)
-	apply_pbr_material(wall_ns, alb_p, nrm_p, rgh_p, base_roughness, normal_scale)
+	apply_pbr_material(wall_ns, alb_p, nrm_p, rgh_p, base_roughness, normal_scale, alb_tint)
 	var p_ns = "%s/wall_ns_%s.res" % [folder, suffix]
 	ResourceSaver.save(wall_ns, p_ns)
 	print("  [SUCCESS] Wall NS: %s (Faces: %d)" % [p_ns.get_file(), wall_ns.get_faces().size() / 3])
 
 	# 2. Wall EW
 	var wall_ew = build_wall_mesh(false, courses, relief_depth)
-	apply_pbr_material(wall_ew, alb_p, nrm_p, rgh_p, base_roughness, normal_scale)
+	apply_pbr_material(wall_ew, alb_p, nrm_p, rgh_p, base_roughness, normal_scale, alb_tint)
 	var p_ew = "%s/wall_ew_%s.res" % [folder, suffix]
 	ResourceSaver.save(wall_ew, p_ew)
 	print("  [SUCCESS] Wall EW: %s (Faces: %d)" % [p_ew.get_file(), wall_ew.get_faces().size() / 3])
 
 	# 3. Wall Corner (L-junction)
 	var wall_corner = build_corner_mesh(courses, relief_depth)
-	apply_pbr_material(wall_corner, alb_p, nrm_p, rgh_p, base_roughness, normal_scale)
+	apply_pbr_material(wall_corner, alb_p, nrm_p, rgh_p, base_roughness, normal_scale, alb_tint)
 	var p_corner = "%s/wall_corner_%s.res" % [folder, suffix]
 	ResourceSaver.save(wall_corner, p_corner)
 	print("  [SUCCESS] Wall Corner: %s (Faces: %d)" % [p_corner.get_file(), wall_corner.get_faces().size() / 3])
 
 	# 4. Pillar
 	var pillar = build_pillar_mesh(pillar_sides, theme)
-	apply_pbr_material(pillar, alb_p, nrm_p, rgh_p, base_roughness, normal_scale)
+	apply_pbr_material(pillar, alb_p, nrm_p, rgh_p, base_roughness, normal_scale, alb_tint)
 	var p_pillar = "%s/pillar_%s.res" % [folder, suffix]
 	ResourceSaver.save(pillar, p_pillar)
 	print("  [SUCCESS] Pillar: %s (Faces: %d)" % [p_pillar.get_file(), pillar.get_faces().size() / 3])
 
 	# 5. Arch Doorway
 	var arch = build_arch_mesh(theme)
-	apply_pbr_material(arch, alb_p, nrm_p, rgh_p, base_roughness, normal_scale)
+	apply_pbr_material(arch, alb_p, nrm_p, rgh_p, base_roughness, normal_scale, alb_tint)
 	var p_arch = "%s/arch_door_%s.res" % [folder, suffix]
 	ResourceSaver.save(arch, p_arch)
 	print("  [SUCCESS] Archway: %s (Faces: %d)" % [p_arch.get_file(), arch.get_faces().size() / 3])
@@ -229,25 +239,25 @@ func build_pillar_mesh(sides: int, theme: String) -> ArrayMesh:
 	var st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
-	var r_plinth = 0.28
-	var r_shaft = 0.22
-	var r_capital = 0.29
+	var r_plinth = 0.38
+	var r_shaft = 0.28
+	var r_capital = 0.36
 
 	if theme == "caves":
 		# Natural rocky stalagmite spire: wider base, tapering organically towards top
-		r_plinth = 0.36
-		r_shaft = 0.25
-		r_capital = 0.16
+		r_plinth = 0.44
+		r_shaft = 0.32
+		r_capital = 0.20
 	elif theme == "hell":
 		# Demonic flared monolith: massive base, flared spiked capital
-		r_plinth = 0.32
-		r_shaft = 0.23
-		r_capital = 0.34
+		r_plinth = 0.46
+		r_shaft = 0.35
+		r_capital = 0.48
 	elif theme == "catacombs":
 		# Heavy square crypt pillar
-		r_plinth = 0.32
-		r_shaft = 0.26
-		r_capital = 0.32
+		r_plinth = 0.48
+		r_shaft = 0.38
+		r_capital = 0.46
 
 	var y_plinth = 0.25
 	var y_shaft = 2.15
@@ -372,6 +382,9 @@ func build_arch_mesh(theme: String) -> ArrayMesh:
 	return st.commit()
 
 func build_cylinder_section(st: SurfaceTool, sides: int, r0: float, r1: float, y0: float, y1: float):
+	var total_h = WALL_H - SKIRT_Y
+	var v0 = (y0 - SKIRT_Y) / total_h
+	var v1 = (y1 - SKIRT_Y) / total_h
 	for i in range(sides):
 		var a0 = float(i) * TAU / float(sides)
 		var a1 = float(i + 1) * TAU / float(sides)
@@ -383,7 +396,7 @@ func build_cylinder_section(st: SurfaceTool, sides: int, r0: float, r1: float, y
 		var u0 = float(i) / float(sides)
 		var u1 = float(i + 1) / float(sides)
 
-		add_quad(st, p00, p01, p11, p10, Vector2(u0, 0.0), Vector2(u1, 1.0), Vector3(cos(a0), 0, sin(a0)))
+		add_quad(st, p00, p01, p11, p10, Vector2(u0, v0), Vector2(u1, v1), Vector3(cos(a0), 0, sin(a0)))
 
 func add_quad(st: SurfaceTool, p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, uv0: Vector2, uv1: Vector2, n: Vector3):
 	st.set_normal(n)
@@ -402,11 +415,12 @@ func add_quad(st: SurfaceTool, p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector
 	st.set_uv(Vector2(uv0.x, uv1.y))
 	st.add_vertex(p3)
 
-func apply_pbr_material(mesh: ArrayMesh, alb_p: String, nrm_p: String, rgh_p: String, base_roughness: float, normal_scale: float):
+func apply_pbr_material(mesh: ArrayMesh, alb_p: String, nrm_p: String, rgh_p: String, base_roughness: float, normal_scale: float, alb_tint: Color = Color.WHITE):
 	var mat = StandardMaterial3D.new()
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	mat.roughness = base_roughness
 	mat.metallic = 0.04
+	mat.albedo_color = alb_tint
 	mat.render_priority = 3
 
 	var g_alb = ProjectSettings.globalize_path(alb_p)
