@@ -64,8 +64,8 @@ var wall_ns_mmi: MultiMeshInstance3D
 var wall_ew_mmi: MultiMeshInstance3D
 var pillar_mmi: MultiMeshInstance3D
 var arch_mmi: MultiMeshInstance3D
-var modular_3d_walls_enabled: bool = true # Modular 3D dark fantasy architecture enabled across all themes
-var modular_3d_props_enabled: bool = true # AAA interactive 3D props (doors, chests, braziers, sarcophagi) enabled
+var modular_3d_walls_enabled: bool = false # Modular 3D .glb boxes (disabled by default in favor of authentic 4K PBR gothic architecture)
+var modular_3d_props_enabled: bool = false # Placeholder .glb props (disabled by default in favor of authentic gothic Blizzard North art with 3D lights)
 var current_upscaler_mode: int = 0
 var current_tile_model: int = 0
 var current_hdr_level: int = 1
@@ -1621,10 +1621,10 @@ func rebuild_dungeon_if_needed(force: bool = false):
 				is_stair_piece = true
 
 			if is_dungeon and val == 0 and not is_stair_piece:
-				# Check if this non-walkable tile borders the dungeon space
+				# Check if this non-walkable tile borders the dungeon space (margin 4 tiles eliminates void holes)
 				var is_boundary = false
-				for dy in range(-2, 3):
-					for dx in range(-2, 3):
+				for dy in range(-4, 5):
+					for dx in range(-4, 5):
 						var nx = x + dx
 						var ny = y + dy
 						if nx >= min_bound and nx < max_bound and ny >= min_bound and ny < max_bound:
@@ -1716,7 +1716,16 @@ func rebuild_dungeon_if_needed(force: bool = false):
 					else:
 						wall_block_transforms.append(w_tf)
 				elif not can_3d_walls or cur_level == 0:
-					# Town Buildings & Trees (Level 0), or legacy billboard fallback when modular 3D is disabled
+					# In dungeons, cull completely buried interior walls (all 4 cardinal neighbors solid wall)
+					if cur_level > 0 and val == 2:
+						var is_buried = (x > 0 and solidity[y * 112 + (x - 1)] == 2 and not door_tiles.has(Vector2i(x - 1, y))) and \
+										(x < 111 and solidity[y * 112 + (x + 1)] == 2 and not door_tiles.has(Vector2i(x + 1, y))) and \
+										(y > 0 and solidity[(y - 1) * 112 + x] == 2 and not door_tiles.has(Vector2i(x, y - 1))) and \
+										(y < 111 and solidity[(y + 1) * 112 + x] == 2 and not door_tiles.has(Vector2i(x, y + 1)))
+						if is_buried:
+							continue
+
+					# Town Buildings & Trees (Level 0), or authentic 4K PBR billboard scenery when modular 3D is disabled
 					var spr = Sprite3D.new()
 					spr.name = "Scenery_%d_%d" % [x, y]
 					spr.texture = tex
