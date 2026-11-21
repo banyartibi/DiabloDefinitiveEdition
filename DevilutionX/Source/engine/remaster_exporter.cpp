@@ -447,7 +447,9 @@ void RemasterAllMonsters()
 	ExportMonsterFamily("fat\\fat", 128, "levels\\l4data\\l4_1.pal");
 	ExportMonsterFamily("fireman\\firem", 128, "levels\\l4data\\l4_1.pal");
 	ExportMonsterFamily("flesh\\flesh", 164, "levels\\l4data\\l4_1.pal");
-	ExportMonsterFamily("golem\\golem", 96, "levels\\l4data\\l4_1.pal");
+	// Golem is a Cathedral-summoned construct: its CEL indices address the L1
+	// grey-stone ramp. l4_1.pal maps those indices to pure black.
+	ExportMonsterFamily("golem\\golem", 96, "levels\\l1data\\l1_1.pal");
 	ExportMonsterFamily("gravdg\\gravdg", 124, "levels\\l4data\\l4_1.pal");
 	ExportMonsterFamily("hellbat\\helbat", 96, "levels\\l4data\\l4_1.pal");
 	ExportMonsterFamily("hellbat2\\bhelbt", 96, "levels\\l4data\\l4_1.pal");

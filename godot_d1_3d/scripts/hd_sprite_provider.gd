@@ -33,6 +33,24 @@ static func clear_cache() -> void:
 static func _load_frame(dir_path: String, dir_idx: int, frame_idx: int) -> Texture2D:
 	if frame_idx < 0 or dir_idx < 0:
 		return null
+	var tex = _load_exact_frame(dir_path, dir_idx, frame_idx)
+	if tex != null:
+		return tex
+	# Some CEL families ship empty lead-in frames (e.g. ressur1 frames 0-1).
+	# Neighbour frames in the same action/direction are the correct substitute;
+	# the engine would otherwise fall back to the 1x bridge raster.
+	for delta in [1, 2]:
+		for cand in [frame_idx - delta, frame_idx + delta]:
+			if cand < 0:
+				continue
+			tex = _load_exact_frame(dir_path, dir_idx, cand)
+			if tex != null:
+				return tex
+	return null
+
+static func _load_exact_frame(dir_path: String, dir_idx: int, frame_idx: int) -> Texture2D:
+	if frame_idx < 0 or dir_idx < 0:
+		return null
 	var file_names = [
 		"dir_%d_frame_%d.png" % [dir_idx, frame_idx],
 		"g%d_f%03d.png" % [dir_idx, frame_idx],
