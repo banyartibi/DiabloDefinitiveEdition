@@ -23,6 +23,7 @@ const LAVA_3D_SHADER = preload("res://shaders/d1de_3d_lava.gdshader")
 const ENTITY_HD_3D_SHADER = preload("res://shaders/entity_hd_upscaler_3d.gdshader")
 const CORPSE_HD_3D_SHADER = preload("res://shaders/corpse_hd_upscaler_3d.gdshader")
 const UpscalerModelConfig = preload("res://scripts/upscaler_model_config.gd")
+const HdSpriteProvider = preload("res://scripts/hd_sprite_provider.gd")
 var main_receiver = null
 
 func _get_hud():
@@ -517,6 +518,7 @@ func set_tile_model(model_id: int) -> void:
 	base_floor_texture_cache.clear()
 	scenery_texture_cache.clear()
 	scenery_special_cache.clear()
+	HdSpriteProvider.clear_cache()
 	rebuild_dungeon_if_needed(true)
 	print("[Native 3D Sandbox] Tile Model switched to: %s" % UpscalerModelConfig.get_model_short_name(current_tile_model))
 
@@ -531,6 +533,12 @@ func set_hd_graphics_enabled(enabled: bool) -> void:
 	base_floor_texture_cache.clear()
 	scenery_texture_cache.clear()
 	scenery_special_cache.clear()
+	HdSpriteProvider.clear_cache()
+	monster_anim_cache.clear()
+	missile_textures.clear()
+	corpse_textures.clear()
+	item_textures.clear()
+	item_is_hd_cache.clear()
 	for mat in entity_materials.values():
 		if is_instance_valid(mat):
 			mat.set_shader_parameter("hd_enabled", hd_graphics_enabled)
@@ -2101,17 +2109,24 @@ func update_monster_entities(delta: float):
 				if monster_anim_cache.has(anim_cache_key):
 					cur_tex = monster_anim_cache[anim_cache_key]
 				else:
-					var ms_data: Dictionary = diablo_bridge.get_monster_sprite_data(m_id)
-					var mw = ms_data.get("width", 0)
-					var mh = ms_data.get("height", 0)
-					var m_rgba: PackedByteArray = ms_data.get("rgba", PackedByteArray())
-					if mw > 0 and mh > 0 and m_rgba.size() == mw * mh * 4:
-						var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
-						m_img.generate_mipmaps()
-						cur_tex = ImageTexture.create_from_image(m_img)
+					# 1. Offline-upscaled HD frame (assets/hd_sprites*/monsters/<family>_<action>/)
+					var hd_m_tex = HdSpriteProvider.get_monster_sprite(m_name, m_mode, dir, anim_frame, current_tile_model) if hd_graphics_enabled else null
+					if hd_m_tex != null:
+						cur_tex = hd_m_tex
 						monster_anim_cache[anim_cache_key] = cur_tex
 					else:
-						monster_anim_cache[anim_cache_key] = null
+						# 2. Fallback: authentic 1x bridge rasterization
+						var ms_data: Dictionary = diablo_bridge.get_monster_sprite_data(m_id)
+						var mw = ms_data.get("width", 0)
+						var mh = ms_data.get("height", 0)
+						var m_rgba: PackedByteArray = ms_data.get("rgba", PackedByteArray())
+						if mw > 0 and mh > 0 and m_rgba.size() == mw * mh * 4:
+							var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
+							m_img.generate_mipmaps()
+							cur_tex = ImageTexture.create_from_image(m_img)
+							monster_anim_cache[anim_cache_key] = cur_tex
+						else:
+							monster_anim_cache[anim_cache_key] = null
 
 				monster_textures[m_id] = cur_tex
 				if m_sprite and cur_tex:
@@ -2355,8 +2370,9 @@ func update_props(delta: float):
 		var ty = obj.get("tile_y", 0)
 		var anim_frame = obj.get("anim_frame", 1)
 		var category = str(obj.get("category", ""))
+		var graphic = str(obj.get("graphic", ""))
 
-		var prop = get_or_create_prop_node(o_id, o_type, tx, ty, category)
+		var prop = get_or_create_prop_node(o_id, o_type, tx, ty, category, graphic)
 		var wpos = tile_to_world_3d(float(tx), float(ty))
 		prop.position = wpos
 		prop.set_meta("tile_x", tx)
@@ -2428,7 +2444,16 @@ func update_props(delta: float):
 			var last_f = prop_last_frame.get(o_id, -999)
 			if anim_frame != last_f or obj_spr.texture == null:
 				prop_last_frame[o_id] = anim_frame
-				if diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
+				# 1. Offline-upscaled HD frame (assets/hd_sprites*/objects/<graphic>/)
+				var hd_graphic = str(prop.get_meta("hd_graphic", "")) if prop.has_meta("hd_graphic") else ""
+				var hd_o_tex = HdSpriteProvider.get_object_sprite(hd_graphic, anim_frame, current_tile_model) if (hd_graphics_enabled and hd_graphic != "") else null
+				if hd_o_tex != null:
+					obj_spr.texture = hd_o_tex
+					obj_spr.offset = Vector2(0, float(hd_o_tex.get_height()) * 0.5)
+					obj_spr.sorting_offset = 0.05
+					obj_spr.pixel_size = PIXEL_SIZE_HD
+					apply_entity_hd_material(obj_spr, obj_spr.texture)
+				elif diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
 					var s_data = diablo_bridge.get_object_sprite_data(o_id)
 					var sw = s_data.get("width", 0)
 					var sh = s_data.get("height", 0)
@@ -2456,7 +2481,7 @@ func update_props(delta: float):
 		if not seen_ids.has(id):
 			prop_instances[id].visible = false
 
-func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int, category: String = "") -> Node3D:
+func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int, category: String = "", graphic: String = "") -> Node3D:
 	if prop_instances.has(o_id):
 		return prop_instances[o_id]
 
@@ -2466,6 +2491,7 @@ func get_or_create_prop_node(o_id: int, o_type: int, tx: int, ty: int, category:
 	node.position = wpos
 	node.set_meta("prop_id", o_id)
 	node.set_meta("prop_type", o_type)
+	node.set_meta("hd_graphic", graphic)
 	node.set_meta("tile_x", tx)
 	node.set_meta("tile_y", ty)
 
@@ -2705,7 +2731,16 @@ func _attach_universal_object_sprite(node: Node3D, o_id: int):
 	spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	spr.modulate = Color(1.45, 1.42, 1.35)
 
-	if diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
+	# 1. Offline-upscaled HD frame (assets/hd_sprites*/objects/<graphic>/frame 0);
+	#    update_props refreshes later frames via the same provider each animation tick.
+	var hd_graphic = str(node.get_meta("hd_graphic", "")) if node.has_meta("hd_graphic") else ""
+	var hd_tex = HdSpriteProvider.get_object_sprite(hd_graphic, 1, current_tile_model) if (hd_graphics_enabled and hd_graphic != "") else null
+	if hd_tex != null:
+		spr.texture = hd_tex
+		spr.offset = Vector2(0, float(hd_tex.get_height()) * 0.5)
+		spr.pixel_size = PIXEL_SIZE_HD
+		apply_entity_hd_material(spr, spr.texture)
+	elif diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
 		var s_data = diablo_bridge.get_object_sprite_data(o_id)
 		var sw = s_data.get("width", 0)
 		var sh = s_data.get("height", 0)
@@ -3044,15 +3079,22 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 
 	# Fetch texture from HD disk cache or diablo_bridge
 	var cache_key = "%d_%d" % [curs_id, anim_frame]
-	var tex: ImageTexture = null
+	var tex: Texture2D = null
 	var item_is_hd: bool = false
 
 	if item_textures.has(cache_key):
 		tex = item_textures[cache_key]
 		item_is_hd = item_is_hd_cache.get(cache_key, false)
 	else:
-		# 1. Authoritative authentic Diablo 1 ground item sprite rasterization from bridge
-		if diablo_bridge:
+		# 1. Offline-upscaled HD ground item sprite (assets/hd_sprites*/items/curs_*),
+		#    model-aware with corruption screening.
+		if hd_graphics_enabled:
+			tex = HdSpriteProvider.get_item_sprite(curs_id, anim_frame, current_tile_model)
+			if tex != null:
+				item_is_hd = true
+
+		# 2. Fallback: authentic Diablo 1 ground item sprite rasterization from bridge
+		if tex == null and diablo_bridge:
 			var s_data: Dictionary = {}
 			if diablo_bridge.has_method("get_ground_item_sprite_data"):
 				s_data = diablo_bridge.get_ground_item_sprite_data(i_id)
@@ -3069,27 +3111,6 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 				img.generate_mipmaps()
 				tex = ImageTexture.create_from_image(img)
 				item_is_hd = false
-
-		# 2. HD sprite fallback - ONLY if valid on disk and NOT a pure black silhouette mask
-		if tex == null:
-			var p_hd1 = "res://assets/hd_sprites_x4plus/items/curs_%d_f%d.png" % [curs_id, anim_frame]
-			var p_hd2 = "res://assets/hd_sprites_x4plus/items/curs_%d.png" % curs_id
-			var p_hd3 = "res://assets/hd_sprites/items/curs_%d_f%d.png" % [curs_id, anim_frame]
-			var p_hd4 = "res://assets/hd_sprites/items/curs_%d.png" % curs_id
-			var found_p = ""
-			for p in [p_hd1, p_hd2, p_hd3, p_hd4]:
-				if FileAccess.file_exists(p):
-					found_p = p
-					break
-			if found_p != "":
-				var img = Image.load_from_file(ProjectSettings.globalize_path(found_p))
-				if img and not img.is_empty() and not _is_texture_pure_black(img):
-					var used_rect = img.get_used_rect()
-					if used_rect.size.x > 0 and used_rect.size.y > 0:
-						img = img.get_region(used_rect)
-					img.generate_mipmaps()
-					tex = ImageTexture.create_from_image(img)
-					item_is_hd = true
 
 		item_textures[cache_key] = tex
 		item_is_hd_cache[cache_key] = item_is_hd
@@ -3305,24 +3326,30 @@ func update_missiles(delta: float):
 		var last_frame = node.get_meta("last_anim_frame", -1)
 		var last_dir = node.get_meta("last_anim_dir", -1)
 		var cache_key = "%d_%d_%d" % [m_type, m_dir, anim_frame]
-		var tex: ImageTexture = null
+		var tex: Texture2D = null
 
 		if missile_textures.has(cache_key):
 			tex = missile_textures[cache_key]
-		elif diablo_bridge.has_method("get_missile_sprite_data"):
+		else:
 			node.set_meta("last_anim_frame", anim_frame)
 			node.set_meta("last_anim_dir", m_dir)
-			var ms_data = diablo_bridge.get_missile_sprite_data(m_id)
-			var mw = ms_data.get("width", 0)
-			var mh = ms_data.get("height", 0)
-			var m_rgba = ms_data.get("rgba", PackedByteArray())
-			if mw > 0 and mh > 0 and m_rgba.size() == mw * mh * 4:
-				var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
-				m_img.generate_mipmaps()
-				tex = ImageTexture.create_from_image(m_img)
+			# 1. Offline-upscaled HD frame (assets/hd_sprites*/missiles/<cel>/)
+			var hd_mis = HdSpriteProvider.get_missile_sprite(str(m.get("cel", "")), m_dir, anim_frame, current_tile_model) if hd_graphics_enabled else null
+			if hd_mis != null:
+				tex = hd_mis
 				missile_textures[cache_key] = tex
-			else:
-				missile_textures[cache_key] = null
+			elif diablo_bridge.has_method("get_missile_sprite_data"):
+				var ms_data = diablo_bridge.get_missile_sprite_data(m_id)
+				var mw = ms_data.get("width", 0)
+				var mh = ms_data.get("height", 0)
+				var m_rgba = ms_data.get("rgba", PackedByteArray())
+				if mw > 0 and mh > 0 and m_rgba.size() == mw * mh * 4:
+					var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
+					m_img.generate_mipmaps()
+					tex = ImageTexture.create_from_image(m_img)
+					missile_textures[cache_key] = tex
+				else:
+					missile_textures[cache_key] = null
 
 		if spr and tex:
 			if spr.texture != tex:
@@ -3478,21 +3505,26 @@ func update_corpses():
 		node.add_child(spr)
 
 		var c_tex_key = "%d_%d" % [c_idx, c_dir]
-		var c_tex: ImageTexture = null
+		var c_tex: Texture2D = null
 		if corpse_textures.has(c_tex_key):
 			c_tex = corpse_textures[c_tex_key]
-		elif diablo_bridge.has_method("get_corpse_sprite_data"):
-			var cs_data = diablo_bridge.get_corpse_sprite_data(c_idx, c_dir)
-			var cw = cs_data.get("width", 0)
-			var ch = cs_data.get("height", 0)
-			var c_rgba = cs_data.get("rgba", PackedByteArray())
-			if cw > 0 and ch > 0 and c_rgba.size() == cw * ch * 4:
-				var c_img = Image.create_from_data(cw, ch, false, Image.FORMAT_RGBA8, c_rgba)
-				c_img.generate_mipmaps()
-				c_tex = ImageTexture.create_from_image(c_img)
-				corpse_textures[c_tex_key] = c_tex
-			else:
-				corpse_textures[c_tex_key] = null
+		else:
+			# 1. Offline-upscaled HD death frame (assets/hd_sprites*/monsters/<family>_death/)
+			var hd_c = HdSpriteProvider.get_corpse_sprite(str(c.get("monster_name", "")), c_dir, int(c.get("frame", 0)), current_tile_model) if hd_graphics_enabled else null
+			if hd_c != null:
+				c_tex = hd_c
+			elif diablo_bridge.has_method("get_corpse_sprite_data"):
+				var cs_data = diablo_bridge.get_corpse_sprite_data(c_idx, c_dir)
+				var cw = cs_data.get("width", 0)
+				var ch = cs_data.get("height", 0)
+				var c_rgba = cs_data.get("rgba", PackedByteArray())
+				if cw > 0 and ch > 0 and c_rgba.size() == cw * ch * 4:
+					var c_img = Image.create_from_data(cw, ch, false, Image.FORMAT_RGBA8, c_rgba)
+					c_img.generate_mipmaps()
+					c_tex = ImageTexture.create_from_image(c_img)
+				else:
+					c_tex = null
+			corpse_textures[c_tex_key] = c_tex
 
 		if c_tex:
 			spr.texture = c_tex

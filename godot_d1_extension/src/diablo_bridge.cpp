@@ -1596,6 +1596,7 @@ Array DiabloBridge::get_active_objects() const {
 		d["is_open"] = obj.isOpen;
 		d["is_broken"] = obj.isBroken;
 		d["category"] = String::utf8(obj.category);
+		d["graphic"] = String::utf8(obj.graphic);
 		arr.push_back(d);
 	}
 	return arr;
@@ -1720,6 +1721,7 @@ Array DiabloBridge::get_active_missiles() const {
 		d["height"] = m.height;
 		d["light_flag"] = m.lightFlag;
 		d["pre_flag"] = m.preFlag;
+		d["cel"] = String::utf8(m.cel);
 		arr.push_back(d);
 	}
 	return arr;

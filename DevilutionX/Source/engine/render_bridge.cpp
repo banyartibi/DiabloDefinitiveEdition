@@ -3337,6 +3337,18 @@ std::vector<D1ObjectInfo> GetActiveObjectsList()
 			info.isOpen = (obj._oSelFlag == 0);
 		}
 		std::strncpy(info.category, cat, sizeof(info.category) - 1);
+		// HD sprite lookup key: CEL graphic family name for this object type.
+		// AllObjects[_otype].ofindex -> ObjMasterLoadList[ofindex] (same table the
+		// engine and RemasterExporter use to load/export objects\<name>.cel).
+		{
+			const int ot = static_cast<int>(obj._otype);
+			if (ot >= 0 && ot < 109) {
+				const int gid = static_cast<int>(AllObjects[ot].ofindex);
+				if (gid >= 0 && gid < 65 && ObjMasterLoadList[gid] != nullptr) {
+					std::strncpy(info.graphic, ObjMasterLoadList[gid], sizeof(info.graphic) - 1);
+				}
+			}
+		}
 		if (obj._oAnimData.has_value() && obj._oAnimFrame > 0 &&
 		    static_cast<size_t>(obj._oAnimFrame) <= (*obj._oAnimData).numSprites()) {
 			const ClxSprite sprite = (*obj._oAnimData)[obj._oAnimFrame - 1];
@@ -3644,6 +3656,17 @@ std::vector<D1MissileInfo> GetActiveMissilesList()
 		info.height = h;
 		info.lightFlag = missile._miLightFlag;
 		info.preFlag = missile._miPreFlag;
+		// HD sprite lookup key: MissileSpriteData cel name for _miAnimType
+		// (same table the engine and RemasterExporter use for missiles\<name>.cl2).
+		{
+			// MissileSpriteData is declared as an unsized extern array (misdat.h),
+			// so bound it by the MissileGraphicID enum instead of sizeof.
+			const int gidx = static_cast<int>(missile._miAnimType);
+			if (gidx >= 0 && gidx <= static_cast<int>(MissileGraphicID::None)
+			    && MissileSpriteData[gidx].name[0] != '\0') {
+				std::strncpy(info.cel, MissileSpriteData[gidx].name, sizeof(info.cel) - 1);
+			}
+		}
 		list.push_back(info);
 	}
 	return list;

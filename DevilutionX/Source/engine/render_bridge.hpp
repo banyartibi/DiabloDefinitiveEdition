@@ -575,6 +575,9 @@ struct D1ObjectInfo {
 	bool isOpen = false;
 	bool isBroken = false;
 	char category[16] = { 0 };
+	// CEL graphic family name for this object type (ObjMasterLoadList[ofindex]);
+	// used by the Godot HD sprite provider to locate assets/objects/<graphic>/.
+	char graphic[24] = { 0 };
 };
 
 struct D1ObjectSpriteRgba {
@@ -738,6 +741,9 @@ struct D1MissileInfo {
 	int height;
 	bool lightFlag;
 	bool preFlag;
+	// MissileSpriteData cel name for _miAnimType (e.g. "acidbf1"); used by the
+	// Godot HD sprite provider to locate assets/missiles/<cel>/.
+	char cel[16] = { 0 };
 };
 
 struct D1MissileSpriteRgba {
