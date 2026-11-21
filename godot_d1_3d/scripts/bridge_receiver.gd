@@ -58,16 +58,22 @@ var diablo_bridge = null
 var use_gdextension: bool = false
 var modern_hud_scene = preload("res://scenes/hud/d1de_hud.tscn")
 var modern_hud = null
+var d1de_hud = null                      # Alias for modern_hud
 var modern_hud_enabled: bool = true     # Default: Modern Diablo: Definitive Edition Native CanvasLayer HUD
 var last_is_ingame: bool = false
 var last_level_idx: int = -999
 
-# 3-Mode Display Architecture:
-# Mode 0: Classic 2.5D Blit (Vanilla + 3D Relief Shader)
-# Mode 1: Native Godot 2.5D Engine (Direct Godot 2D Engine, 144Hz Smooth Camera, Y-Sorted Sprites, PointLight2D)
-# Mode 2: Native 3D Sandbox (Real 3D Geometry, Billboard Sprites, Q/E Orbit, PgUp/PgDn Tilt)
+# Fullscreen Loading... Screen for Level Transitions
+var loading_layer: CanvasLayer = null
+var loading_rect: ColorRect = null
+var loading_label: Label = null
+
+# Display Architecture:
+# Mode 0: Classic 2.5D Blit (Vanilla 1996 + 3D Relief Shader)
+# Mode 1: Native 2.5D (Deprecated - automatically upgraded to Native 3D Engine)
+# Mode 2: Native Godot 3D Engine (Forward+ Vulkan, Real 3D Geometry, Billboard Sprites, Q/E Orbit, PgUp/PgDn Tilt)
 enum DisplayMode { ORIGINAL_25D = 0, NATIVE_25D = 1, NATIVE_3D = 2 }
-var current_display_mode: int = DisplayMode.NATIVE_25D
+var current_display_mode: int = DisplayMode.NATIVE_3D
 # Track modal open/close in native modes so we can re-apply the display mode (show/hide the authentic D1 UI blit)
 var last_modal_active := false
 
@@ -256,9 +262,12 @@ func _ready():
 
 	# Initialize Diablo IV Native CanvasLayer Modern HUD
 	modern_hud = modern_hud_scene.instantiate()
+	d1de_hud = modern_hud
 	add_child(modern_hud)
 	if diablo_bridge and modern_hud and modern_hud.has_method("set_bridge"):
 		modern_hud.set_bridge(diablo_bridge)
+
+	setup_loading_screen()
 
 	# Initialize Native Godot 4K Main Menu & D1DE Campfire Scene
 	menu_layer = CanvasLayer.new()
@@ -346,6 +355,16 @@ func _ready():
 	game_view.add_child(sandbox_instance)
 	sandbox_instance.diablo_bridge = diablo_bridge
 	sandbox_instance.main_receiver = self
+	if sandbox_instance.has_method("apply_all_d1de_settings"):
+		sandbox_instance.apply_all_d1de_settings(
+			hero_light_enabled,
+			current_fog_mode,
+			current_upscaler_mode,
+			current_relief_mode,
+			wet_floor,
+			current_hdr_level,
+			current_tile_model
+		)
 	sandbox_instance.deactivate()
 
 	# Set up the GameView SubViewport composite + global brightness (must run so the
@@ -437,6 +456,35 @@ func setup_modal_overlay():
 		death_screen_rect.material = death_screen_mat
 		death_screen_layer.add_child(death_screen_rect)
 
+func setup_loading_screen():
+	loading_layer = CanvasLayer.new()
+	loading_layer.name = "LoadingScreenLayer"
+	loading_layer.layer = 140
+	loading_layer.visible = false
+	add_child(loading_layer)
+
+	loading_rect = ColorRect.new()
+	loading_rect.name = "LoadingBackground"
+	loading_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	loading_rect.color = Color(0.0, 0.0, 0.0, 1.0)
+	loading_layer.add_child(loading_rect)
+
+	loading_label = Label.new()
+	loading_label.name = "LoadingLabel"
+	loading_label.text = "Loading..."
+	loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	loading_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	loading_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var f = load("res://assets/fonts/Exocet.ttf")
+	if f:
+		loading_label.add_theme_font_override("font", f)
+	loading_label.add_theme_font_size_override("font_size", 44)
+	loading_label.add_theme_color_override("font_color", Color(0.851, 0.149, 0.102, 1.0)) # Authentic Diablo Red #d9261a
+	loading_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.9))
+	loading_label.add_theme_constant_override("shadow_offset_x", 3)
+	loading_label.add_theme_constant_override("shadow_offset_y", 3)
+	loading_layer.add_child(loading_label)
+
 func update_torch_light():
 	if hero_light:
 		hero_light.visible = hero_light_enabled and current_display_mode == DisplayMode.ORIGINAL_25D
@@ -487,6 +535,8 @@ func apply_upscaler_mode():
 
 	if native_25d_instance and native_25d_instance.has_method("set_upscaler_mode"):
 		native_25d_instance.set_upscaler_mode(current_upscaler_mode)
+	if sandbox_instance and sandbox_instance.has_method("set_upscaler_mode"):
+		sandbox_instance.set_upscaler_mode(current_upscaler_mode)
 
 	update_shader_params()
 
@@ -581,6 +631,8 @@ func set_hd_graphics_enabled(enabled: bool) -> void:
 	hd_graphics_enabled = enabled
 	if native_25d_instance and native_25d_instance.has_method("set_hd_graphics_enabled"):
 		native_25d_instance.set_hd_graphics_enabled(enabled)
+	if sandbox_instance and sandbox_instance.has_method("set_hd_graphics_enabled"):
+		sandbox_instance.set_hd_graphics_enabled(enabled)
 
 func toggle_hd_graphics() -> bool:
 	set_hd_graphics_enabled(not get_hd_graphics_enabled())
@@ -603,6 +655,8 @@ func set_tile_model(model_id: int) -> void:
 			diablo_bridge.save_settings()
 	if native_25d_instance and native_25d_instance.has_method("set_tile_model"):
 		native_25d_instance.set_tile_model(current_tile_model)
+	if sandbox_instance and sandbox_instance.has_method("set_tile_model"):
+		sandbox_instance.set_tile_model(current_tile_model)
 	show_osd("Tile Model: " + UpscalerModelConfig.get_model_display_name(current_tile_model), 2.5)
 
 func _apply_environment_glow():
@@ -686,6 +740,10 @@ func update_shader_params():
 			native_25d_instance.set_wet_floor(wet_floor)
 		if native_25d_instance.has_method("set_hdr_level"):
 			native_25d_instance.set_hdr_level(current_hdr_level)
+
+	if sandbox_instance:
+		if sandbox_instance.has_method("set_hdr_level"):
+			sandbox_instance.set_hdr_level(current_hdr_level)
 
 func update_fog_mode():
 	if world_env and world_env.environment:
@@ -781,7 +839,9 @@ func _process(delta: float):
 				new_disp = int(diablo_bridge.get_d1de_display_mode())
 			elif diablo_bridge.has_method("get_resurrected_display_mode"):
 				new_disp = int(diablo_bridge.get_resurrected_display_mode())
-			if new_disp != current_display_mode and new_disp >= 0 and new_disp < 3:
+			if new_disp == DisplayMode.NATIVE_25D:
+				new_disp = DisplayMode.NATIVE_3D
+			if new_disp != current_display_mode and (new_disp == DisplayMode.ORIGINAL_25D or new_disp == DisplayMode.NATIVE_3D):
 				switch_display_mode(new_disp)
 
 			var new_vs = bool(diablo_bridge.get_vsync_enabled())
@@ -873,6 +933,8 @@ func _process(delta: float):
 				current_tile_model = new_tile_model
 				if native_25d_instance and native_25d_instance.has_method("set_tile_model"):
 					native_25d_instance.set_tile_model(current_tile_model)
+				if sandbox_instance and sandbox_instance.has_method("set_tile_model"):
+					sandbox_instance.set_tile_model(current_tile_model)
 				show_osd("Tile Model: " + tile_model_names[current_tile_model], 2.5)
 	if osd_timer > 0.0:
 		osd_timer -= delta
@@ -899,6 +961,17 @@ func _process(delta: float):
 				death_screen_layer.visible = false
 			elif death_screen_mat:
 				death_screen_mat.set_shader_parameter("intensity", death_fade)
+
+	# Authentic Red "Loading..." Level Transition Screen (in-game only)
+	if diablo_bridge and diablo_bridge.has_method("is_level_loading"):
+		var is_ingame = diablo_bridge.is_game_running() if diablo_bridge.has_method("is_game_running") else false
+		var is_loading = is_ingame and bool(diablo_bridge.is_level_loading())
+		if loading_layer:
+			if loading_layer.visible != is_loading:
+				loading_layer.visible = is_loading
+			if is_loading and loading_label:
+				var pulse = 0.82 + 0.18 * sin(time_accum * 4.5)
+				loading_label.modulate = Color(1.0, 1.0, 1.0, pulse)
 
 	if use_gdextension and diablo_bridge != null:
 		var quit_req = diablo_bridge.is_quit_requested()
@@ -1065,12 +1138,6 @@ func _process(delta: float):
 var _dbg_frame_updates := 0
 
 func update_frame_texture(w: int, h: int, bytes: PackedByteArray):
-	_dbg_frame_updates += 1
-	if _dbg_frame_updates <= 3 or _dbg_frame_updates % 600 == 0:
-		print("[D1-DEBUG] frame_update #%d w=%d h=%d bytes=%d shader_mat_bound=%s tex_size=(%d,%d)" % [
-			_dbg_frame_updates, w, h, bytes.size(), shader_material != null,
-			(image_texture.get_width() if image_texture else 0),
-			(image_texture.get_height() if image_texture else 0)])
 	var img = Image.create_from_data(w, h, false, Image.FORMAT_RGBA8, bytes)
 	if not img:
 		return
@@ -1131,6 +1198,9 @@ func apply_display_mode():
 		return
 
 	# In-game mode activation:
+	if current_display_mode == DisplayMode.NATIVE_25D:
+		current_display_mode = DisplayMode.NATIVE_3D
+
 	if native_25d_instance:
 		native_25d_instance.deactivate()
 	if sandbox_instance:
@@ -1168,7 +1238,7 @@ func apply_display_mode():
 			brightness_material.set_shader_parameter("color_profile", 0)
 		if camera:
 			camera.make_current()
-		show_osd("Display Mode 1/3: Classic 2.5D Blit (Vanilla + 3D Relief Shader)", 3.5)
+		show_osd("Display Mode: Classic 2.5D Blit (Vanilla 1996 + PBR Relief)", 3.5)
 
 	elif current_display_mode == DisplayMode.NATIVE_25D:
 		# Mode 1: Native Godot 2.5D Engine (Smooth 144Hz Camera, Y-Sorted Sprites, PointLight2D)
@@ -1258,14 +1328,26 @@ func apply_display_mode():
 		if modal_layer and diablo_bridge and diablo_bridge.has_method("is_modal_active"):
 			modal_layer.visible = diablo_bridge.is_modal_active()
 		if sandbox_instance:
+			if sandbox_instance.has_method("apply_all_d1de_settings"):
+				sandbox_instance.apply_all_d1de_settings(
+					hero_light_enabled,
+					current_fog_mode,
+					current_upscaler_mode,
+					current_relief_mode,
+					wet_floor,
+					current_hdr_level,
+					current_tile_model
+				)
 			sandbox_instance.activate()
-		show_osd("Display Mode 3/3: Native 3D Sandbox (Real 3D Geometry, Billboard Sprites, Q/E Orbit, PgUp/PgDn Tilt)", 3.5)
+		show_osd("Display Mode: Native 3D Engine (Forward+ Vulkan, Real 3D Geometry, Q/E Orbit)", 3.5)
 
 	apply_upscaler_mode()
 
 func switch_display_mode(new_mode: int):
+	if new_mode == DisplayMode.NATIVE_25D:
+		new_mode = DisplayMode.NATIVE_3D
 	current_display_mode = new_mode
-	print("[D1-DEBUG] display_mode -> %d" % new_mode)
+	print("[D1DE] display_mode -> %d" % new_mode)
 	apply_display_mode()
 
 func _unhandled_input(event: InputEvent):
@@ -1296,8 +1378,6 @@ func _unhandled_input(event: InputEvent):
 				return
 
 	if event is InputEventKey and event.pressed and not event.echo:
-		print("[D1-DEBUG] key_unhandled keycode=%d phys=%d uni=%d text_act=%s ingame=%s" % [event.keycode, event.physical_keycode, event.unicode, is_text_active, is_ingame])
-
 		if diablo_bridge != null and diablo_bridge.has_method("get_mode_switch_key"):
 			var sw_key := int(diablo_bridge.get_mode_switch_key())
 			var sw_mods := int(diablo_bridge.get_mode_switch_mods())
@@ -1307,16 +1387,15 @@ func _unhandled_input(event: InputEvent):
 			if event.alt_pressed: pressed_mask |= 4
 			if event.meta_pressed: pressed_mask |= 8
 			if int(event.physical_keycode) == sw_key and pressed_mask == sw_mods:
-				var next_mode = (current_display_mode + 1) % 3
+				var next_mode = DisplayMode.ORIGINAL_25D if current_display_mode == DisplayMode.NATIVE_3D else DisplayMode.NATIVE_3D
 				switch_display_mode(next_mode)
 				_write_display_mode(next_mode)   # persists to diablo.ini
 				if not is_ingame:
-					var mode_names = [
-						"Classic 2.5D Blit (Vanilla + 3D Relief Shader)",
-						"Native Godot 2.5D Engine (144Hz Smooth Camera)",
-						"Native 3D Sandbox (Real 3D Geometry)"
-					]
-					show_osd("Mode selected: " + mode_names[next_mode] + " (Active when game begins)", 3.0)
+					var mode_names = {
+						DisplayMode.ORIGINAL_25D: "Classic 2.5D Blit (Vanilla 1996)",
+						DisplayMode.NATIVE_3D: "Native Godot 3D Engine (Forward+ Vulkan)"
+					}
+					show_osd("Mode selected: " + mode_names.get(next_mode, "Native 3D Engine") + " (Active when game begins)", 3.0)
 				return
 
 	if is_ingame:
@@ -1355,8 +1434,24 @@ func _unhandled_input(event: InputEvent):
 			
 		var mpos = get_game_mouse_pos(event.position, vp_size)
 		var btn = 1
-		if event.button_index == MOUSE_BUTTON_RIGHT:
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			if diablo_bridge and diablo_bridge.has_method("has_held_item") and diablo_bridge.has_held_item():
+				if diablo_bridge.has_method("drop_held_item"):
+					diablo_bridge.drop_held_item()
+					var hud = d1de_hud if d1de_hud else modern_hud
+					if hud and hud.tabbed_menu and hud.tabbed_menu.visible:
+						var inv = hud.tabbed_menu.get_node_or_null("MainMargin/MainVBox/ViewsContainer/InventoryPanel")
+						if inv and inv.has_method("update_inventory"):
+							inv.update_inventory()
+					return
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			btn = 3
+			if event.pressed and diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
+				var cid = diablo_bridge.get_cursor_id()
+				if cid > 1 and cid < 12:
+					if diablo_bridge.has_method("cancel_targeting_cursor"):
+						diablo_bridge.cancel_targeting_cursor()
+					return
 		elif event.button_index == MOUSE_BUTTON_MIDDLE:
 			btn = 2
 		var state = 1 if event.pressed else 0
@@ -1392,7 +1487,8 @@ func _write_display_mode(mode_idx: int):
 					found = true
 					break
 			if found and diablo_bridge.has_method("set_setting_list"):
-				diablo_bridge.set_setting_list(int(cat.get("id", 0)), e_id, mode_idx)
+				var list_idx = 0 if mode_idx == DisplayMode.ORIGINAL_25D else 1
+				diablo_bridge.set_setting_list(int(cat.get("id", 0)), e_id, list_idx)
 				diablo_bridge.save_settings()
 			return
 
@@ -1481,7 +1577,8 @@ func update_dynamic_lighting(delta: float) -> void:
 		var sparks = torch_sparks_scene.instantiate()
 		sparks.name = "TorchSparks"
 		o_light.add_child(sparks)
-		sparks.position = Vector3(0, 0, 0.05)
+		# Position visual sparks right on the 2D display quad plane (z = 0.01) to completely eliminate perspective parallax offset
+		sparks.position = Vector3(0, 0, -0.29)
 		torch_container.add_child(o_light)
 		pooled_torch_lights.append(o_light)
 
@@ -1631,6 +1728,16 @@ func _on_main_menu_settings_saved() -> void:
 
 		if native_25d_instance and native_25d_instance.has_method("apply_all_d1de_settings"):
 			native_25d_instance.apply_all_d1de_settings(
+				hero_light_enabled,
+				current_fog_mode,
+				current_upscaler_mode,
+				current_relief_mode,
+				wet_floor,
+				current_hdr_level,
+				current_tile_model
+			)
+		if sandbox_instance and sandbox_instance.has_method("apply_all_d1de_settings"):
+			sandbox_instance.apply_all_d1de_settings(
 				hero_light_enabled,
 				current_fog_mode,
 				current_upscaler_mode,

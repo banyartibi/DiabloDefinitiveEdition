@@ -600,7 +600,16 @@ bool PlrHitMonst(Player &player, Monster &monster, bool adjacentDamage = false)
 #ifdef _DEBUG
 		if (!DebugGodMode)
 #endif
+		{
+			D1CombatEvent ev;
+			ev.type = static_cast<uint32_t>(D1CombatEventType::CombatMiss);
+			ev.sourceId = player.getId();
+			ev.targetId = monster.getId();
+			ev.tileX = monster.position.tile.x;
+			ev.tileY = monster.position.tile.y;
+			PushCombatEvent(ev);
 			return false;
+		}
 	}
 
 	if (gbIsHellfire && HasAllOf(player._pIFlags, ItemSpecialEffect::FireDamage | ItemSpecialEffect::LightningDamage)) {
@@ -617,6 +626,7 @@ bool PlrHitMonst(Player &player, Monster &monster, bool adjacentDamage = false)
 	if (player._pClass == HeroClass::Warrior || player._pClass == HeroClass::Barbarian) {
 		if (GenerateRnd(100) < player._pLevel) {
 			dam *= 2;
+			SetNextHitIsCrit(true);
 		}
 	}
 
@@ -2325,11 +2335,15 @@ void CreatePlayer(Player &player, HeroClass c)
 	SpellID s = playerData.skill;
 	player._pAblSpells = GetSpellBitmask(s);
 	player._pRSpell = s;
+	player._pPrevRSpell = s;
+	player._pPrevRSplType = SpellType::Skill;
 
 	if (c == HeroClass::Sorcerer) {
 		player._pMemSpells = GetSpellBitmask(SpellID::Firebolt);
 		player._pRSplType = SpellType::Spell;
 		player._pRSpell = SpellID::Firebolt;
+		player._pPrevRSpell = SpellID::Firebolt;
+		player._pPrevRSplType = SpellType::Spell;
 	} else {
 		player._pMemSpells = 0;
 	}
@@ -2397,6 +2411,15 @@ int CalcStatDiff(Player &player)
 void NextPlrLevel(Player &player)
 {
 	player._pLevel++;
+
+	// Native Godot 3D Combat Event (Task 5.2)
+	D1CombatEvent ev;
+	ev.type = static_cast<uint32_t>(D1CombatEventType::PlayerLevelUp);
+	ev.targetId = player.getId();
+	ev.tileX = player.position.tile.x;
+	ev.tileY = player.position.tile.y;
+	ev.newLevel = player._pLevel;
+	PushCombatEvent(ev);
 	player._pMaxLvl++;
 
 	CalcPlrInv(player, true);
@@ -2553,6 +2576,14 @@ void InitPlayer(Player &player, bool firstTime)
 
 	SpellID s = PlayersData[static_cast<size_t>(player._pClass)].skill;
 	player._pAblSpells = GetSpellBitmask(s);
+	if (player._pRSpell == SpellID::Invalid && s != SpellID::Invalid) {
+		player._pRSpell = s;
+		player._pRSplType = SpellType::Skill;
+	}
+	if (player._pPrevRSpell == SpellID::Invalid && s != SpellID::Invalid) {
+		player._pPrevRSpell = s;
+		player._pPrevRSplType = SpellType::Skill;
+	}
 
 	player._pNextExper = ExpLvlsTbl[std::min<int8_t>(player._pLevel, MaxCharacterLevel - 1)];
 	player._pInvincible = false;
@@ -2630,6 +2661,14 @@ void StartPlrBlock(Player &player, Direction dir)
 		SyncPlrKill(player, DeathReason::Unknown);
 		return;
 	}
+
+	// Native Godot 3D Combat Event (Task 5.2)
+	D1CombatEvent ev;
+	ev.type = static_cast<uint32_t>(D1CombatEventType::PlayerBlock);
+	ev.targetId = player.getId();
+	ev.tileX = player.position.tile.x;
+	ev.tileY = player.position.tile.y;
+	PushCombatEvent(ev);
 
 	PlaySfxLoc(IS_ISWORD, player.position.tile);
 
@@ -2833,6 +2872,19 @@ void ApplyPlrDamage(DamageType damageType, Player &player, int dam, int minHP /*
 	int totalDamage = (dam << 6) + frac;
 	if (&player == MyPlayer && player._pHitPoints > 0) {
 		AddFloatingNumber(damageType, player, totalDamage);
+
+		// Native Godot 3D Combat Event (Task 5.2)
+		D1CombatEvent ev;
+		ev.type = static_cast<uint32_t>(D1CombatEventType::DamageToPlayer);
+		ev.sourceId = -1;
+		ev.targetId = player.getId();
+		ev.tileX = player.position.tile.x;
+		ev.tileY = player.position.tile.y;
+		ev.damage = std::max(1, totalDamage >> 6);
+		ev.targetHp = std::max(0, (player._pHitPoints - totalDamage) >> 6);
+		ev.targetMaxHp = std::max(1, player._pMaxHP >> 6);
+		ev.damageType = static_cast<int32_t>(damageType);
+		PushCombatEvent(ev);
 	}
 	if (totalDamage > 0 && player.pManaShield) {
 		uint8_t manaShieldLevel = player._pSplLvl[static_cast<int8_t>(SpellID::ManaShield)];

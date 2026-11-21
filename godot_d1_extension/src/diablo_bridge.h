@@ -151,6 +151,8 @@ public:
 	Array get_player_equipment() const;
 	Array get_player_backpack() const;
 	Dictionary get_player_hold_item() const;
+	bool has_held_item() const;
+	bool drop_held_item();
 	Ref<ImageTexture> get_item_texture(int curs_id);
 	void click_inventory_slot(int slot_type, int slot_idx, bool is_shift = false, bool is_ctrl = false);
 	void use_inventory_slot(int slot_type, int slot_idx);
@@ -301,6 +303,10 @@ public:
 	void send_input(int type, int code, int state, int x, int y);
 	void send_key_event(int keycode, bool pressed);
 	void send_click_to_tile(int tile_x, int tile_y, int button_mask = 1);
+	void interact_with_item(int item_id, int tile_x = -1, int tile_y = -1);
+	void interact_with_object(int object_id, int tile_x = -1, int tile_y = -1);
+	void interact_with_monster(int monster_id);
+	void walk_to_tile(int tile_x, int tile_y);
 
 	// Direct Video Frame Access (In-memory blit directly to Godot Image)
 	PackedByteArray get_frame_bytes();
@@ -318,6 +324,7 @@ public:
 	Array get_active_lights() const;
 	Array get_wall_occluders() const;
 	Array poll_visual_events();
+	Array poll_combat_events();
 };
 
 } // namespace godot

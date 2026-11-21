@@ -141,13 +141,14 @@ void fragment() {
     }
 
     // Glass globe background (empty part of globe)
-    // Dark gothic slate glass with subtle volumetric depth
-    vec3 empty_glass_color = vec3(0.015, 0.018, 0.025);
-    float empty_glass_alpha = 0.82;
+    // Translucent dark crystal glass with volumetric depth and faint ethereal essence glow
+    vec3 ambient_essence = mix(liquid_color_deep.rgb * 0.45, liquid_color_primary.rgb * 0.15, 0.35);
+    vec3 empty_glass_color = mix(vec3(0.02, 0.025, 0.035), ambient_essence, 0.65);
+    float empty_glass_alpha = 0.65;
 
     // Inner shadow vignette (darkens towards the sphere edges)
-    float inner_shadow = smoothstep(0.4, 0.98, dist);
-    empty_glass_color = mix(empty_glass_color, vec3(0.005, 0.005, 0.008), inner_shadow * 0.7);
+    float inner_shadow = smoothstep(0.5, 0.98, dist);
+    empty_glass_color = mix(empty_glass_color, vec3(0.01, 0.01, 0.015), inner_shadow * 0.5);
 
     // Blend fluid over empty glass
     vec3 result_color = mix(empty_glass_color, final_fluid, fluid_alpha);

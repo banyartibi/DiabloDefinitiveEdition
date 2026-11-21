@@ -133,6 +133,10 @@ func get_monster_sprite_data(mid):
 	sandbox.set_script(sandbox_script)
 	root.add_child(sandbox)
 	sandbox.diablo_bridge = b_inst
+	sandbox.modular_3d_walls_enabled = true
+	sandbox.set_theme_aaa_certified("cathedral", true)
+	sandbox.modular_3d_props_enabled = true
+	sandbox.set_prop_aaa_certified("door", true)
 	sandbox._ready()
 	sandbox.activate()
 
@@ -197,12 +201,16 @@ func get_monster_sprite_data(mid):
 	var normal_item = sandbox.item_instances.get(101, null)
 	assert(normal_item != null, "Normal item must exist!")
 	var n_lbl = normal_item.get_node_or_null("ItemLabel") as Label3D
+	if n_lbl == null:
+		n_lbl = normal_item.get_node_or_null("LabelRoot/ItemLabel") as Label3D
 	assert(n_lbl != null and n_lbl.text == "Broad Sword", "Normal item label correct")
 	assert(normal_item.get_node_or_null("LootBeam") == null, "Normal item has no beam")
 
 	var magic_item = sandbox.item_instances.get(102, null)
 	assert(magic_item != null, "Magic item must exist!")
 	var m_lbl = magic_item.get_node_or_null("ItemLabel") as Label3D
+	if m_lbl == null:
+		m_lbl = magic_item.get_node_or_null("LabelRoot/ItemLabel") as Label3D
 	assert(m_lbl != null and m_lbl.text == "Amber Short Bow", "Magic item label correct")
 	var m_beam = magic_item.get_node_or_null("LootBeam")
 	assert(m_beam != null, "Magic item must have loot beam!")
@@ -210,6 +218,8 @@ func get_monster_sprite_data(mid):
 	var unique_item = sandbox.item_instances.get(103, null)
 	assert(unique_item != null, "Unique item must exist!")
 	var u_lbl = unique_item.get_node_or_null("ItemLabel") as Label3D
+	if u_lbl == null:
+		u_lbl = unique_item.get_node_or_null("LabelRoot/ItemLabel") as Label3D
 	assert(u_lbl != null and u_lbl.text == "The Butcher's Cleaver", "Unique item label correct")
 	var u_beam = unique_item.get_node_or_null("LootBeam")
 	assert(u_beam != null, "Unique item must have loot beam!")

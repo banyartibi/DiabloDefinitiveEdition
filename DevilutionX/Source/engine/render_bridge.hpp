@@ -136,6 +136,14 @@ bool IsPlayerDeadLive();
 std::vector<uint8_t> GetSpellIconRgba(int spellId, int spellType);
 std::vector<AvailableSpellItem> GetAvailableSpells();
 void SelectSpell(int spellId, int spellType);
+struct BeltItemData {
+	int slot = 0;
+	int type = 0;
+	int count = 0;
+	char name[64] = { 0 };
+};
+
+std::vector<BeltItemData> GetBeltItemsLive();
 void UseBeltSlot(int slotIndex);
 void ClickBeltSlot(int slotIndex);
 
@@ -232,10 +240,18 @@ enum class D1BridgeActionType : int {
 	UseSmartTownPortal = 30,
 	SetActiveUiPanel = 31,
 	CloseAllUiPanels = 32,
-	CancelTargetingCursor = 33
+	CancelTargetingCursor = 33,
+	InteractWithItem = 34,
+	InteractWithObject = 35,
+	InteractWithMonster = 36,
+	WalkToTile = 37
 };
 
 void PushBridgeAction(D1BridgeActionType type, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0);
+void BridgeInteractWithItem(int itemId, int tileX = -1, int tileY = -1);
+void BridgeInteractWithObject(int objectId, int tileX = -1, int tileY = -1);
+void BridgeInteractWithMonster(int monsterId);
+void BridgeWalkToTile(int tileX, int tileY);
 
 // Read-only parity helpers: LCG state captured at the moment the last queued job was executed
 // on the engine thread, and that job's type. Safe to call from Godot's main thread (atomics).
@@ -312,6 +328,37 @@ void PushVisualEvent(uint32_t type, Point tile, Displacement offset, Direction d
 std::vector<D1EngineLight> GetActiveEngineLights();
 std::vector<D1WallOccluder> GetActiveWallOccluders();
 std::vector<D1VisualEvent> DrainVisualEvents();
+
+// Native Godot 3D Combat Events & Floating Combat Text (Task 5.2)
+enum class D1CombatEventType : uint32_t {
+	DamageToMonster = 1,
+	DamageToPlayer = 2,
+	MonsterDeath = 3,
+	PlayerDeath = 4,
+	PlayerBlock = 5,
+	CombatMiss = 6,
+	PlayerLevelUp = 7
+};
+
+struct D1CombatEvent {
+	uint32_t type = 0;
+	int32_t sourceId = -1;
+	int32_t targetId = -1;
+	int32_t tileX = 0;
+	int32_t tileY = 0;
+	int32_t damage = 0;
+	int32_t targetHp = 0;
+	int32_t targetMaxHp = 0;
+	int32_t damageType = 0;
+	bool isCrit = false;
+	int32_t expGained = 0;
+	int32_t newLevel = 0;
+};
+
+void PushCombatEvent(const D1CombatEvent &event);
+std::vector<D1CombatEvent> DrainCombatEvents();
+void SetNextHitIsCrit(bool isCrit);
+bool GetAndClearNextHitIsCrit();
 
 struct D1ItemIconRgba {
 	int width = 0;
@@ -407,6 +454,8 @@ struct D1InvItemData {
 std::vector<D1InvItemData> GetPlayerEquipmentData();
 std::vector<D1InvItemData> GetPlayerBackpackData();
 D1InvItemData GetPlayerHoldItemData();
+bool HasHeldItem();
+bool DropHeldItem();
 int GetPlayerGold();
 D1ItemIconRgba GetItemSpriteRgba(int cursId);
 void ClickInventorySlot(int slotType, int slotIdx, bool isShift = false, bool isCtrl = false);
@@ -445,6 +494,8 @@ struct D1MonsterEntityData {
 	int mode = 0;
 	int animFrame = 0;
 	bool isVisible = true;
+	char action[16] = { 0 };
+	float hpPct = 1.0f;
 };
 
 struct D1PlayerEntityData {
@@ -456,6 +507,13 @@ struct D1PlayerEntityData {
 	bool isWalking = false;
 	int mode = 0;
 	int animFrame = 0;
+	char action[16] = { 0 };
+	int hp = 0;
+	int maxHp = 0;
+	int mana = 0;
+	int maxMana = 0;
+	int playerClass = 0;
+	char name[32] = { 0 };
 };
 
 D1PlayerEntityData GetPlayerEntityData();
@@ -514,6 +572,9 @@ struct D1ObjectInfo {
 	bool selectable;
 	int width;
 	int height;
+	bool isOpen = false;
+	bool isBroken = false;
+	char category[16] = { 0 };
 };
 
 struct D1ObjectSpriteRgba {
@@ -603,16 +664,30 @@ D1AutomapRgba GetAutomapRgba();
 
 // Native Godot 2.5D Ground Items & Loot
 struct D1ItemInfo {
-	int id;
-	int tileX;
-	int tileY;
-	int cursId;
-	int quality;
-	bool identified;
-	char name[64];
-	int width;
-	int height;
-	int animFrame;
+	int id = 0;
+	int tileX = 0;
+	int tileY = 0;
+	int cursId = 0;
+	int quality = 0;
+	bool identified = false;
+	char name[64] = { 0 };
+	int width = 0;
+	int height = 0;
+	int animFrame = 0;
+	char qualityName[16] = { 0 };
+	// Rich ARPG Stats (D4 Tooltip)
+	int itemType = 0;
+	int minDam = 0;
+	int maxDam = 0;
+	int ac = 0;
+	int durability = 0;
+	int maxDur = 0;
+	int reqStr = 0;
+	int reqDex = 0;
+	int reqMag = 0;
+	int value = 0;
+	char itemTypeDesc[32] = { 0 };
+	char magicDesc[128] = { 0 };
 };
 
 struct D1ItemSpriteRgba {

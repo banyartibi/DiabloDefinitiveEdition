@@ -116,6 +116,8 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_player_equipment"), &DiabloBridge::get_player_equipment);
 	ClassDB::bind_method(D_METHOD("get_player_backpack"), &DiabloBridge::get_player_backpack);
 	ClassDB::bind_method(D_METHOD("get_player_hold_item"), &DiabloBridge::get_player_hold_item);
+	ClassDB::bind_method(D_METHOD("has_held_item"), &DiabloBridge::has_held_item);
+	ClassDB::bind_method(D_METHOD("drop_held_item"), &DiabloBridge::drop_held_item);
 	ClassDB::bind_method(D_METHOD("get_item_texture", "curs_id"), &DiabloBridge::get_item_texture);
 	ClassDB::bind_method(D_METHOD("click_inventory_slot", "slot_type", "slot_idx", "is_shift", "is_ctrl"), &DiabloBridge::click_inventory_slot, DEFVAL(false), DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("use_inventory_slot", "slot_type", "slot_idx"), &DiabloBridge::use_inventory_slot);
@@ -249,6 +251,10 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("send_input", "type", "code", "state", "x", "y"), &DiabloBridge::send_input);
 	ClassDB::bind_method(D_METHOD("send_key_event", "keycode", "pressed"), &DiabloBridge::send_key_event);
 	ClassDB::bind_method(D_METHOD("send_click_to_tile", "tile_x", "tile_y", "button_mask"), &DiabloBridge::send_click_to_tile, DEFVAL(1));
+	ClassDB::bind_method(D_METHOD("interact_with_item", "item_id", "tile_x", "tile_y"), &DiabloBridge::interact_with_item, DEFVAL(-1), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("interact_with_object", "object_id", "tile_x", "tile_y"), &DiabloBridge::interact_with_object, DEFVAL(-1), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("interact_with_monster", "monster_id"), &DiabloBridge::interact_with_monster);
+	ClassDB::bind_method(D_METHOD("walk_to_tile", "tile_x", "tile_y"), &DiabloBridge::walk_to_tile);
 
 	// Video Frame Blitting
 	ClassDB::bind_method(D_METHOD("get_frame_bytes"), &DiabloBridge::get_frame_bytes);
@@ -266,6 +272,7 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_active_lights"), &DiabloBridge::get_active_lights);
 	ClassDB::bind_method(D_METHOD("get_wall_occluders"), &DiabloBridge::get_wall_occluders);
 	ClassDB::bind_method(D_METHOD("poll_visual_events"), &DiabloBridge::poll_visual_events);
+	ClassDB::bind_method(D_METHOD("poll_combat_events"), &DiabloBridge::poll_combat_events);
 }
 
 DiabloBridge::DiabloBridge() {
@@ -458,12 +465,13 @@ int DiabloBridge::get_player_spell_type() const {
 
 Array DiabloBridge::get_belt_items() const {
 	Array items;
-	for (int i = 0; i < 8; ++i) {
+	auto belt = devilution::GetBeltItemsLive();
+	for (const auto &b : belt) {
 		Dictionary d;
-		d["slot"] = i;
-		d["type"] = devilution::g_D1EngineData.beltTypes[i];
-		d["count"] = devilution::g_D1EngineData.beltCounts[i];
-		d["name"] = String::utf8(devilution::g_D1EngineData.beltNames[i]);
+		d["slot"] = b.slot;
+		d["type"] = b.type;
+		d["count"] = b.count;
+		d["name"] = String::utf8(b.name);
 		items.push_back(d);
 	}
 	return items;
@@ -491,7 +499,7 @@ bool DiabloBridge::is_game_running() const {
 }
 
 bool DiabloBridge::is_level_loading() const {
-	return devilution::g_D1LevelTransitioning.load() || !devilution::IsBridgeSafeToRead();
+	return devilution::g_D1LevelTransitioning.load() || (devilution::IsGameRunningLive() && !devilution::IsBridgeSafeToRead());
 }
 
 bool DiabloBridge::is_modal_active() const {
@@ -940,6 +948,15 @@ Dictionary DiabloBridge::get_player_continuous_pos() const {
 	d["is_walking"] = data.isWalking;
 	d["mode"] = data.mode;
 	d["anim_frame"] = data.animFrame;
+	d["action"] = String::utf8(data.action);
+	d["hp"] = data.hp;
+	d["max_hp"] = data.maxHp;
+	d["hp_pct"] = (data.maxHp > 0) ? std::clamp(static_cast<float>(data.hp) / static_cast<float>(data.maxHp), 0.0f, 1.0f) : 0.0f;
+	d["mana"] = data.mana;
+	d["max_mana"] = data.maxMana;
+	d["mana_pct"] = (data.maxMana > 0) ? std::clamp(static_cast<float>(data.mana) / static_cast<float>(data.maxMana), 0.0f, 1.0f) : 0.0f;
+	d["player_class"] = data.playerClass;
+	d["name"] = String::utf8(data.name);
 	return d;
 }
 
@@ -961,6 +978,8 @@ Array DiabloBridge::get_active_monsters_data() const {
 		md["mode"] = m.mode;
 		md["anim_frame"] = m.animFrame;
 		md["is_visible"] = m.isVisible;
+		md["action"] = String::utf8(m.action);
+		md["hp_pct"] = m.hpPct;
 		arr.push_back(md);
 	}
 	return arr;
@@ -1026,8 +1045,28 @@ void DiabloBridge::send_click_to_tile(int tile_x, int tile_y, int button_mask) {
 	send_input(2, btn, 0, screen_pos.x, screen_pos.y);
 }
 
+void DiabloBridge::interact_with_item(int item_id, int tile_x, int tile_y) {
+	devilution::PushBridgeAction(devilution::D1BridgeActionType::InteractWithItem, item_id, tile_x, tile_y);
+}
+
+void DiabloBridge::interact_with_object(int object_id, int tile_x, int tile_y) {
+	devilution::PushBridgeAction(devilution::D1BridgeActionType::InteractWithObject, object_id, tile_x, tile_y);
+}
+
+void DiabloBridge::interact_with_monster(int monster_id) {
+	devilution::PushBridgeAction(devilution::D1BridgeActionType::InteractWithMonster, monster_id);
+}
+
+void DiabloBridge::walk_to_tile(int tile_x, int tile_y) {
+	devilution::PushBridgeAction(devilution::D1BridgeActionType::WalkToTile, tile_x, tile_y);
+}
+
 PackedByteArray DiabloBridge::get_frame_bytes() {
 	PackedByteArray arr;
+	// In Native 3D Engine during active gameplay, pixels are not exported to save CPU/GPU bandwidth
+	if (devilution::g_D1EngineData.isGameRunning && devilution::GetResurrectedDisplayMode() == 2) {
+		return arr;
+	}
 	int w = devilution::g_D1EngineData.width;
 	int h = devilution::g_D1EngineData.height;
 	if (w <= 0 || h <= 0) return arr;
@@ -1177,6 +1216,27 @@ Array DiabloBridge::poll_visual_events() {
 		d["tile"] = Vector2i(ev.tileX, ev.tileY);
 		d["dir"] = Vector2(ev.dirX, ev.dirY);
 		d["intensity"] = ev.intensity;
+		arr.append(d);
+	}
+	return arr;
+}
+
+Array DiabloBridge::poll_combat_events() {
+	Array arr;
+	auto events = devilution::DrainCombatEvents();
+	for (const auto &ev : events) {
+		Dictionary d;
+		d["type"] = static_cast<int>(ev.type);
+		d["source_id"] = ev.sourceId;
+		d["target_id"] = ev.targetId;
+		d["tile"] = Vector2i(ev.tileX, ev.tileY);
+		d["damage"] = ev.damage;
+		d["target_hp"] = ev.targetHp;
+		d["target_max_hp"] = ev.targetMaxHp;
+		d["damage_type"] = ev.damageType;
+		d["is_crit"] = ev.isCrit;
+		d["exp_gained"] = ev.expGained;
+		d["new_level"] = ev.newLevel;
 		arr.append(d);
 	}
 	return arr;
@@ -1339,6 +1399,14 @@ Dictionary DiabloBridge::get_player_hold_item() const {
 	if (hold.cursId <= 0)
 		return Dictionary();
 	return InvDataToDict(hold);
+}
+
+bool DiabloBridge::has_held_item() const {
+	return devilution::HasHeldItem();
+}
+
+bool DiabloBridge::drop_held_item() {
+	return devilution::DropHeldItem();
 }
 
 Ref<ImageTexture> DiabloBridge::get_item_texture(int curs_id) {
@@ -1525,6 +1593,9 @@ Array DiabloBridge::get_active_objects() const {
 		d["selectable"] = obj.selectable;
 		d["width"] = obj.width;
 		d["height"] = obj.height;
+		d["is_open"] = obj.isOpen;
+		d["is_broken"] = obj.isBroken;
+		d["category"] = String::utf8(obj.category);
 		arr.push_back(d);
 	}
 	return arr;
@@ -1559,6 +1630,19 @@ Array DiabloBridge::get_active_items() const {
 		d["width"] = item.width;
 		d["height"] = item.height;
 		d["anim_frame"] = item.animFrame;
+		d["quality_name"] = String::utf8(item.qualityName);
+		d["item_type"] = item.itemType;
+		d["min_dam"] = item.minDam;
+		d["max_dam"] = item.maxDam;
+		d["ac"] = item.ac;
+		d["durability"] = item.durability;
+		d["max_dur"] = item.maxDur;
+		d["req_str"] = item.reqStr;
+		d["req_dex"] = item.reqDex;
+		d["req_mag"] = item.reqMag;
+		d["value"] = item.value;
+		d["type_desc"] = String::utf8(item.itemTypeDesc);
+		d["magic_desc"] = String::utf8(item.magicDesc);
 		arr.push_back(d);
 	}
 	return arr;

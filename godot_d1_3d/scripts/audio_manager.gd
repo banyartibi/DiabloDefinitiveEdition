@@ -14,14 +14,14 @@ var music_player_b: AudioStreamPlayer = null
 var active_music_player: AudioStreamPlayer = null
 var current_music_path: String = ""
 var music_tween: Tween = null
-var music_volume_db: float = 0.0
+var music_volume_db: float = -6.0
 
 # SFX Pools
 var sfx_2d_pool: Array[AudioStreamPlayer] = []
 var sfx_3d_pool: Array[AudioStreamPlayer3D] = []
 var pool_size_2d: int = 16
 var pool_size_3d: int = 24
-var sfx_volume_db: float = 0.0
+var sfx_volume_db: float = 4.0
 
 # Speech / Dialogue Player
 var speech_player: AudioStreamPlayer = null
@@ -37,26 +37,30 @@ func init(p_bridge: Node, p_parent_3d: Node3D) -> void:
 	print("[Godot-D1 Audio] Native Godot 4.7 Audio Engine initialized with 3D Spatial SFX and Crossfade Music!")
 
 func setup_audio_buses() -> void:
-	# Ensure "Music" bus exists
-	if AudioServer.get_bus_index("Music") == -1:
-		var m_idx = AudioServer.bus_count
+	# Ensure "Music" bus exists (Atmospheric dungeon ambient background)
+	var m_idx = AudioServer.get_bus_index("Music")
+	if m_idx == -1:
+		m_idx = AudioServer.bus_count
 		AudioServer.add_bus()
 		AudioServer.set_bus_name(m_idx, "Music")
 		AudioServer.set_bus_send(m_idx, "Master")
+	AudioServer.set_bus_volume_db(m_idx, -8.0)
 		
-	# Ensure "SFX" bus exists with subtle environmental dungeon reverb
-	if AudioServer.get_bus_index("SFX") == -1:
-		var s_idx = AudioServer.bus_count
+	# Ensure "SFX" bus exists with subtle environmental dungeon reverb and punchy presence
+	var s_idx = AudioServer.get_bus_index("SFX")
+	if s_idx == -1:
+		s_idx = AudioServer.bus_count
 		AudioServer.add_bus()
 		AudioServer.set_bus_name(s_idx, "SFX")
 		AudioServer.set_bus_send(s_idx, "Master")
 		
 		var reverb = AudioEffectReverb.new()
-		reverb.room_size = 0.25
+		reverb.room_size = 0.18
 		reverb.damping = 0.5
-		reverb.wet = 0.12
-		reverb.dry = 0.95
+		reverb.wet = 0.03
+		reverb.dry = 1.0
 		AudioServer.add_bus_effect(s_idx, reverb)
+	AudioServer.set_bus_volume_db(s_idx, 4.0)
 
 func setup_music_players() -> void:
 	music_player_a = AudioStreamPlayer.new()
@@ -98,9 +102,9 @@ func setup_sfx_pools() -> void:
 		var p3 = AudioStreamPlayer3D.new()
 		p3.name = "SFX3D_%02d" % i
 		p3.bus = "SFX"
-		p3.unit_size = 8.0
-		p3.max_distance = 45.0
-		p3.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		p3.unit_size = 28.0
+		p3.max_distance = 140.0
+		p3.attenuation_model = AudioStreamPlayer3D.ATTENUATION_LOGARITHMIC
 		p3.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED
 		pool_root_3d.add_child(p3)
 		sfx_3d_pool.append(p3)
@@ -147,7 +151,8 @@ func play_music(raw_path: String) -> void:
 	
 	incoming_player.stream = stream
 	incoming_player.volume_db = -80.0
-	incoming_player.play()
+	if incoming_player.is_inside_tree():
+		incoming_player.play()
 	
 	if music_tween and music_tween.is_valid():
 		music_tween.kill()
@@ -189,11 +194,13 @@ func play_speech(raw_path: String, vol_offset: int = 0) -> void:
 	if speech_player:
 		speech_player.volume_db = sfx_volume_db + clamp(float(vol_offset) / 100.0, -20.0, 6.0)
 		speech_player.stream = stream
-		speech_player.play()
+		if speech_player.is_inside_tree():
+			speech_player.play()
 
 func stop_speech() -> void:
-	if speech_player and speech_player.playing:
-		speech_player.stop()
+	if speech_player:
+		if speech_player.playing:
+			speech_player.stop()
 		speech_player.stream = null
 
 func play_sfx(raw_path: String, tile_x: int, tile_y: int, has_pos: bool, player_tile: Vector2i, vol_offset: int = 0) -> void:
@@ -204,31 +211,45 @@ func play_sfx(raw_path: String, tile_x: int, tile_y: int, has_pos: bool, player_
 	var stream = get_or_load_stream(clean_path, false)
 	if not stream:
 		return
-		
+
+	# Check if native 3D sandbox is active
+	var sandbox = null
+	if parent_3d and "sandbox_instance" in parent_3d:
+		sandbox = parent_3d.sandbox_instance
+	var is_3d_active = (sandbox != null and sandbox.is_sandbox_active)
+
 	if has_pos:
 		# Play via 3D Positional Audio Pool
 		var p3 = get_idle_3d_player()
 		if not p3:
 			return
-			
-		# Map isometric grid offset (sound tile relative to hero tile) to screen 3D coordinates
-		var dx = float(tile_x - player_tile.x)
-		var dy = float(tile_y - player_tile.y)
-		var iso_x = clamp((dx - dy) * 0.45, -14.0, 14.0)
-		var iso_y = clamp(-(dx + dy) * 0.22, -8.0, 8.0)
-		
-		p3.position = Vector3(iso_x, iso_y, 0.0)
-		p3.volume_db = sfx_volume_db + clamp(float(vol_offset) / 100.0, -20.0, 6.0)
+
+		if is_3d_active:
+			# Authentic 3D world coordinates in Sandbox
+			var sound_wpos = sandbox.tile_to_world_3d(float(tile_x), float(tile_y)) + Vector3(0, 1.0, 0)
+			p3.global_position = sound_wpos
+		else:
+			# Isometric spatial pan relative to player (Mode 0 / 2.5D / headless)
+			var dx = float(tile_x - player_tile.x)
+			var dy = float(tile_y - player_tile.y)
+			var iso_x = (dx - dy) * 0.45
+			var iso_y = (dx + dy) * 0.22
+			p3.position = Vector3(iso_x, iso_y, 0.0)
+
+		# Godot 3D spatial attenuation handles falloff naturally; avoid double software distance cut
+		p3.volume_db = sfx_volume_db + 1.0
 		p3.stream = stream
-		p3.play()
+		if p3.is_inside_tree():
+			p3.play()
 	else:
-		# Play via 2D Non-Positional Pool (UI, menus, speech)
+		# Play via 2D Non-Positional Pool (UI, menus, speech, or Mode 0 / Mode 1 fallback)
 		var p2 = get_idle_2d_player()
 		if not p2:
 			return
-		p2.volume_db = sfx_volume_db + clamp(float(vol_offset) / 100.0, -20.0, 6.0)
+		p2.volume_db = sfx_volume_db + clampf(float(vol_offset) / 220.0, -7.0, 3.0)
 		p2.stream = stream
-		p2.play()
+		if p2.is_inside_tree():
+			p2.play()
 
 func get_idle_2d_player() -> AudioStreamPlayer:
 	for p in sfx_2d_pool:

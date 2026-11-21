@@ -80,38 +80,42 @@ func _find_hud() -> Node:
 func _shadow_use(item: Dictionary) -> void:
 	if diablo_bridge == null or item.is_empty():
 		return
-	if _auth().get_authority("inventory_item_use") == _auth().AUTH_CPP:
+	var auth = _auth()
+	if auth == null or auth.get_authority("inventory_item_use") == auth.AUTH_CPP:
 		return
 	var ctx = {"hellfire": diablo_bridge.is_hellfire()}
 	if not item_logic.is_usable(item, ctx):
 		return
-	# The action is only QUEUED here (PushBridgeAction). The engine thread executes it on the
-	# next drain, so we cannot compare yet: store the baseline and verify in _process() once the
-	# drain counter moves.
-	_pending_prediction = {
-		"item": item,
-		"before": _player_state(),
-		"seq_before": diablo_bridge.get_last_action_seq(),
-		"deadline": Time.get_ticks_msec() + 2000,
-	}
-	# AUTH_NATIVE handover: the mirror's prediction is trusted, so the HUD reacts on the click
-	# instead of waiting for the engine thread to drain the queued action. This does not replace the
-	# drain-time comparison in _shadow_verify(), which stays the parity record: if the two disagree,
-	# the sequence has already advanced, the offset is dropped, and the engine value takes over.
-	# The seed here is the push-time seed, not the execution-time seed, so the optimistic number can
-	# be off; that is exactly what the drain check measures.
-	if _auth().get_authority("inventory_item_use") == _auth().AUTH_NATIVE:
+
+	var seq_now = diablo_bridge.get_last_action_seq()
+	var pstate = _player_state()
+
+	# Live parity validation: only record pending prediction when validation is explicitly enabled
+	if auth.is_validation_enabled():
+		_pending_prediction = {
+			"item": item,
+			"before": pstate,
+			"seq_before": seq_now,
+			"deadline": Time.get_ticks_msec() + 2000,
+		}
+
+	# AUTH_NATIVE: optimistic native prediction directly drives HUD with zero lag
+	if auth.get_authority("inventory_item_use") == auth.AUTH_NATIVE:
 		var pred_now = item_logic.predict_use_item(
-			item, _pending_prediction["before"], rng_class.new(diablo_bridge.get_rng_seed()), ctx)
+			item, pstate, rng_class.new(diablo_bridge.get_rng_seed()), ctx)
 		var d_hp := int(pred_now.get("effects", {}).get("hp", 0))
 		var d_mana := int(pred_now.get("effects", {}).get("mana", 0))
 		if d_hp != 0 or d_mana != 0:
 			var target = _find_hud()
 			if target != null and target.has_method("apply_optimistic_item_delta"):
-				target.apply_optimistic_item_delta(d_hp, d_mana, int(_pending_prediction["seq_before"]))
+				target.apply_optimistic_item_delta(d_hp, d_mana, seq_now)
 
 
 func _shadow_verify() -> void:
+	var auth = _auth()
+	if auth != null and not auth.validation_enabled:
+		_pending_prediction = {}
+		return
 	if _pending_prediction.is_empty() or diablo_bridge == null:
 		return
 	var seq_before := int(_pending_prediction.get("seq_before", 0))
@@ -138,13 +142,17 @@ func _shadow_verify() -> void:
 
 
 func _process(_delta: float) -> void:
+	if visible or is_visible_in_tree():
+		check_and_update()
 	# Deferred parity check: runs on the frame AFTER the engine thread drained the queued action.
 	if not _pending_prediction.is_empty():
 		_shadow_verify()
 
 
 func _exit_tree() -> void:
-	print("[PARITY REPORT] ", _auth().report())
+	var auth = _auth()
+	if auth != null and auth.validation_enabled:
+		print("[PARITY REPORT] ", auth.report())
 
 # Equipment slot indices (matching DevilutionX inv_body_loc)
 const EQUIP_HEAD = 0
@@ -196,10 +204,10 @@ const TEX_SLOT_9PATCH = preload("res://assets/hud/gothic_slot_9patch.png")
 const TEX_SOCKET_LOCKED = preload("res://assets/hud/gothic_socket_locked.png")
 
 # Dedicated Item Tooltip
-@onready var tooltip: PanelContainer = $Tooltip
-@onready var tooltip_title: Label = $Tooltip/Margin/VBox/TitleLabel
-@onready var tooltip_divider: ColorRect = $Tooltip/Margin/VBox/Divider
-@onready var tooltip_stats: Label = $Tooltip/Margin/VBox/StatsLabel
+@onready var tooltip: PanelContainer = get_node_or_null("Tooltip")
+@onready var tooltip_title: Label = get_node_or_null("Tooltip/Margin/VBox/TitleLabel")
+@onready var tooltip_divider: ColorRect = get_node_or_null("Tooltip/Margin/VBox/Divider")
+@onready var tooltip_stats: Label = get_node_or_null("Tooltip/Margin/VBox/StatsLabel")
 
 # Belt nodes (8 active sockets with 2 decorative disabled sockets on outer ends)
 @onready var belt_cells: HBoxContainer = find_child("BeltCells", true, false)
@@ -288,90 +296,7 @@ func _init_equipment_slots():
 			)
 
 func _init_belt_cells():
-	if not belt_cells:
-		return
-	for child in belt_cells.get_children():
-		child.queue_free()
-	belt_slot_nodes.clear()
-
-	for col in range(10):
-		var cell = Control.new()
-		cell.custom_minimum_size = Vector2(CELL_SIZE, CELL_SIZE)
-		cell.size = Vector2(CELL_SIZE, CELL_SIZE)
-
-		if col == 0 or col == 9:
-			# Inactive / locked decorative sockets on outer edges
-			cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			var lock_tex = TextureRect.new()
-			lock_tex.set_anchors_preset(Control.PRESET_FULL_RECT)
-			lock_tex.texture = TEX_SOCKET_LOCKED
-			lock_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			lock_tex.stretch_mode = TextureRect.STRETCH_SCALE
-			lock_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			cell.add_child(lock_tex)
-		else:
-			# Active Belt slot 0..7
-			var belt_idx = col - 1
-			cell.mouse_filter = Control.MOUSE_FILTER_STOP
-			var frame_tex = TextureRect.new()
-			frame_tex.set_anchors_preset(Control.PRESET_FULL_RECT)
-			frame_tex.texture = TEX_SLOT_FRAME
-			frame_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			frame_tex.stretch_mode = TextureRect.STRETCH_SCALE
-			frame_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			cell.add_child(frame_tex)
-
-			# Slot number indicator badge (1..8)
-			var num_lbl = Label.new()
-			num_lbl.text = str(belt_idx + 1)
-			num_lbl.position = Vector2(4, 2)
-			num_lbl.add_theme_font_override("font", FONT_EXOCET)
-			num_lbl.add_theme_font_size_override("font_size", 10)
-			num_lbl.add_theme_color_override("font_color", Color(1.0, 0.88, 0.45, 1.0))
-			num_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1.0))
-			num_lbl.add_theme_constant_override("shadow_outline_size", 3)
-			num_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			cell.add_child(num_lbl)
-
-			# Item Icon TextureRect
-			var icon_rect = TextureRect.new()
-			icon_rect.name = "ItemIcon"
-			icon_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
-			icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			icon_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			icon_rect.visible = false
-			cell.add_child(icon_rect)
-
-			# Count Label
-			var count_lbl = Label.new()
-			count_lbl.name = "CountLabel"
-			count_lbl.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-			count_lbl.offset_left = -18.0
-			count_lbl.offset_top = -16.0
-			count_lbl.add_theme_font_override("font", FONT_EXOCET)
-			count_lbl.add_theme_font_size_override("font_size", 10)
-			count_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 1))
-			count_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1))
-			count_lbl.add_theme_constant_override("shadow_outline_size", 2)
-			count_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			count_lbl.visible = false
-			cell.add_child(count_lbl)
-
-			# Event handling
-			cell.gui_input.connect(func(event: InputEvent):
-				_on_belt_slot_gui_input(belt_idx, event)
-			)
-			cell.mouse_entered.connect(func():
-				_on_belt_slot_mouse_entered(belt_idx, cell.global_position)
-			)
-			cell.mouse_exited.connect(func():
-				_on_item_mouse_exited()
-			)
-
-			belt_slot_nodes.append(cell)
-
-		belt_cells.add_child(cell)
+	pass
 
 func _init_backpack_cells():
 	if not grid_cells:
@@ -428,47 +353,7 @@ func update_inventory():
 	_update_backpack()
 
 func _update_belt():
-	if not diablo_bridge or not diablo_bridge.has_method("get_belt_items"):
-		return
-	var belt = diablo_bridge.get_belt_items()
-	for i in range(min(belt_slot_nodes.size(), belt.size())):
-		var slot_node = belt_slot_nodes[i]
-		var item = belt[i]
-		var type = item.get("type", 0)
-		var count = item.get("count", 0)
-		var item_name = item.get("name", "")
-
-		var icon = slot_node.get_node_or_null("ItemIcon") as TextureRect
-		var count_lbl = slot_node.get_node_or_null("CountLabel") as Label
-
-		if type != 0 and item_name != "":
-			slot_node.set_meta("belt_item", item)
-			var slot_tex: Texture2D = null
-			if diablo_bridge.has_method("get_belt_item_texture"):
-				slot_tex = diablo_bridge.get_belt_item_texture(i)
-			if not slot_tex:
-				match type:
-					1, 2: slot_tex = TEX_HEAL
-					3, 4: slot_tex = TEX_MANA
-					5, 6, 7: slot_tex = TEX_REJUV
-					8: slot_tex = TEX_SCROLL
-					9: slot_tex = TEX_OIL
-			if icon:
-				icon.texture = slot_tex
-				icon.visible = (slot_tex != null)
-			if count_lbl:
-				if count > 1:
-					count_lbl.text = "x%d" % count
-					count_lbl.visible = true
-				else:
-					count_lbl.visible = false
-		else:
-			slot_node.remove_meta("belt_item")
-			if icon:
-				icon.texture = null
-				icon.visible = false
-			if count_lbl:
-				count_lbl.visible = false
+	pass
 
 func _update_equipment():
 	if not diablo_bridge or not diablo_bridge.has_method("get_player_equipment"):
@@ -529,6 +414,8 @@ func _update_backpack():
 	if not diablo_bridge or not diablo_bridge.has_method("get_player_backpack"):
 		return
 	if not items_overlay:
+		items_overlay = find_child("ItemsOverlay", true, false)
+	if not items_overlay:
 		return
 
 	# Clear previous overlay item controls
@@ -544,7 +431,7 @@ func _update_backpack():
 		var curs_id = it.get("curs_id", 0)
 		var quality = it.get("quality", 0)
 		var can_use = it.get("can_use", true)
-		var cell_idx = it.get("slot_id", cell_y * 10 + cell_x)
+		var top_left_cell = cell_y * 10 + cell_x
 		var inv_list_idx = it.get("inv_list_index", -1)
 
 		var pos_x = float(cell_x) * CELL_STEP
@@ -601,7 +488,10 @@ func _update_backpack():
 
 		# Input handling
 		item_ctrl.gui_input.connect(func(event: InputEvent):
-			_on_backpack_item_gui_input(cell_idx, inv_list_idx, event)
+			var sub_x = int(clamp(event.position.x / CELL_STEP, 0, cell_w - 1))
+			var sub_y = int(clamp(event.position.y / CELL_STEP, 0, cell_h - 1))
+			var clicked_cell = (cell_y + sub_y) * 10 + (cell_x + sub_x)
+			_on_backpack_item_gui_input(clicked_cell, inv_list_idx, event)
 		)
 		item_ctrl.mouse_entered.connect(func():
 			_show_item_tooltip(it, item_ctrl.global_position)
@@ -624,15 +514,16 @@ func _set_slot_border_color(panel: Panel, col: Color):
 		panel.modulate = Color(0.85, 0.82, 0.78, 0.75)
 
 func _gui_input(event: InputEvent):
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
-		if diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
-			var cid = diablo_bridge.get_cursor_id()
-			if cid > 1 and cid < 12:
-				if diablo_bridge.has_method("cancel_targeting_cursor"):
-					diablo_bridge.cancel_targeting_cursor()
-				update_inventory()
-				_on_item_mouse_exited()
-				accept_event()
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_RIGHT:
+			if diablo_bridge and diablo_bridge.has_method("get_cursor_id"):
+				var cid = diablo_bridge.get_cursor_id()
+				if cid > 1 and cid < 12:
+					if diablo_bridge.has_method("cancel_targeting_cursor"):
+						diablo_bridge.cancel_targeting_cursor()
+					update_inventory()
+					_on_item_mouse_exited()
+					accept_event()
 
 func _on_equip_slot_gui_input(slot_idx: int, event: InputEvent):
 	if not (event is InputEventMouseButton) or not event.pressed:
@@ -801,14 +692,18 @@ func _show_item_tooltip(item: Dictionary, global_pos: Vector2):
 	tooltip.visible = true
 	tooltip.reset_size()
 
-	# Position tooltip to the left of the inventory panel
+	# Position tooltip directly above hovered slot, clamped to screen
 	var tt_w = tooltip.size.x
 	var tt_h = tooltip.size.y
-	var panel_global_x = global_position.x
-	var target_x = panel_global_x - tt_w - 12.0
-	var target_y = clampf(global_pos.y - tt_h * 0.3, 20.0, get_viewport_rect().size.y - tt_h - 20.0)
-	if target_x < 10.0:
-		target_x = 10.0
+	var target_x = global_pos.x + 20.0 - tt_w * 0.5
+	var target_y = global_pos.y - tt_h - 10.0
+	var vp_size = get_viewport_rect().size
+	if target_y < 15.0:
+		target_y = global_pos.y + 45.0
+	if target_x + tt_w > vp_size.x - 12.0:
+		target_x = vp_size.x - tt_w - 12.0
+	if target_x < 12.0:
+		target_x = 12.0
 	tooltip.global_position = Vector2(target_x, target_y)
 
 func _on_item_mouse_exited():

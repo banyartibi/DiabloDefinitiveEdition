@@ -67,11 +67,11 @@ void fragment() {
 	float d_diamond = (abs(v_world_pos.x - tile_center.x) / 32.0) + (abs(v_world_pos.y - tile_center.y) / 16.0);
 
 	// Discard rules:
-	// - Floor pieces (both town & dungeon): allow slight subpixel overlap (d_diamond <= 1.045)
+	// - Floor pieces (both town & dungeon): allow slight subpixel overlap (d_diamond <= 1.06)
 	//   and only discard quad corners if tex.a is low, eliminating black grid lines between tiles.
 	// - Tall wall / scenery / tree pieces: preserve natural alpha cutouts (tex.a < 0.15)
 	if (is_floor_piece) {
-		if (d_diamond > 1.045 && tex.a < 0.50) {
+		if (d_diamond > 1.06 && tex.a < 0.25) {
 			discard;
 		}
 		if (tex.a < 0.15) {
@@ -87,8 +87,8 @@ void fragment() {
 	vec3 base_rgb = tex.rgb;
 
 	// For floor rows: use per-pixel world_pos for seamless continuous lightmap interpolation.
-	// For upper walls: anchor lighting to the base tile center (v_foot_pos - (0, 16)).
-	vec2 sample_pos = in_floor_row ? v_world_pos : (v_foot_pos - vec2(0.0, 16.0));
+	// For upper walls: anchor lighting vertically to base tile center while maintaining continuous horizontal interpolation:
+	vec2 sample_pos = in_floor_row ? v_world_pos : vec2(v_world_pos.x, v_foot_pos.y - 16.0);
 
 	// Convert isometric world coordinates (wx, wy) -> tile grid coordinates (tx, ty):
 	vec2 tile_coord = vec2(sample_pos.x / 64.0 + sample_pos.y / 32.0, sample_pos.y / 32.0 - sample_pos.x / 64.0);
@@ -203,12 +203,17 @@ void fragment() {
 		bool is_hell_lava = (base_rgb.r > 0.28 && base_rgb.r > base_rgb.g * 1.15 && base_rgb.r > base_rgb.b * 1.45 && base_rgb.b < 0.38);
 		bool is_lava = is_lava_level && (is_caves_lava || is_hell_lava);
 		if (is_lava) {
-			// Continuous fluid convective UV churning (samples flowing liquid motion)
-			vec2 flow_a = vec2(sin(v_world_pos.y * 0.045 + TIME * 1.6), cos(v_world_pos.x * 0.045 + TIME * 1.2)) * 0.035;
-			vec2 flow_b = vec2(cos(v_world_pos.y * 0.035 - TIME * 1.1), sin(v_world_pos.x * 0.035 + TIME * 1.5)) * 0.035;
+			// Continuous fluid convective UV churning safe from boundary clipping
+			float d_edge_dist = 0.5 - (abs(final_uv.x - 0.5) + abs(final_uv.y - 0.5));
+			float flow_safe = clamp(d_edge_dist * 8.0, 0.0, 1.0);
+			vec2 flow_a = vec2(sin(v_world_pos.y * 0.045 + TIME * 1.6), cos(v_world_pos.x * 0.045 + TIME * 1.2)) * (0.025 * flow_safe);
+			vec2 flow_b = vec2(cos(v_world_pos.y * 0.035 - TIME * 1.1), sin(v_world_pos.x * 0.035 + TIME * 1.5)) * (0.025 * flow_safe);
 			vec4 tex_flow_a = texture(TEXTURE, clamp(final_uv + flow_a, vec2(0.01), vec2(0.99)));
 			vec4 tex_flow_b = texture(TEXTURE, clamp(final_uv + flow_b, vec2(0.01), vec2(0.99)));
 			vec3 flowing_rgb = mix(tex_flow_a.rgb, tex_flow_b.rgb, 0.5 + 0.5 * sin(TIME * 2.0));
+			if (tex_flow_a.a < 0.2 || tex_flow_b.a < 0.2) {
+				flowing_rgb = tex.rgb;
+			}
 
 			// Multi-octave convective thermal currents (world-space, 100% gapless across tiles)
 			float flow1 = sin(dot(v_world_pos, vec2(0.045, 0.025)) - TIME * 2.4);
@@ -252,8 +257,9 @@ void fragment() {
 				vec2 liquid_norm = vec2(lw1 * 0.045 - lw2 * 0.035, lw1 * 0.025 + lw2 * 0.040) * 8.0 * mult;
 				NORMAL = normalize(vec3(NORMAL.xy + liquid_norm, 1.0));
 			} else if (length(NORMAL.xy) > 0.001) {
-				// Scale pre-baked normal map from CanvasTexture
-				NORMAL = normalize(vec3(NORMAL.xy * mult * bump_scale, NORMAL.z));
+				// Scale pre-baked normal map from CanvasTexture feathered at quad edges to prevent seam striping
+				float edge_feather = smoothstep(0.0, 4.0 * TEXTURE_PIXEL_SIZE.x, final_uv.x) * smoothstep(1.0, 1.0 - 4.0 * TEXTURE_PIXEL_SIZE.x, final_uv.x);
+				NORMAL = normalize(vec3(NORMAL.xy * mult * bump_scale * edge_feather, NORMAL.z));
 			} else {
 				// Real-time procedural Sobel normal for levels without pre-baked PBR
 				vec2 texel = TEXTURE_PIXEL_SIZE;
@@ -283,7 +289,9 @@ void fragment() {
 				float gy = (l_bl + 2.0 * l_bc + l_br) - (l_tl + 2.0 * l_tc + l_tr);
 
 				float strength = 1.2 * mult * bump_scale;
-				NORMAL = normalize(vec3(-gx * strength, -gy * strength, 1.0));
+				// Feather normal to neutral (+Z) at quad edges to prevent seam striping between wall segments
+				float edge_feather = smoothstep(0.0, 4.0 * texel.x, final_uv.x) * smoothstep(1.0, 1.0 - 4.0 * texel.x, final_uv.x);
+				NORMAL = normalize(vec3(-gx * strength * edge_feather, -gy * strength * edge_feather, 1.0));
 			}
 		} else {
 			NORMAL = vec3(0.0, 0.0, 1.0);

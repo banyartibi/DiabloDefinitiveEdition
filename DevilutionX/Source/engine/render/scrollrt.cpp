@@ -1877,11 +1877,13 @@ void CalcViewportGeometry()
 	tileOffset = { startPosition.x - TILE_WIDTH / 2, startPosition.y + TILE_HEIGHT / 2 - 1 };
 
 	// Compute the number of rows to be rendered as well as
-	// the number of columns to be rendered in the first row
+	// the number of columns to be rendered in the first row.
+	// Add ~30% overscan margin (+4 rows, +5 columns) so tall walls, archways, and diagonal
+	// structures outside viewport borders are fully evaluated and rendered without vertical seams or movement pop-in.
 	const int viewportHeight = (GetViewportHeight() * multiplier) / divisor;
 	const Point renderStart = startPosition - Displacement { TILE_WIDTH / 2, TILE_HEIGHT / 2 };
-	tileRows = (viewportHeight - renderStart.y + TILE_HEIGHT / 2 - 1) / (TILE_HEIGHT / 2);
-	tileColums = (screenWidth - renderStart.x + TILE_WIDTH - 1) / TILE_WIDTH;
+	tileRows = (viewportHeight - renderStart.y + TILE_HEIGHT / 2 - 1) / (TILE_HEIGHT / 2) + 4;
+	tileColums = (screenWidth - renderStart.x + TILE_WIDTH - 1) / TILE_WIDTH + 5;
 }
 
 extern SDL_Surface *PalSurface;

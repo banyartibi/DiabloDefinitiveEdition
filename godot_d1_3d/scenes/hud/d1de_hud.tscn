@@ -1,215 +1,129 @@
-[gd_scene load_steps=20 format=3 uid="uid://d4hudscene001"]
+[gd_scene load_steps=19 format=3 uid="uid://d4hudscene001"]
 
 [ext_resource type="Script" path="res://scenes/hud/d1de_hud.gd" id="1_hud"]
 [ext_resource type="Shader" path="res://shaders/liquid_globe.gdshader" id="2_liquid"]
-[ext_resource type="Texture2D" path="res://assets/hud/frame_gargoyle.png" id="4_gargoyle"]
-[ext_resource type="Texture2D" path="res://assets/hud/frame_angel.png" id="5_angel"]
-[ext_resource type="Texture2D" path="res://assets/hud/slot_frame.png" id="6_slot_frame"]
-[ext_resource type="Texture2D" path="res://assets/hud/skill_frame.png" id="7_skill_frame"]
-[ext_resource type="Texture2D" path="res://assets/hud/portal_icon.png" id="9_portal_icon"]
-[ext_resource type="Texture2D" path="res://assets/hud/gothic_bar_frame.png" id="10_gothic_bar_frame"]
-[ext_resource type="Texture2D" path="res://assets/hud/gothic_void_bg.png" id="11_gothic_void_bg"]
+[ext_resource type="FontFile" path="res://assets/fonts/Exocet.ttf" id="3_exocet"]
+[ext_resource type="Texture2D" path="res://assets/hud/slot_frame.png" id="4_slot_frame"]
+[ext_resource type="Texture2D" path="res://assets/hud/portal_icon.png" id="6_portal_icon"]
+[ext_resource type="Texture2D" path="res://assets/hud/gothic_stone_tile.png" id="7_stone_tile"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_life"]
 shader = ExtResource("2_liquid")
 shader_parameter/fill_amount = 1.0
-shader_parameter/liquid_color_primary = Color(0.88, 0.04, 0.08, 1)
-shader_parameter/liquid_color_deep = Color(0.22, 0.01, 0.02, 1)
-shader_parameter/liquid_color_surface = Color(1, 0.35, 0.35, 1)
-shader_parameter/glow_color = Color(2.2, 0.15, 0.15, 1)
+shader_parameter/liquid_color_primary = Color(0.92, 0.04, 0.08, 1)
+shader_parameter/liquid_color_deep = Color(0.24, 0.01, 0.02, 1)
+shader_parameter/liquid_color_surface = Color(1, 0.38, 0.38, 1)
+shader_parameter/glow_color = Color(2.4, 0.18, 0.18, 1)
 shader_parameter/slosh_speed = 2.8
 shader_parameter/slosh_amplitude = 0.035
 shader_parameter/bubble_intensity = 1.5
 shader_parameter/glass_rim_opacity = 0.65
-shader_parameter/specular_intensity = 1.0
+shader_parameter/specular_intensity = 1.2
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_mana"]
 shader = ExtResource("2_liquid")
 shader_parameter/fill_amount = 1.0
-shader_parameter/liquid_color_primary = Color(0.06, 0.4, 0.95, 1)
-shader_parameter/liquid_color_deep = Color(0.01, 0.06, 0.25, 1)
-shader_parameter/liquid_color_surface = Color(0.35, 0.75, 1, 1)
-shader_parameter/glow_color = Color(0.2, 0.8, 2.4, 1)
+shader_parameter/liquid_color_primary = Color(0.08, 0.42, 0.98, 1)
+shader_parameter/liquid_color_deep = Color(0.01, 0.06, 0.28, 1)
+shader_parameter/liquid_color_surface = Color(0.38, 0.78, 1, 1)
+shader_parameter/glow_color = Color(0.25, 0.85, 2.5, 1)
 shader_parameter/slosh_speed = 2.8
 shader_parameter/slosh_amplitude = 0.035
 shader_parameter/bubble_intensity = 1.5
 shader_parameter/glass_rim_opacity = 0.65
-shader_parameter/specular_intensity = 1.0
+shader_parameter/specular_intensity = 1.2
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_normal"]
-bg_color = Color(0.12, 0.11, 0.13, 0.95)
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_levelup_btn"]
+bg_color = Color(0.12, 0.1, 0.04, 0.92)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.48, 0.4, 0.28, 1)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_hover"]
-bg_color = Color(0.2, 0.18, 0.22, 0.96)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.85, 0.72, 0.4, 1)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_pressed"]
-bg_color = Color(0.06, 0.05, 0.07, 0.98)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(1, 0.88, 0.5, 1)
+border_color = Color(0.85, 0.72, 0.25, 1)
 corner_radius_top_left = 3
 corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_bg"]
-bg_color = Color(0.05, 0.05, 0.06, 0.92)
+bg_color = Color(0.04, 0.03, 0.05, 0.98)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.3, 0.26, 0.2, 0.8)
+border_color = Color(0.25, 0.18, 0.32, 1)
 corner_radius_top_left = 2
 corner_radius_top_right = 2
 corner_radius_bottom_right = 2
 corner_radius_bottom_left = 2
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_fill"]
-bg_color = Color(0.95, 0.65, 0.12, 1)
+bg_color = Color(0.55, 0.2, 0.92, 1)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(1, 0.85, 0.3, 1)
+border_color = Color(0.75, 0.5, 1, 1)
 corner_radius_top_left = 2
 corner_radius_top_right = 2
 corner_radius_bottom_right = 2
 corner_radius_bottom_left = 2
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tooltip"]
-bg_color = Color(0.04, 0.03, 0.05, 0.96)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.85, 0.72, 0.35, 1)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-shadow_color = Color(0, 0, 0, 0.8)
-shadow_size = 10
-
-[sub_resource type="StyleBoxEmpty" id="StyleBoxFlat_skill_panel"]
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_levelup_btn"]
-bg_color = Color(0.18, 0.12, 0.02, 0.96)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(1, 0.85, 0.25, 1)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
-shadow_color = Color(0, 0, 0, 0.85)
-shadow_size = 10
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_active_skill"]
-draw_center = false
+bg_color = Color(0, 0, 0, 0)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-border_color = Color(1, 0.86, 0.25, 1)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-shadow_color = Color(1, 0.8, 0.2, 0.65)
-shadow_size = 6
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_level_crest"]
-bg_color = Color(0.12, 0.09, 0.04, 0.95)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.85, 0.7, 0.25, 0.9)
+border_color = Color(1, 0.88, 0.35, 1)
 corner_radius_top_left = 3
 corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_bg"]
-bg_color = Color(0.04, 0.03, 0.03, 0.95)
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tooltip_bg"]
+bg_color = Color(0.08, 0.07, 0.09, 0.96)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.25, 0.2, 0.16, 0.8)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
+border_color = Color(0.45, 0.4, 0.32, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_ghost"]
-bg_color = Color(0.85, 0.45, 0.12, 0.95)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_fill"]
-bg_color = Color(0.82, 0.1, 0.12, 1)
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_bg"]
+bg_color = Color(0.08, 0.05, 0.05, 0.92)
+border_width_left = 1
 border_width_top = 1
-border_color = Color(1, 0.35, 0.35, 0.6)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.25, 0.2, 1)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_hp_frame"]
-draw_center = false
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.55, 0.46, 0.32, 1)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
-shadow_color = Color(0, 0, 0, 0.85)
-shadow_size = 6
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_enemy_fill"]
+bg_color = Color(0.8, 0.1, 0.1, 1)
 
-[node name="Diablo4HUD" type="CanvasLayer"]
-layer = 100
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ghost_fill"]
+bg_color = Color(0.9, 0.6, 0.1, 0.6)
+
+[node name="D1DE_HUD" type="CanvasLayer"]
+layer = 10
 script = ExtResource("1_hud")
 
 [node name="Root" type="Control" parent="."]
 visible = false
+clip_contents = false
 layout_mode = 3
 anchors_preset = 7
 anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -510.0
-offset_top = -156.0
-offset_right = 510.0
-offset_bottom = -4.0
+offset_left = -512.0
+offset_top = -215.0
+offset_right = 512.0
+offset_bottom = 0.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -230,32 +144,13 @@ mouse_filter = 1
 theme_override_colors/font_color = Color(1, 0.9, 0.3, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.95)
 theme_override_constants/shadow_outline_size = 4
+theme_override_fonts/font = ExtResource("3_exocet")
 theme_override_font_sizes/font_size = 13
 theme_override_styles/normal = SubResource("StyleBoxFlat_levelup_btn")
-theme_override_styles/hover = SubResource("StyleBoxFlat_levelup_btn")
-theme_override_styles/pressed = SubResource("StyleBoxFlat_levelup_btn")
 text = "★ LEVEL UP! (5 Points) ★"
 
-[node name="HBox" type="HBoxContainer" parent="Root"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/separation = 4
-alignment = 1
-mouse_filter = 2
-
-[node name="TownPortalSlot" type="Control" parent="Root/HBox"]
-custom_minimum_size = Vector2(64, 64)
-layout_mode = 2
-size_flags_vertical = 4
-tooltip_text = "Town Portal [T]
-[LMB] Cast Town Portal spell or scroll"
-mouse_filter = 0
-
-[node name="Frame" type="TextureRect" parent="Root/HBox/TownPortalSlot"]
+[node name="ConsoleHBox" type="Control" parent="Root"]
+clip_contents = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -263,932 +158,408 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-texture = ExtResource("6_slot_frame")
+
+[node name="LifeGlobe" type="ColorRect" parent="Root/ConsoleHBox"]
+material = SubResource("ShaderMaterial_life")
+layout_mode = 0
+offset_left = 55.0
+offset_top = 75.0
+offset_right = 155.0
+offset_bottom = 175.0
+mouse_filter = 2
+
+[node name="ManaGlobe" type="ColorRect" parent="Root/ConsoleHBox"]
+material = SubResource("ShaderMaterial_mana")
+layout_mode = 0
+offset_left = 865.0
+offset_top = 75.0
+offset_right = 965.0
+offset_bottom = 175.0
+mouse_filter = 2
+
+[node name="XpBar" type="ProgressBar" parent="Root/ConsoleHBox"]
+layout_mode = 0
+offset_left = 374.0
+offset_top = 159.0
+offset_right = 650.0
+offset_bottom = 175.0
+mouse_filter = 1
+theme_override_styles/background = SubResource("StyleBoxFlat_xp_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_xp_fill")
+max_value = 100.0
+value = 45.0
+show_percentage = false
+
+[node name="CenterGothicFrame" type="TextureRect" parent="Root/ConsoleHBox"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("7_stone_tile")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="ItemIcon" type="TextureRect" parent="Root/HBox/TownPortalSlot"]
+[node name="LifeContainer" type="Control" parent="Root/ConsoleHBox"]
+clip_contents = false
+layout_mode = 0
+offset_left = 10.0
+offset_top = 20.0
+offset_right = 190.0
+offset_bottom = 210.0
+mouse_filter = 2
+
+[node name="LifeLabel" type="Label" parent="Root/ConsoleHBox/LifeContainer"]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -21.0
-offset_top = -21.0
-offset_right = 21.0
-offset_bottom = 21.0
+offset_left = -70.0
+offset_top = -14.0
+offset_right = 70.0
+offset_bottom = 14.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 2
-texture = ExtResource("9_portal_icon")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="Badge" type="Label" parent="Root/HBox/TownPortalSlot"]
-layout_mode = 0
-offset_left = 4.0
-offset_top = 2.0
-offset_right = 24.0
-offset_bottom = 20.0
-theme_override_colors/font_color = Color(0.4, 0.85, 1, 1)
+theme_override_colors/font_color = Color(0.98, 0.95, 0.90, 0.95)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 3
-theme_override_font_sizes/font_size = 11
-text = "T"
-
-[node name="CountLabel" type="Label" parent="Root/HBox/TownPortalSlot"]
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -26.0
-offset_top = -18.0
-grow_horizontal = 0
-grow_vertical = 0
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 10
-text = "0"
-horizontal_alignment = 2
-
-[node name="LifeContainer" type="Control" parent="Root/HBox"]
-custom_minimum_size = Vector2(130, 130)
-layout_mode = 2
-mouse_filter = 1
-
-[node name="LifeGlobe" type="ColorRect" parent="Root/HBox/LifeContainer"]
-material = SubResource("ShaderMaterial_life")
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -43.0
-offset_top = -43.0
-offset_right = 43.0
-offset_bottom = 43.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="LifeFrame" type="TextureRect" parent="Root/HBox/LifeContainer"]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -66.0
-offset_top = -65.0
-offset_right = 66.0
-offset_bottom = 65.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-texture = ExtResource("4_gargoyle")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="LifeLabel" type="Label" parent="Root/HBox/LifeContainer"]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -50.0
-offset_top = -11.0
-offset_right = 50.0
-offset_bottom = 11.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.95)
-theme_override_constants/shadow_outline_size = 4
-theme_override_font_sizes/font_size = 14
-text = "100 / 100"
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 13
+text = "HP 100 / 100"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="LifeTooltipArea" type="Control" parent="Root/HBox/LifeContainer"]
+[node name="LifeFrame" type="TextureRect" parent="Root/ConsoleHBox/LifeContainer"]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-tooltip_text = "Life: 100 / 100"
-
-[node name="HealthPotionSlot" type="Control" parent="Root/HBox"]
-custom_minimum_size = Vector2(64, 64)
-layout_mode = 2
-size_flags_vertical = 4
-tooltip_text = "Health Potion [Q]
-[LMB] Drink best healing potion or scroll"
-mouse_filter = 0
-
-[node name="Frame" type="TextureRect" parent="Root/HBox/HealthPotionSlot"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
-texture = ExtResource("6_slot_frame")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="ItemIcon" type="TextureRect" parent="Root/HBox/HealthPotionSlot"]
+[node name="LifeTooltipArea" type="Control" parent="Root/ConsoleHBox/LifeContainer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 0
+tooltip_text = "Life: 100 / 100"
+
+[node name="ManaContainer" type="Control" parent="Root/ConsoleHBox"]
+clip_contents = false
+layout_mode = 0
+offset_left = 834.0
+offset_top = 20.0
+offset_right = 1014.0
+offset_bottom = 210.0
+mouse_filter = 2
+
+[node name="ManaLabel" type="Label" parent="Root/ConsoleHBox/ManaContainer"]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -21.0
-offset_top = -21.0
-offset_right = 21.0
-offset_bottom = 21.0
+offset_left = -70.0
+offset_top = -14.0
+offset_right = 70.0
+offset_bottom = 14.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_colors/font_color = Color(0.98, 0.95, 0.90, 0.95)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 3
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 13
+text = "MANA 100 / 100"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ManaFrame" type="TextureRect" parent="Root/ConsoleHBox/ManaContainer"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Badge" type="Label" parent="Root/HBox/HealthPotionSlot"]
+[node name="ManaTooltipArea" type="Control" parent="Root/ConsoleHBox/ManaContainer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 0
+tooltip_text = "Mana: 100 / 100"
+
+[node name="CenterPillar" type="TextureRect" parent="Root/ConsoleHBox"]
+visible = false
 layout_mode = 0
-offset_left = 4.0
-offset_top = 2.0
-offset_right = 24.0
-offset_bottom = 20.0
-theme_override_colors/font_color = Color(1, 0.85, 0.4, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 3
-theme_override_font_sizes/font_size = 11
-text = "Q"
+offset_left = 500.0
+offset_top = 150.0
+offset_right = 524.0
+offset_bottom = 190.0
+mouse_filter = 2
 
-[node name="CountLabel" type="Label" parent="Root/HBox/HealthPotionSlot"]
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -26.0
-offset_top = -18.0
-grow_horizontal = 0
-grow_vertical = 0
-theme_override_colors/font_color = Color(1, 1, 1, 1)
+[node name="LevelLabel" type="Label" parent="Root/ConsoleHBox"]
+layout_mode = 0
+offset_left = 462.0
+offset_top = 186.0
+offset_right = 562.0
+offset_bottom = 208.0
+theme_override_colors/font_color = Color(1, 0.88, 0.4, 0.95)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 10
-text = "0"
-horizontal_alignment = 2
-
-[node name="CenterPanel" type="Control" parent="Root/HBox"]
-custom_minimum_size = Vector2(430, 152)
-layout_mode = 2
-size_flags_vertical = 4
-mouse_filter = 2
-
-[node name="CenterGothicFrame" type="Control" parent="Root/HBox/CenterPanel"]
-clip_contents = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="VoidBackground" type="TextureRect" parent="Root/HBox/CenterPanel/CenterGothicFrame"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 14.0
-offset_top = 14.0
-offset_right = -14.0
-offset_bottom = -14.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-texture = ExtResource("11_gothic_void_bg")
-expand_mode = 1
-stretch_mode = 1
-
-[node name="FrameNinePatch" type="NinePatchRect" parent="Root/HBox/CenterPanel/CenterGothicFrame"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-texture = ExtResource("10_gothic_bar_frame")
-patch_margin_left = 22
-patch_margin_top = 22
-patch_margin_right = 22
-patch_margin_bottom = 22
-
-[node name="LevelCrest" type="PanelContainer" parent="Root/HBox/CenterPanel"]
-custom_minimum_size = Vector2(46, 16)
-layout_mode = 1
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -26.0
-offset_top = 3.0
-offset_right = 26.0
-offset_bottom = 19.0
-grow_horizontal = 2
-mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_level_crest")
-
-[node name="LevelLabel" type="Label" parent="Root/HBox/CenterPanel/LevelCrest"]
-layout_mode = 2
-mouse_filter = 2
-theme_override_colors/font_color = Color(1, 0.88, 0.45, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.95)
-theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 9
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 12
 text = "Lv 1"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="VBox" type="VBoxContainer" parent="Root/HBox/CenterPanel"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 20.0
-offset_top = 31.0
-offset_right = -20.0
-offset_bottom = -29.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/separation = 12
+[node name="LeftGrid" type="Control" parent="Root/ConsoleHBox"]
+layout_mode = 0
+offset_left = 165.0
+offset_top = 56.0
+offset_right = 349.0
+offset_bottom = 182.0
+mouse_filter = 2
+
+[node name="SkillsRow" type="HBoxContainer" parent="Root/ConsoleHBox/LeftGrid"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 184.0
+offset_bottom = 58.0
+theme_override_constants/separation = 4
 alignment = 1
-mouse_filter = 2
 
-[node name="ActionBar" type="HBoxContainer" parent="Root/HBox/CenterPanel/VBox"]
-layout_mode = 2
-theme_override_constants/separation = 10
+[node name="PotionsRow" type="HBoxContainer" parent="Root/ConsoleHBox/LeftGrid"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 68.0
+offset_right = 184.0
+offset_bottom = 124.0
+theme_override_constants/separation = 4
 alignment = 1
-mouse_filter = 2
 
-[node name="SkillSlot1" type="Control" parent="Root/HBox/CenterPanel/VBox/ActionBar"]
-custom_minimum_size = Vector2(72, 72)
-layout_mode = 2
-tooltip_text = "Quick Spell 1 [1]"
-mouse_filter = 0
-
-[node name="Frame" type="TextureRect" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot1"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-texture = ExtResource("6_slot_frame")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="Icon" type="TextureRect" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot1"]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -24.0
-offset_top = -24.0
-offset_right = 24.0
-offset_bottom = 24.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="ActiveBorder" type="Panel" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot1"]
-visible = false
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -2.0
-offset_top = -2.0
-offset_right = 2.0
-offset_bottom = 2.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_active_skill")
-
-[node name="Badge" type="Label" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot1"]
+[node name="RightGrid" type="Control" parent="Root/ConsoleHBox"]
 layout_mode = 0
-offset_left = 4.0
-offset_top = 2.0
-offset_right = 24.0
-offset_bottom = 19.0
-theme_override_colors/font_color = Color(1, 0.88, 0.45, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 3
-theme_override_font_sizes/font_size = 11
-text = "1"
-
-[node name="RmbBadge" type="Label" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot1"]
-visible = false
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -30.0
-offset_top = 2.0
-offset_right = -3.0
-offset_bottom = 17.0
-grow_horizontal = 0
-theme_override_colors/font_color = Color(1, 0.9, 0.3, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 9
-text = "RMB"
-horizontal_alignment = 2
-
-[node name="ManaBadge" type="Label" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot1"]
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -30.0
-offset_top = -18.0
-grow_horizontal = 0
-grow_vertical = 0
-theme_override_colors/font_color = Color(0.4, 0.8, 1, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 10
-horizontal_alignment = 2
-
-[node name="SkillSlot2" type="Control" parent="Root/HBox/CenterPanel/VBox/ActionBar"]
-custom_minimum_size = Vector2(72, 72)
-layout_mode = 2
-tooltip_text = "Quick Spell 2 [2]"
-mouse_filter = 0
-
-[node name="Frame" type="TextureRect" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot2"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+offset_left = 672.0
+offset_top = 56.0
+offset_right = 856.0
+offset_bottom = 182.0
 mouse_filter = 2
-texture = ExtResource("6_slot_frame")
-expand_mode = 1
-stretch_mode = 5
 
-[node name="Icon" type="TextureRect" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot2"]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -24.0
-offset_top = -24.0
-offset_right = 24.0
-offset_bottom = 24.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="ActiveBorder" type="Panel" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot2"]
-visible = false
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -2.0
-offset_top = -2.0
-offset_right = 2.0
-offset_bottom = 2.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_active_skill")
-
-[node name="Badge" type="Label" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot2"]
+[node name="BeltRow1" type="HBoxContainer" parent="Root/ConsoleHBox/RightGrid"]
 layout_mode = 0
-offset_left = 4.0
-offset_top = 2.0
-offset_right = 24.0
-offset_bottom = 19.0
-theme_override_colors/font_color = Color(1, 0.88, 0.45, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 3
-theme_override_font_sizes/font_size = 11
-text = "2"
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 184.0
+offset_bottom = 58.0
+theme_override_constants/separation = 4
+alignment = 1
 
-[node name="RmbBadge" type="Label" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot2"]
-visible = false
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -30.0
-offset_top = 2.0
-offset_right = -3.0
-offset_bottom = 17.0
-grow_horizontal = 0
-theme_override_colors/font_color = Color(1, 0.9, 0.3, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 9
-text = "RMB"
-horizontal_alignment = 2
-
-[node name="ManaBadge" type="Label" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot2"]
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -30.0
-offset_top = -18.0
-grow_horizontal = 0
-grow_vertical = 0
-theme_override_colors/font_color = Color(0.4, 0.8, 1, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 10
-horizontal_alignment = 2
-
-[node name="SkillSlot3" type="Control" parent="Root/HBox/CenterPanel/VBox/ActionBar"]
-custom_minimum_size = Vector2(72, 72)
-layout_mode = 2
-tooltip_text = "Quick Spell 3 [3]"
-mouse_filter = 0
-
-[node name="Frame" type="TextureRect" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot3"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-texture = ExtResource("6_slot_frame")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="Icon" type="TextureRect" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot3"]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -24.0
-offset_top = -24.0
-offset_right = 24.0
-offset_bottom = 24.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="ActiveBorder" type="Panel" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot3"]
-visible = false
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -2.0
-offset_top = -2.0
-offset_right = 2.0
-offset_bottom = 2.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_active_skill")
-
-[node name="Badge" type="Label" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot3"]
+[node name="BeltRow2" type="HBoxContainer" parent="Root/ConsoleHBox/RightGrid"]
 layout_mode = 0
-offset_left = 4.0
-offset_top = 2.0
-offset_right = 24.0
-offset_bottom = 19.0
-theme_override_colors/font_color = Color(1, 0.88, 0.45, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 3
-theme_override_font_sizes/font_size = 11
-text = "3"
-
-[node name="RmbBadge" type="Label" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot3"]
-visible = false
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -30.0
-offset_top = 2.0
-offset_right = -3.0
-offset_bottom = 17.0
-grow_horizontal = 0
-theme_override_colors/font_color = Color(1, 0.9, 0.3, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 9
-text = "RMB"
-horizontal_alignment = 2
-
-[node name="ManaBadge" type="Label" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot3"]
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -30.0
-offset_top = -18.0
-grow_horizontal = 0
-grow_vertical = 0
-theme_override_colors/font_color = Color(0.4, 0.8, 1, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 10
-horizontal_alignment = 2
-
-[node name="SkillSlot4" type="Control" parent="Root/HBox/CenterPanel/VBox/ActionBar"]
-custom_minimum_size = Vector2(72, 72)
-layout_mode = 2
-tooltip_text = "Quick Spell 4 [4]"
-mouse_filter = 0
-
-[node name="Frame" type="TextureRect" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot4"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-texture = ExtResource("6_slot_frame")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="Icon" type="TextureRect" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot4"]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -24.0
-offset_top = -24.0
-offset_right = 24.0
-offset_bottom = 24.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="ActiveBorder" type="Panel" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot4"]
-visible = false
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -2.0
-offset_top = -2.0
-offset_right = 2.0
-offset_bottom = 2.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_active_skill")
-
-[node name="Badge" type="Label" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot4"]
-layout_mode = 0
-offset_left = 4.0
-offset_top = 2.0
-offset_right = 24.0
-offset_bottom = 19.0
-theme_override_colors/font_color = Color(1, 0.88, 0.45, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 3
-theme_override_font_sizes/font_size = 11
-text = "4"
-
-[node name="RmbBadge" type="Label" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot4"]
-visible = false
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -30.0
-offset_top = 2.0
-offset_right = -3.0
-offset_bottom = 17.0
-grow_horizontal = 0
-theme_override_colors/font_color = Color(1, 0.9, 0.3, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 9
-text = "RMB"
-horizontal_alignment = 2
-
-[node name="ManaBadge" type="Label" parent="Root/HBox/CenterPanel/VBox/ActionBar/SkillSlot4"]
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -30.0
-offset_top = -18.0
-grow_horizontal = 0
-grow_vertical = 0
-theme_override_colors/font_color = Color(0.4, 0.8, 1, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 10
-horizontal_alignment = 2
-
-[node name="XPBar" type="ProgressBar" parent="Root/HBox/CenterPanel/VBox"]
-custom_minimum_size = Vector2(318, 6)
-layout_mode = 2
-size_flags_horizontal = 4
-mouse_filter = 2
-theme_override_styles/background = SubResource("StyleBoxFlat_xp_bg")
-theme_override_styles/fill = SubResource("StyleBoxFlat_xp_fill")
-value = 35.0
-show_percentage = false
-
-[node name="ManaPotionSlot" type="Control" parent="Root/HBox"]
-custom_minimum_size = Vector2(64, 64)
-layout_mode = 2
-size_flags_vertical = 4
-tooltip_text = "Mana Potion [W]
-[LMB] Drink best mana potion"
-mouse_filter = 0
-
-[node name="Frame" type="TextureRect" parent="Root/HBox/ManaPotionSlot"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-texture = ExtResource("6_slot_frame")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="ItemIcon" type="TextureRect" parent="Root/HBox/ManaPotionSlot"]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -21.0
-offset_top = -21.0
-offset_right = 21.0
-offset_bottom = 21.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="Badge" type="Label" parent="Root/HBox/ManaPotionSlot"]
-layout_mode = 0
-offset_left = 4.0
-offset_top = 2.0
-offset_right = 22.0
-offset_bottom = 19.0
-theme_override_colors/font_color = Color(0.4, 0.75, 1, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 3
-theme_override_font_sizes/font_size = 11
-text = "W"
-
-[node name="CountLabel" type="Label" parent="Root/HBox/ManaPotionSlot"]
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -26.0
-offset_top = -18.0
-grow_horizontal = 0
-grow_vertical = 0
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 10
-text = "0"
-horizontal_alignment = 2
-
-[node name="ManaContainer" type="Control" parent="Root/HBox"]
-custom_minimum_size = Vector2(130, 130)
-layout_mode = 2
-mouse_filter = 1
-
-[node name="ManaGlobe" type="ColorRect" parent="Root/HBox/ManaContainer"]
-material = SubResource("ShaderMaterial_mana")
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -43.0
-offset_top = -43.0
-offset_right = 43.0
-offset_bottom = 43.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="ManaFrame" type="TextureRect" parent="Root/HBox/ManaContainer"]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -66.0
-offset_top = -66.0
-offset_right = 66.0
-offset_bottom = 66.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-texture = ExtResource("5_angel")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="ManaLabel" type="Label" parent="Root/HBox/ManaContainer"]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -50.0
-offset_top = -11.0
-offset_right = 50.0
-offset_bottom = 11.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.95)
-theme_override_constants/shadow_outline_size = 4
-theme_override_font_sizes/font_size = 14
-text = "50 / 50"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="ManaTooltipArea" type="Control" parent="Root/HBox/ManaContainer"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-tooltip_text = "Mana: 50 / 50"
-
-[node name="RejuvPotionSlot" type="Control" parent="Root/HBox"]
-custom_minimum_size = Vector2(64, 64)
-layout_mode = 2
-size_flags_vertical = 4
-tooltip_text = "Rejuvenation Potion [E]
-[LMB] Drink best rejuvenation potion"
-mouse_filter = 0
-
-[node name="Frame" type="TextureRect" parent="Root/HBox/RejuvPotionSlot"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-texture = ExtResource("6_slot_frame")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="ItemIcon" type="TextureRect" parent="Root/HBox/RejuvPotionSlot"]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -21.0
-offset_top = -21.0
-offset_right = 21.0
-offset_bottom = 21.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="Badge" type="Label" parent="Root/HBox/RejuvPotionSlot"]
-layout_mode = 0
-offset_left = 4.0
-offset_top = 2.0
-offset_right = 22.0
-offset_bottom = 19.0
-theme_override_colors/font_color = Color(0.9, 0.45, 1, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 3
-theme_override_font_sizes/font_size = 11
-text = "E"
-
-[node name="CountLabel" type="Label" parent="Root/HBox/RejuvPotionSlot"]
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -26.0
-offset_top = -18.0
-grow_horizontal = 0
-grow_vertical = 0
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 10
-text = "0"
-horizontal_alignment = 2
+offset_left = 0.0
+offset_top = 68.0
+offset_right = 184.0
+offset_bottom = 124.0
+theme_override_constants/separation = 4
+alignment = 1
 
 [node name="DurabilityContainer" type="HBoxContainer" parent="Root"]
 visible = false
 layout_mode = 1
 anchors_preset = 0
-offset_left = 706.0
-offset_top = 0.0
-offset_right = 856.0
-offset_bottom = 36.0
-mouse_filter = 2
+offset_left = 70.0
+offset_top = -45.0
+offset_right = 238.0
+offset_bottom = -5.0
+grow_vertical = 0
 theme_override_constants/separation = 6
-alignment = 1
 
 [node name="DurabilitySlot0" type="TextureRect" parent="Root/DurabilityContainer"]
-visible = false
-custom_minimum_size = Vector2(32, 32)
+custom_minimum_size = Vector2(30, 40)
 layout_mode = 2
-mouse_filter = 0
-mouse_default_cursor_shape = 2
 expand_mode = 1
 stretch_mode = 5
 
 [node name="DurabilitySlot1" type="TextureRect" parent="Root/DurabilityContainer"]
-visible = false
-custom_minimum_size = Vector2(32, 32)
+custom_minimum_size = Vector2(30, 40)
 layout_mode = 2
-mouse_filter = 0
-mouse_default_cursor_shape = 2
 expand_mode = 1
 stretch_mode = 5
 
 [node name="DurabilitySlot2" type="TextureRect" parent="Root/DurabilityContainer"]
-visible = false
-custom_minimum_size = Vector2(32, 32)
+custom_minimum_size = Vector2(30, 40)
 layout_mode = 2
-mouse_filter = 0
-mouse_default_cursor_shape = 2
 expand_mode = 1
 stretch_mode = 5
 
 [node name="DurabilitySlot3" type="TextureRect" parent="Root/DurabilityContainer"]
-visible = false
-custom_minimum_size = Vector2(32, 32)
+custom_minimum_size = Vector2(30, 40)
 layout_mode = 2
-mouse_filter = 0
-mouse_default_cursor_shape = 2
 expand_mode = 1
 stretch_mode = 5
+
+[node name="EnemyHealthBar" type="Control" parent="."]
+visible = false
+layout_mode = 3
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -220.0
+offset_top = 16.0
+offset_right = 220.0
+offset_bottom = 76.0
+grow_horizontal = 2
+mouse_filter = 2
+
+[node name="VBox" type="VBoxContainer" parent="EnemyHealthBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 2
+
+[node name="MonsterName" type="Label" parent="EnemyHealthBar/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.8, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 3
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 14
+text = "The Butcher"
+horizontal_alignment = 1
+
+[node name="SubTitle" type="Label" parent="EnemyHealthBar/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.65, 0.55, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 10
+text = "Unique Demon"
+horizontal_alignment = 1
+
+[node name="BarCenter" type="CenterContainer" parent="EnemyHealthBar/VBox"]
+layout_mode = 2
+
+[node name="BarContainer" type="Control" parent="EnemyHealthBar/VBox/BarCenter"]
+custom_minimum_size = Vector2(380, 14)
+layout_mode = 2
+
+[node name="GhostBar" type="ProgressBar" parent="EnemyHealthBar/VBox/BarCenter/BarContainer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/background = SubResource("StyleBoxFlat_enemy_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_ghost_fill")
+max_value = 1.0
+value = 1.0
+show_percentage = false
+
+[node name="HealthBar" type="ProgressBar" parent="EnemyHealthBar/VBox/BarCenter/BarContainer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/background = SubResource("StyleBoxFlat_enemy_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_enemy_fill")
+max_value = 1.0
+value = 0.75
+show_percentage = false
+
+[node name="BarFrame" type="Panel" parent="EnemyHealthBar/VBox/BarCenter/BarContainer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HpLabel" type="Label" parent="EnemyHealthBar/VBox/BarCenter/BarContainer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "75%"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BossCrest" type="Label" parent="EnemyHealthBar/VBox/BarCenter/BarContainer"]
+visible = false
+layout_mode = 1
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -10.0
+offset_right = -4.0
+offset_bottom = 10.0
+grow_vertical = 2
+text = "💀"
+
+[node name="ItemTooltip" type="PanelContainer" parent="."]
+visible = false
+offset_right = 260.0
+offset_bottom = 120.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_tooltip_bg")
+
+[node name="Margin" type="MarginContainer" parent="ItemTooltip"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="VBox" type="VBoxContainer" parent="ItemTooltip/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TitleLabel" type="Label" parent="ItemTooltip/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.6, 1)
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 13
+text = "Item Name"
+horizontal_alignment = 1
+
+[node name="Divider" type="ColorRect" parent="ItemTooltip/Margin/VBox"]
+custom_minimum_size = Vector2(0, 1)
+layout_mode = 2
+color = Color(0.4, 0.35, 0.25, 0.8)
+
+[node name="StatsLabel" type="Label" parent="ItemTooltip/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.85, 0.85, 0.85, 1)
+theme_override_font_sizes/font_size = 11
+text = "Stats description"
+horizontal_alignment = 1
 
 [node name="SkillSelector" type="PanelContainer" parent="."]
 visible = false
@@ -1198,12 +569,14 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_top = -206.0
-offset_bottom = -146.0
+offset_left = -200.0
+offset_top = -250.0
+offset_right = 200.0
+offset_bottom = -190.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 1
-theme_override_styles/panel = SubResource("StyleBoxFlat_skill_panel")
+theme_override_styles/panel = SubResource("StyleBoxFlat_tooltip_bg")
 
 [node name="Margin" type="MarginContainer" parent="SkillSelector"]
 layout_mode = 2
@@ -1217,113 +590,227 @@ layout_mode = 2
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="ItemTooltip" type="PanelContainer" parent="."]
+[node name="SkillSlot1" type="Control" parent="Root/ConsoleHBox/LeftGrid/SkillsRow"]
+custom_minimum_size = Vector2(42, 58)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot1"]
 visible = false
-z_index = 120
-layout_mode = 0
-offset_left = 100.0
-offset_top = 100.0
-offset_right = 360.0
-offset_bottom = 220.0
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_tooltip")
+expand_mode = 1
+stretch_mode = 5
 
-[node name="Margin" type="MarginContainer" parent="ItemTooltip"]
-layout_mode = 2
+[node name="Icon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot1"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 43.0
+grow_horizontal = 2
 mouse_filter = 2
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 10
+expand_mode = 1
+stretch_mode = 5
 
-[node name="VBox" type="VBoxContainer" parent="ItemTooltip/Margin"]
-layout_mode = 2
+[node name="ActiveBorder" type="Panel" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot1"]
+visible = false
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 1.0
+offset_top = 0.0
+offset_right = -1.0
+offset_bottom = 43.0
+grow_horizontal = 2
 mouse_filter = 2
-theme_override_constants/separation = 5
+theme_override_styles/panel = SubResource("StyleBoxFlat_active_skill")
 
-[node name="TitleLabel" type="Label" parent="ItemTooltip/Margin/VBox"]
-layout_mode = 2
-mouse_filter = 2
-theme_override_colors/font_color = Color(1, 0.85, 0.35, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.95)
-theme_override_constants/shadow_outline_size = 3
-theme_override_font_sizes/font_size = 13
-text = "Item Name"
-horizontal_alignment = 1
-
-[node name="Divider" type="ColorRect" parent="ItemTooltip/Margin/VBox"]
-custom_minimum_size = Vector2(0, 1)
-layout_mode = 2
-mouse_filter = 2
-color = Color(0.48, 0.4, 0.28, 0.8)
-
-[node name="StatsLabel" type="Label" parent="ItemTooltip/Margin/VBox"]
-layout_mode = 2
-mouse_filter = 2
-theme_override_colors/font_color = Color(0.88, 0.85, 0.8, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.95)
+[node name="RmbBadge" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot1"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -2.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 11
-theme_override_constants/line_spacing = 3
-text = "Item Stats"
-horizontal_alignment = 1
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 8
+text = "RMB"
+horizontal_alignment = 2
 
-[node name="EnemyHealthBar" type="Control" parent="."]
+[node name="ManaBadge" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot1"]
 visible = false
-layout_mode = 3
-anchors_preset = 5
+layout_mode = 1
+offset_left = 3.0
+offset_top = 1.0
+offset_right = 24.0
+offset_bottom = 14.0
+theme_override_colors/font_color = Color(0.4, 0.75, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 8
+text = "12"
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot1"]
+layout_mode = 1
+anchors_preset = 7
 anchor_left = 0.5
+anchor_top = 0.0
 anchor_right = 0.5
-offset_left = -220.0
-offset_top = 22.0
-offset_right = 220.0
-offset_bottom = 86.0
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 45.0
+offset_right = 16.0
+offset_bottom = 58.0
 grow_horizontal = 2
+grow_vertical = 0
 mouse_filter = 2
 
-[node name="VBox" type="VBoxContainer" parent="EnemyHealthBar"]
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot1/BadgeTab"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 2
-theme_override_constants/separation = 2
-alignment = 1
-
-[node name="MonsterName" type="Label" parent="EnemyHealthBar/VBox"]
-layout_mode = 2
-mouse_filter = 2
-theme_override_colors/font_color = Color(0.92, 0.9, 0.86, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 4
-theme_override_font_sizes/font_size = 16
-text = "Monster Name"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="SubTitle" type="Label" parent="EnemyHealthBar/VBox"]
-layout_mode = 2
-mouse_filter = 2
-theme_override_colors/font_color = Color(0.72, 0.69, 0.61, 1)
+theme_override_colors/font_color = Color(1, 0.9, 0.45, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_outline_size = 2
-theme_override_font_sizes/font_size = 11
-text = "Undead • Immune: Fire"
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 10
+text = "1"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="BarCenter" type="CenterContainer" parent="EnemyHealthBar/VBox"]
+[node name="SkillSlot2" type="Control" parent="Root/ConsoleHBox/LeftGrid/SkillsRow"]
+custom_minimum_size = Vector2(42, 58)
 layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot2"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Icon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot2"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 43.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ActiveBorder" type="Panel" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot2"]
+visible = false
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 1.0
+offset_top = 0.0
+offset_right = -1.0
+offset_bottom = 43.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_active_skill")
+
+[node name="RmbBadge" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot2"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -2.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 8
+text = "RMB"
+horizontal_alignment = 2
+
+[node name="ManaBadge" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot2"]
+visible = false
+layout_mode = 1
+offset_left = 3.0
+offset_top = 1.0
+offset_right = 24.0
+offset_bottom = 14.0
+theme_override_colors/font_color = Color(0.4, 0.75, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 8
+text = "12"
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot2"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 45.0
+offset_right = 16.0
+offset_bottom = 58.0
+grow_horizontal = 2
+grow_vertical = 0
 mouse_filter = 2
 
-[node name="BarContainer" type="Control" parent="EnemyHealthBar/VBox/BarCenter"]
-custom_minimum_size = Vector2(360, 18)
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot2/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 10
+text = "2"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SkillSlot3" type="Control" parent="Root/ConsoleHBox/LeftGrid/SkillsRow"]
+custom_minimum_size = Vector2(42, 58)
 layout_mode = 2
-mouse_filter = 2
+mouse_filter = 0
 
-[node name="BarBg" type="Panel" parent="EnemyHealthBar/VBox/BarCenter/BarContainer"]
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot3"]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -1331,9 +818,106 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_enemy_hp_bg")
+expand_mode = 1
+stretch_mode = 5
 
-[node name="GhostBar" type="ProgressBar" parent="EnemyHealthBar/VBox/BarCenter/BarContainer"]
+[node name="Icon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot3"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 43.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ActiveBorder" type="Panel" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot3"]
+visible = false
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 1.0
+offset_top = 0.0
+offset_right = -1.0
+offset_bottom = 43.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_active_skill")
+
+[node name="RmbBadge" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot3"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -2.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 8
+text = "RMB"
+horizontal_alignment = 2
+
+[node name="ManaBadge" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot3"]
+visible = false
+layout_mode = 1
+offset_left = 3.0
+offset_top = 1.0
+offset_right = 24.0
+offset_bottom = 14.0
+theme_override_colors/font_color = Color(0.4, 0.75, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 8
+text = "12"
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot3"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 45.0
+offset_right = 16.0
+offset_bottom = 58.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot3/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 10
+text = "3"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SkillSlot4" type="Control" parent="Root/ConsoleHBox/LeftGrid/SkillsRow"]
+custom_minimum_size = Vector2(42, 58)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot4"]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -1341,12 +925,106 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-theme_override_styles/background = SubResource("StyleBoxFlat_skill_panel")
-theme_override_styles/fill = SubResource("StyleBoxFlat_enemy_hp_ghost")
-value = 100.0
-show_percentage = false
+expand_mode = 1
+stretch_mode = 5
 
-[node name="HealthBar" type="ProgressBar" parent="EnemyHealthBar/VBox/BarCenter/BarContainer"]
+[node name="Icon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot4"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 43.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ActiveBorder" type="Panel" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot4"]
+visible = false
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 1.0
+offset_top = 0.0
+offset_right = -1.0
+offset_bottom = 43.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_active_skill")
+
+[node name="RmbBadge" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot4"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -2.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 8
+text = "RMB"
+horizontal_alignment = 2
+
+[node name="ManaBadge" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot4"]
+visible = false
+layout_mode = 1
+offset_left = 3.0
+offset_top = 1.0
+offset_right = 24.0
+offset_bottom = 14.0
+theme_override_colors/font_color = Color(0.4, 0.75, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 8
+text = "12"
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot4"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 45.0
+offset_right = 16.0
+offset_bottom = 58.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/LeftGrid/SkillsRow/SkillSlot4/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 10
+text = "4"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="HealthPotionSlot" type="Control" parent="Root/ConsoleHBox/LeftGrid/PotionsRow"]
+custom_minimum_size = Vector2(42, 56)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/HealthPotionSlot"]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -1354,48 +1032,950 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-theme_override_styles/background = SubResource("StyleBoxFlat_skill_panel")
-theme_override_styles/fill = SubResource("StyleBoxFlat_enemy_hp_fill")
-value = 100.0
-show_percentage = false
+expand_mode = 1
+stretch_mode = 5
 
-[node name="BarFrame" type="Panel" parent="EnemyHealthBar/VBox/BarCenter/BarContainer"]
+[node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/HealthPotionSlot"]
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 41.0
 grow_horizontal = 2
-grow_vertical = 2
 mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_enemy_hp_frame")
+expand_mode = 1
+stretch_mode = 5
 
-[node name="HpLabel" type="Label" parent="EnemyHealthBar/VBox/BarCenter/BarContainer"]
+[node name="CountLabel" type="Label" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/HealthPotionSlot"]
+visible = false
 layout_mode = 1
-anchors_preset = 15
+anchors_preset = 1
+anchor_left = 1.0
 anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -3.0
+offset_bottom = 14.0
+grow_horizontal = 0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 3
-theme_override_font_sizes/font_size = 11
-text = "150 / 150"
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "x1"
+horizontal_alignment = 2
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/HealthPotionSlot"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 43.0
+offset_right = 16.0
+offset_bottom = 56.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/HealthPotionSlot/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.85, 0.88, 0.95, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 10
+text = "Q"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="BossCrest" type="Label" parent="EnemyHealthBar/VBox/BarCenter/BarContainer"]
+[node name="ManaPotionSlot" type="Control" parent="Root/ConsoleHBox/LeftGrid/PotionsRow"]
+custom_minimum_size = Vector2(42, 56)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/ManaPotionSlot"]
 visible = false
-layout_mode = 0
-offset_left = -24.0
-offset_top = -1.0
-offset_right = -4.0
-offset_bottom = 19.0
-theme_override_colors/font_color = Color(1, 0.84, 0.2, 1)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/ManaPotionSlot"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 41.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CountLabel" type="Label" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/ManaPotionSlot"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -3.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_outline_size = 3
-theme_override_font_sizes/font_size = 14
-text = "💀"
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "x1"
+horizontal_alignment = 2
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/ManaPotionSlot"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 43.0
+offset_right = 16.0
+offset_bottom = 56.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/ManaPotionSlot/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.85, 0.88, 0.95, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 10
+text = "W"
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="RejuvPotionSlot" type="Control" parent="Root/ConsoleHBox/LeftGrid/PotionsRow"]
+custom_minimum_size = Vector2(42, 56)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/RejuvPotionSlot"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/RejuvPotionSlot"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 41.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CountLabel" type="Label" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/RejuvPotionSlot"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -3.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "x1"
+horizontal_alignment = 2
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/RejuvPotionSlot"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 43.0
+offset_right = 16.0
+offset_bottom = 56.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/RejuvPotionSlot/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.85, 0.88, 0.95, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 10
+text = "E"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TownPortalSlot" type="Control" parent="Root/ConsoleHBox/LeftGrid/PotionsRow"]
+custom_minimum_size = Vector2(42, 56)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/TownPortalSlot"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/TownPortalSlot"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 41.0
+grow_horizontal = 2
+mouse_filter = 2
+texture = ExtResource("6_portal_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CountLabel" type="Label" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/TownPortalSlot"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -3.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "x1"
+horizontal_alignment = 2
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/TownPortalSlot"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 43.0
+offset_right = 16.0
+offset_bottom = 56.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/LeftGrid/PotionsRow/TownPortalSlot/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.85, 0.88, 0.95, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 10
+text = "T"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BeltSlot0" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow1"]
+custom_minimum_size = Vector2(42, 58)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot0"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot0"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 43.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CountLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot0"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -3.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "x1"
+horizontal_alignment = 2
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot0"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 45.0
+offset_right = 16.0
+offset_bottom = 58.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot0/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "F1"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BeltSlot1" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow1"]
+custom_minimum_size = Vector2(42, 58)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot1"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot1"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 43.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CountLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot1"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -3.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "x1"
+horizontal_alignment = 2
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot1"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 45.0
+offset_right = 16.0
+offset_bottom = 58.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot1/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "F2"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BeltSlot2" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow1"]
+custom_minimum_size = Vector2(42, 58)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot2"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot2"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 43.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CountLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot2"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -3.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "x1"
+horizontal_alignment = 2
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot2"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 45.0
+offset_right = 16.0
+offset_bottom = 58.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot2/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "F3"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BeltSlot3" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow1"]
+custom_minimum_size = Vector2(42, 58)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot3"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot3"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 43.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CountLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot3"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -3.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "x1"
+horizontal_alignment = 2
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot3"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 45.0
+offset_right = 16.0
+offset_bottom = 58.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow1/BeltSlot3/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "F4"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BeltSlot4" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow2"]
+custom_minimum_size = Vector2(42, 56)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot4"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot4"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 41.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CountLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot4"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -3.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "x1"
+horizontal_alignment = 2
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot4"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 43.0
+offset_right = 16.0
+offset_bottom = 56.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot4/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "F5"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BeltSlot5" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow2"]
+custom_minimum_size = Vector2(42, 56)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot5"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot5"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 41.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CountLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot5"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -3.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "x1"
+horizontal_alignment = 2
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot5"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 43.0
+offset_right = 16.0
+offset_bottom = 56.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot5/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "F6"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BeltSlot6" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow2"]
+custom_minimum_size = Vector2(42, 56)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot6"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot6"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 41.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CountLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot6"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -3.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "x1"
+horizontal_alignment = 2
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot6"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 43.0
+offset_right = 16.0
+offset_bottom = 56.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot6/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "F7"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BeltSlot7" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow2"]
+custom_minimum_size = Vector2(42, 56)
+layout_mode = 2
+mouse_filter = 0
+
+[node name="Frame" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot7"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ItemIcon" type="TextureRect" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot7"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 2.0
+offset_top = 0.0
+offset_right = -2.0
+offset_bottom = 41.0
+grow_horizontal = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CountLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot7"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 1.0
+offset_right = -3.0
+offset_bottom = 14.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "x1"
+horizontal_alignment = 2
+
+[node name="BadgeTab" type="Control" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot7"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -16.0
+offset_top = 43.0
+offset_right = 16.0
+offset_bottom = 56.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="BadgeLabel" type="Label" parent="Root/ConsoleHBox/RightGrid/BeltRow2/BeltSlot7/BadgeTab"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_outline_size = 2
+theme_override_fonts/font = ExtResource("3_exocet")
+theme_override_font_sizes/font_size = 9
+text = "F8"
+horizontal_alignment = 1
+vertical_alignment = 1
+

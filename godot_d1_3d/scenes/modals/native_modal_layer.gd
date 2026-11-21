@@ -33,6 +33,7 @@ var _title_label: Label
 var _default_title_style: StyleBoxFlat
 var _death_title_style: StyleBoxEmpty
 var _gold_label: Label
+var _rows_scroll: ScrollContainer = null
 var _rows_container: VBoxContainer
 var _qtext_container: VBoxContainer
 var _qtext_label: Label
@@ -128,13 +129,24 @@ func _ready() -> void:
 	_gold_label.visible = false
 	vbox.add_child(_gold_label)
 
-	# Container for standard menu / store items
+	# Container for standard menu / store items wrapped in a ScrollContainer for mouse wheel & height safety
+	_rows_scroll = ScrollContainer.new()
+	_rows_scroll.name = "RowsScroll"
+	_rows_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rows_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_rows_scroll.custom_minimum_size = Vector2(480, 42)
+	_rows_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_rows_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_rows_scroll.follow_focus = true
+	_rows_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
+
 	_rows_container = VBoxContainer.new()
 	_rows_container.name = "Rows"
 	_rows_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_rows_container.add_theme_constant_override("v_separation", 8)
 	_rows_container.mouse_filter = Control.MOUSE_FILTER_PASS
-	vbox.add_child(_rows_container)
+	_rows_scroll.add_child(_rows_container)
+	vbox.add_child(_rows_scroll)
 
 	# Container for speech narrative text (qtextflag)
 	_qtext_container = VBoxContainer.new()
@@ -918,7 +930,26 @@ func _build_rows(_mtype_arg: int, items: Array, sel: int) -> void:
 
 			_rows_container.add_child(btn)
 			row_controls.append(btn)
+
+	if _rows_scroll:
+		var target_h := 0.0
+		for ctrl in row_controls:
+			if ctrl is Control:
+				var ch = ctrl.custom_minimum_size.y
+				if ch <= 0.0:
+					ch = 42.0
+				target_h += ch + 8.0 # v_separation
+		if target_h > 0.0:
+			target_h -= 8.0 # remove trailing separation
+		_rows_scroll.custom_minimum_size = Vector2(480, clampf(target_h, 42.0, 360.0))
+
 	_apply_font_recursive(_rows_container)
+
+func _ensure_row_visible(idx: int) -> void:
+	if _rows_scroll and idx >= 0 and idx < row_controls.size():
+		var ctrl = row_controls[idx] as Control
+		if ctrl:
+			_rows_scroll.ensure_control_visible(ctrl)
 
 func _format_number(n: int) -> String:
 	var s := str(n)
@@ -1015,23 +1046,32 @@ func _process(_delta: float) -> void:
 		# Quest narrative speech dialogue
 		_reset_options_state()
 		visible = true
-		_rows_container.visible = false
-		_qtext_container.visible = true
+		if _rows_container:
+			_rows_container.visible = false
+		if _rows_scroll:
+			_rows_scroll.visible = false
+		if _qtext_container:
+			_qtext_container.visible = true
 		if _gold_label != null:
 			_gold_label.visible = false
 
 		var qlines: Array = diablo_bridge.get_qtext_lines() if diablo_bridge.has_method("get_qtext_lines") else []
 		var new_text: String = "\n".join(qlines)
-		if not last_qtext_active or _qtext_label.text != new_text:
+		if not last_qtext_active or (_qtext_label and _qtext_label.text != new_text):
 			last_qtext_active = true
 			last_qtext_line_count = qlines.size()
 			_set_title(2, true)
-			_qtext_label.text = new_text
+			if _qtext_label:
+				_qtext_label.text = new_text
 		return
 
 	# Regular menu / dialogue list
-	_qtext_container.visible = false
-	_rows_container.visible = true
+	if _qtext_container:
+		_qtext_container.visible = false
+	if _rows_container:
+		_rows_container.visible = true
+	if _rows_scroll:
+		_rows_scroll.visible = true
 	last_qtext_active = false
 
 	var mtype: int = diablo_bridge.get_modal_type() if diablo_bridge.has_method("get_modal_type") else 0
@@ -1096,14 +1136,81 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if not visible:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		var vp = get_viewport()
 		if _options_open or _options_closing:
 			# Swallow every key while the options panel is open/closing so D1's menu
 			# (and e.g. "Quit Game") can't be triggered by accident.
-			get_viewport().set_input_as_handled()
+			if vp: vp.set_input_as_handled()
 			if event.keycode == KEY_ESCAPE:
 				_close_options_panel()
 			return
 		if diablo_bridge and diablo_bridge.has_method("is_qtext_active") and diablo_bridge.is_qtext_active():
-			if event.keycode == KEY_SPACE or event.keycode == KEY_ESCAPE or event.keycode == KEY_ENTER:
+			if event.keycode in [KEY_SPACE, KEY_ESCAPE, KEY_ENTER, KEY_KP_ENTER]:
 				_on_qtext_dismiss_pressed()
-				get_viewport().set_input_as_handled()
+				if vp: vp.set_input_as_handled()
+				return
+
+		# Modal rows keyboard navigation (UP / DOWN / ENTER / SPACE / ESCAPE)
+		if _rows_container and _rows_container.visible and row_controls.size() > 0:
+			var selectable_indices: Array[int] = []
+			for idx in range(row_controls.size()):
+				var c = row_controls[idx]
+				if c is Button and not c.disabled:
+					selectable_indices.append(idx)
+
+			if selectable_indices.is_empty():
+				return
+
+			var cur_sel := last_sel
+			var cur_pos := selectable_indices.find(cur_sel)
+
+			if event.keycode == KEY_UP:
+				if vp: vp.set_input_as_handled()
+				var next_pos := (cur_pos - 1 + selectable_indices.size()) % selectable_indices.size() if cur_pos >= 0 else selectable_indices.size() - 1
+				var target_idx := selectable_indices[next_pos]
+				last_sel = target_idx
+				if diablo_bridge and diablo_bridge.has_method("select_modal_item"):
+					diablo_bridge.select_modal_item(target_idx)
+				_ensure_row_visible(target_idx)
+				return
+
+			elif event.keycode == KEY_DOWN:
+				if vp: vp.set_input_as_handled()
+				var next_pos := (cur_pos + 1) % selectable_indices.size() if cur_pos >= 0 else 0
+				var target_idx := selectable_indices[next_pos]
+				last_sel = target_idx
+				if diablo_bridge and diablo_bridge.has_method("select_modal_item"):
+					diablo_bridge.select_modal_item(target_idx)
+				_ensure_row_visible(target_idx)
+				return
+
+			elif event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
+				if vp: vp.set_input_as_handled()
+				if cur_sel >= 0 and cur_sel < row_controls.size() and row_controls[cur_sel] is Button:
+					_on_item_pressed(cur_sel)
+				elif not selectable_indices.is_empty():
+					_on_item_pressed(selectable_indices[0])
+				return
+
+			elif event.keycode == KEY_ESCAPE:
+				if vp: vp.set_input_as_handled()
+				var exit_idx := -1
+				for s_idx in selectable_indices:
+					var btn = row_controls[s_idx] as Button
+					var btext = btn.text.to_lower()
+					if "goodbye" in btext or "cancel" in btext or "previous" in btext or "back" in btext:
+						exit_idx = s_idx
+						break
+				if exit_idx >= 0:
+					_on_item_pressed(exit_idx)
+				elif current_type == 1:
+					# Game Menu: Escape dismisses menu and resumes game (NEVER trigger Quit Game!)
+					if diablo_bridge and diablo_bridge.has_method("send_key_event"):
+						diablo_bridge.send_key_event(KEY_ESCAPE, true)
+						diablo_bridge.send_key_event(KEY_ESCAPE, false)
+				else:
+					# Other modals: Forward Escape to D1 bridge to safely dismiss without unintended selection
+					if diablo_bridge and diablo_bridge.has_method("send_key_event"):
+						diablo_bridge.send_key_event(KEY_ESCAPE, true)
+						diablo_bridge.send_key_event(KEY_ESCAPE, false)
+				return
