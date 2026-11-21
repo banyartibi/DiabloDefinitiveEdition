@@ -2357,6 +2357,8 @@ func update_props(delta: float):
 		var category = str(obj.get("category", ""))
 
 		var prop = get_or_create_prop_node(o_id, o_type, tx, ty, category)
+		var wpos = tile_to_world_3d(float(tx), float(ty))
+		prop.position = wpos
 		prop.set_meta("tile_x", tx)
 		prop.set_meta("tile_y", ty)
 
@@ -2380,13 +2382,8 @@ func update_props(delta: float):
 						if (n_fl & 128) != 0:
 							is_explored = true
 
-			var is_gore = (o_type in [29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40])
-			if is_gore:
-				# Torture victims, impaled corpses, and naked bodies require active line-of-sight
-				is_prop_visible = is_visible
-			else:
-				# Static props require either active line-of-sight OR previous exploration
-				is_prop_visible = is_visible or is_explored
+			# Props require either active line-of-sight OR previous exploration
+			is_prop_visible = is_visible or is_explored
 
 		prop.visible = is_prop_visible
 		if not is_prop_visible:
@@ -2444,6 +2441,7 @@ func update_props(delta: float):
 						else:
 							obj_spr.texture.update(img)
 						obj_spr.offset = Vector2(0, float(sh) * 0.5)
+						obj_spr.sorting_offset = 0.05
 						if sw >= 200:
 							obj_spr.pixel_size = PIXEL_SIZE_HD
 						else:
@@ -2703,6 +2701,7 @@ func _attach_universal_object_sprite(node: Node3D, o_id: int):
 	spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	spr.shaded = false
 	spr.pixel_size = PIXEL_SIZE_1X
+	spr.sorting_offset = 0.05
 	spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	spr.modulate = Color(1.45, 1.42, 1.35)
 
