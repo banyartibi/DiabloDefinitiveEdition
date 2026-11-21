@@ -7,6 +7,7 @@ namespace devilution {
 
 void RunRemasterAssetPipeline();
 void RemasterWarriorClass();
+void RemasterPlayerSet(const std::string &spec);
 void RemasterDroppedItems();
 void RemasterAllMonsters();
 void RemasterTowners();

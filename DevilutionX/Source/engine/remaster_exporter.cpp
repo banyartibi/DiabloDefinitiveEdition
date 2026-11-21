@@ -6,6 +6,7 @@
 #include "engine/remaster_exporter.hpp"
 
 #include <SDL.h>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -356,8 +357,55 @@ void RemasterWarriorClass()
 	Log("========================================================");
 	Log("   Starting 4x-UltraSharp Warrior HD Remastering        ");
 	Log("========================================================");
-	LoadPalette("levels\\towndata\\town.pal");
+	// Player CELs use the system palette (class .trn applied at render time);
+	// a level palette maps their indices to black silhouettes.
 	ExportPlayerClass("warrior", 'w');
+}
+
+void RemasterPlayerSet(const std::string &spec)
+{
+	// spec = "<classDir>:<gfxPrefix>", e.g. "monk:mha". Exports the 11 player
+	// animation CELs of one armor/weapon set instead of the full 396-CEL class.
+	const size_t sep = spec.find(':');
+	if (sep == std::string::npos || sep == 0 || sep + 1 >= spec.size()) {
+		Log("RemasterPlayerSet: expected <classDir>:<prefix>, got '{}'", spec);
+		return;
+	}
+	const std::string classDir = spec.substr(0, sep);
+	const std::string prefix = spec.substr(sep + 1);
+	std::vector<std::string> wanted;
+	const size_t sep2 = prefix.find(':');
+	std::string gfxPrefix = prefix;
+	if (sep2 != std::string::npos) {
+		gfxPrefix = prefix.substr(0, sep2);
+		// Optional third field: comma separated action codes (debug/partial runs).
+		std::string acts = prefix.substr(sep2 + 1);
+		size_t pos = 0;
+		while (pos < acts.size()) {
+			size_t comma = acts.find(',', pos);
+			wanted.push_back(acts.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos));
+			if (comma == std::string::npos)
+				break;
+			pos = comma + 1;
+		}
+	}
+	Log("========================================================");
+	Log("   Starting HD Remastering for player set: {}          ", spec);
+	Log("========================================================");
+	// Player CEL indices live in the level palette space (same as monsters);
+	// without any palette orig_palette stays black and every frame is a silhouette.
+	LoadPalette("levels\\l1data\\l1_1.pal");
+	const char *actions[] = { "as", "st", "aw", "wl", "at", "ht", "lm", "fm", "qm", "dt", "bl" };
+	for (const char *act : actions) {
+		if (!wanted.empty()
+		    && std::find(wanted.begin(), wanted.end(), std::string(act)) == wanted.end())
+			continue;
+		std::string path = "plrgfx\\" + classDir + "\\" + gfxPrefix + "\\" + gfxPrefix + act;
+		ExportAndUpscaleCl2(path, 128);
+	}
+	Log("========================================================");
+	Log("   Player set {} remastering completed!          ", spec);
+	Log("========================================================");
 }
 
 void RemasterSingleFamily(const std::string &familyPrefix, uint16_t widthHint, const char *pal)
@@ -584,9 +632,7 @@ void RunRemasterAssetPipeline()
 
 	RemasterAllCoreAssets();
 
-	// Player classes
-	Log("--- Remastering Player Classes ---");
-	LoadPalette("levels\\towndata\\town.pal");
+	// Player classes (system palette; see RemasterWarriorClass)
 	ExportPlayerClass("warrior", 'w');
 	ExportPlayerClass("rogue", 'r');
 	ExportPlayerClass("sorceror", 's'); // Diablo 1 MPQ directory is 'sorceror'

@@ -409,14 +409,61 @@ static func get_missile_sprite(cel: String, dir: int, anim_frame_1based: int, mo
 	return tex
 
 # ------------------------------------------------------------------------------
+# Player hero: bridge exposes _pmode-derived action name + 0-based anim frame.
+# HD folders are player/<class>_<action>; only some class/action pairs were ever
+# upscaled, so every lookup carries an action fallback chain.
+# ------------------------------------------------------------------------------
+# Index = engine _pClass. DevilutionX adds classes past the original three;
+# 'sorceror' keeps the MPQ/deployed spelling.
+const PLAYER_CLASS_NAMES = ["warrior", "rogue", "sorceror", "monk", "bard", "barbarian"]
+
+static func _player_actions(action: String) -> Array:
+	match action.to_upper():
+		"STAND", "NEWLVL", "QUIT":
+			return ["stand", "walk"]
+		"WALK":
+			return ["walk", "stand"]
+		"ATTACK":
+			return ["attack", "special", "stand"]
+		"RATTACK":
+			return ["rattack", "attack", "special"]
+		"BLOCK":
+			return ["block", "attack", "stand"]
+		"HIT":
+			return ["hit", "block", "stand"]
+		"DEATH":
+			return ["death", "hit", "stand"]
+		"SPELL":
+			return ["spell", "spell_lm", "spell_qm", "attack", "stand"]
+		_:
+			return ["stand", "walk"]
+
+static func get_player_sprite(class_id: int, action: String, dir: int, frame: int, model_id: int, gfx_prefix: String = "") -> Texture2D:
+	if class_id < 0 or class_id >= PLAYER_CLASS_NAMES.size():
+		return null
+	var cls = PLAYER_CLASS_NAMES[class_id]
+	for act in _player_actions(action):
+		# Armor/weapon specific set (player/<class>_<prefix>_<action>) wins; the
+		# gear-independent folder is the fallback.
+		if gfx_prefix != "":
+			var tex = _resolve("player/%s_%s_%s" % [cls, gfx_prefix, act], dir, frame, model_id)
+			if tex != null:
+				return tex
+		var tex2 = _resolve("player/%s_%s" % [cls, act], dir, frame, model_id)
+		if tex2 != null:
+			return tex2
+	return null
+
+# ------------------------------------------------------------------------------
 # Ground items: curs_<id> flip animation frames (deploy_hd_ground_items.py).
 # ------------------------------------------------------------------------------
 static func get_item_sprite(curs_id: int, anim_frame: int, model_id: int) -> Texture2D:
 	var sub = "items/curs_%d_f%d.png" % [curs_id, anim_frame]
 	var sub2 = "items/curs_%d.png" % curs_id
-	for folder_id in [model_id, 0]:
-		if folder_id == 0 and model_id == 0:
-			continue
+	var folder_ids = [model_id]
+	if model_id != 0:
+		folder_ids.append(0)
+	for folder_id in folder_ids:
 		var folder: String = UpscalerModelConfig.get_sprite_folder(folder_id)
 		for p in [folder + "/" + sub, folder + "/" + sub2]:
 			if _cache.has(p):
@@ -424,10 +471,15 @@ static func get_item_sprite(curs_id: int, anim_frame: int, model_id: int) -> Tex
 			if not FileAccess.file_exists(p):
 				continue
 			var img = Image.load_from_file(ProjectSettings.globalize_path(p))
-			if img == null or img.is_empty() or _is_black(img):
+			if img == null or img.is_empty():
 				_cache[p] = null
 				continue
+			# Sample inside the used rect: curs frames are padded to the full CEL
+			# canvas, so a full-canvas grid sees almost no opaque pixels.
 			var used_rect = img.get_used_rect()
+			if _is_black(img, used_rect):
+				_cache[p] = null
+				continue
 			if used_rect.size.x > 0 and used_rect.size.y > 0:
 				img = img.get_region(used_rect)
 			img.generate_mipmaps()

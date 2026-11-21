@@ -1042,6 +1042,7 @@ bool gbRemasterObjectsRequested = false;
 bool gbRemasterMissilesRequested = false;
 bool gbRemasterWarriorRequested = false;
 bool gbRemasterItemsRequested = false;
+std::string gsPlayerRemasterSet;
 bool gbPackClxRequested = false;
 std::string gsMonsterRemasterPrefix;
 
@@ -1083,6 +1084,12 @@ void DiabloParseFlags(int argc, char **argv)
 			gbRemasterWarriorRequested = true;
 		} else if (arg == "--remaster-items") {
 			gbRemasterItemsRequested = true;
+		} else if (arg == "--remaster-player-set") {
+			if (i + 1 == argc) {
+				PrintFlagsRequiresArgument("--remaster-player-set");
+				diablo_quit(64);
+			}
+			gsPlayerRemasterSet = argv[++i];
 		} else if (arg == "--remaster-monster") {
 			if (i + 1 == argc) {
 				PrintFlagsRequiresArgument("--remaster-monster");
@@ -1310,7 +1317,23 @@ void ApplicationInit()
 		LoadCoreArchives();
 		LoadLanguageArchive();
 		LoadGameArchives();
+		// Must initialize orig_palette before RemasterDroppedItems swaps in
+		// town.pal; without it every exported item frame is a black silhouette.
+		InitPalette();
 		RemasterDroppedItems();
+		diablo_quit(0);
+	}
+
+	if (!gsPlayerRemasterSet.empty()) {
+		HeadlessMode = true;
+		SDL_Init(SDL_INIT_EVENTS);
+		LoadCoreArchives();
+		LoadLanguageArchive();
+		LoadGameArchives();
+		// Player CELs are indexed in the level-palette space; RemasterPlayerSet
+		// loads the palette itself (InitPalette alone leaves orig_palette black).
+		InitPalette();
+		RemasterPlayerSet(gsPlayerRemasterSet);
 		diablo_quit(0);
 	}
 

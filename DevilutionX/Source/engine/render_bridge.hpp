@@ -530,6 +530,11 @@ struct D1SpriteFrameRgba {
 };
 
 D1SpriteFrameRgba GetPlayerSpriteRgba();
+
+// Last player CEL path loaded by LoadPlrGFX (e.g. "plrgfx\monk\mha\mhast").
+// The HD sprite pipeline needs it to know which armor/weapon set to upscale.
+void SetBridgePlayerCelPath(const std::string &path);
+std::string GetBridgePlayerCelPath();
 D1SpriteFrameRgba GetMonsterSpriteRgba(int monsterId);
 
 // Native Godot 2.5D Dungeon Piece Extraction
