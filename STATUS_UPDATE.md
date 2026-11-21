@@ -15,7 +15,7 @@
 | Git | ⚠️ 25 commit helyben volt → **`d1de-3d-pbr-wip` branch feltöltve**, [PR #1](https://github.com/banyartibi/DiabloDefinitiveEdition/pull/1) nyitva `main`-re |
 | Commitadatlan munka | ⚠️ `godot_d1_3d/scripts/native_3d_sandbox.gd` (prop pozíció + `sorting_offset` + gore-visibility eltávolítva) + ~73 `test_*.gd` diagnosztikai szkript nem követett |
 
-**Build note (új):** a CMake-regeneráció az SDL2 X11-checknél elbukott (`Missing Xext.h`, `libxext-dev` nincs telepítve, a csomagolás sudo nélkül nem telepíthető). Megoldás: `cmake -B DevilutionX/build -S DevilutionX -G Ninja -DSDL_X11=OFF` — in-process GDExtension buildnél az SDL2 X11-háttér nem szükséges. Ezt a kapcsolót minden friss konfigurálásnál add meg.
+**Build note (2026-11-21, ZÁRVA):** a CMake-regeneráció az SDL2 X11-checknél elbukott (`Missing Xext.h`). Átmeneti kerülés: `-DSDL_X11=OFF`. Végleges megoldás: a felhasználó telepítette a `libxext-dev` csomagot, és a **2026-11-21 18:11**-es build már az eredeti X11-es úton futott: `cmake -B DevilutionX/build -S DevilutionX -G Ninja -DSDL_X11=ON` → core 382/382 link OK → `.so` sikeres → headless smoke tiszta. További konfigurálásoknál nem kell kapcsoló.
 
 **Fázisok azóta (2026-10-11 → 2026-11-18, 41 commit):** gothic HUD konzol + F1–F8 öv; native audio motor; 3D raycast pickup/kapcsolat; lebegő combat szöveg + kamera-rázás; ground-loot címkék + tooltip; 3D betöltő-kapu; valós árnyékok; neural upscaler + 3D varázslat-effektek; unifikált 3D archikit mind a 4 témahez 4K PBR-rel; katakomba falak/oszlopok javítás; „kádak” eltávolítása és padlóhézag zárása Mode 2-ben; 144 FPS perf (shadow-paritás validáció kikapcsolva).
 
