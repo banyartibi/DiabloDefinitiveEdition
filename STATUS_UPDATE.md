@@ -1,6 +1,25 @@
 # 📊 Status Update – Diablo 1: Resurrected (D1R)
 
-**Datum:** 2026-09-12 · **Hely:** `/home/biti/antigravity/magical-bell`
+**Datum:** 2026-11-21 (validálva) · **Hely:** `/home/biti/antigravity/magical-bell`
+
+---
+
+## ✅ 2026-11-21 — Friss validáció (fejlesztés állapota)
+
+| Ellenőrzés | Eredmény |
+|---|---|
+| Headless smoke (új `.so`-val) | ✅ híd in-process, motor csatlakozik, élő frame-stream, tiszta exit |
+| GDScript `--check-only` (`native_3d_sandbox.gd`) | ✅ tiszta |
+| `libdiablo.linux.template_debug.x86_64.so` | ✅ **újraépítve 2026-11-21** (a nov 3-i bináris elavult volt a nov 14-i `render_bridge.cpp`/`scrollrt.cpp` változásokhoz képest) |
+| DevilutionX core (`ninja`) | ✅ 421/421 link OK |
+| Git | ⚠️ 25 commit helyben volt → **`d1de-3d-pbr-wip` branch feltöltve**, [PR #1](https://github.com/banyartibi/DiabloDefinitiveEdition/pull/1) nyitva `main`-re |
+| Commitadatlan munka | ⚠️ `godot_d1_3d/scripts/native_3d_sandbox.gd` (prop pozíció + `sorting_offset` + gore-visibility eltávolítva) + ~73 `test_*.gd` diagnosztikai szkript nem követett |
+
+**Build note (új):** a CMake-regeneráció az SDL2 X11-checknél elbukott (`Missing Xext.h`, `libxext-dev` nincs telepítve, a csomagolás sudo nélkül nem telepíthető). Megoldás: `cmake -B DevilutionX/build -S DevilutionX -G Ninja -DSDL_X11=OFF` — in-process GDExtension buildnél az SDL2 X11-háttér nem szükséges. Ezt a kapcsolót minden friss konfigurálásnál add meg.
+
+**Fázisok azóta (2026-10-11 → 2026-11-18, 41 commit):** gothic HUD konzol + F1–F8 öv; native audio motor; 3D raycast pickup/kapcsolat; lebegő combat szöveg + kamera-rázás; ground-loot címkék + tooltip; 3D betöltő-kapu; valós árnyékok; neural upscaler + 3D varázslat-effektek; unifikált 3D archikit mind a 4 témahez 4K PBR-rel; katakomba falak/oszlopok javítás; „kádak” eltávolítása és padlóhézag zárása Mode 2-ben; 144 FPS perf (shadow-paritás validáció kikapcsolva).
+
+**Parity vonal (2026-10-12/13):** `inventory_item_use`, `rng`, `level_transition` promótvák `AUTH_NATIVE`-ra; determinisztikus RNG-seed + action-seq a hídban; soak harness fut.
 
 Ez a dokumentum a teljes kódátvizelés alapján írja le, hogy áll a fejlesztés:
 mi kész, mi van vissza. Áttekintés: ~10 500 sor GDScript + ~4 100 sor C++ (bridge),
@@ -210,8 +229,8 @@ Kész részek (mind natív Godot UI, bridge-adatból):
 | **Task 2 Step 2** (Fokozatos funkcióátültetés) | 🔶 Folyamatban – UI/Modal/HUD kész, logika C++-on | ~75–80% |
 | **Task 2 Step 3** (Normálmap + fények/árnyékok) | ✅ Kész – Teljes PBR csempekészlet, folytonos GPU fény, 2.5D árnyékok | 100% |
 | **Task 2 Step 4** (AI grafika + elemcsere) | ✅ Kész – 4x HD csempék, HD sprite pipeline, élő Options váltó | ~95% |
-| **Task 2 Step 5** (DevilutionX elhagyása) | ⬜ Nem kezdett el | 0% |
-| **Task 3** (Godot 3D – Sandbox) | ✅ ~90% – Unifikált 4X PBR billboard scenery, interaktív 3D props, szintváltás-izoláció és hősies skálázás | ~90% (sandbox) |
+| **Task 2 Step 5** (DevilutionX elhagyása) | 🔶 Indult – parity-alapú native logika slice: `inventory_item_use`, `rng`, `level_transition` már `AUTH_NATIVE` | ~15% |
+| **Task 3** (Godot 3D – Sandbox) | ✅ Unifikált 3D archikit mind a 4 témához 4K PBR, raycast pickup/kapcsolat, combat VFX, valós árnyékok, loading gate | ~92% (sandbox) |
 | **Task 4** (Minden átültetése 3D-be) | ⬜ Nem kezdett el – a legnagyobb maradvány | 0% |
 
 A fejlesztés jelenleg **Task 2 Step 5-re** fókuszál: a gameplay logika natív Godot-ba való átvitele. A Task 3/4 (production 3D) az utolsó nagy fázis.
