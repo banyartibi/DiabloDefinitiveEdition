@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <cstring>
 #include <mutex>
+#include <optional>
 #include <condition_variable>
 #include <vector>
 #include <thread>
@@ -119,9 +120,19 @@ std::vector<D1InputMsg> g_DirectInputQueue;
 struct D1BridgeJob {
 	D1BridgeActionType type;
 	int a = 0, b = 0, c = 0, d = 0;
+	// Native item-use decision travelling with this job (see D1NativeItemEffect in the header).
+	// Empty for every action the native layer does not decide.
+	std::optional<D1NativeItemEffect> nativeEffect;
 };
 std::mutex g_BridgeJobMutex;
 std::vector<D1BridgeJob> g_BridgeJobs;
+
+// The decision the CURRENTLY EXECUTING job armed. Set from the job right before its switch runs
+// and cleared when the drained batch finishes, so it can never outlive the action it belongs to.
+// Touched only on the engine thread (UseItem runs inside the drain), but the Godot thread reads
+// the fallback counter, so that one is atomic.
+std::optional<D1NativeItemEffect> g_NativeItemEffect;
+std::atomic<int> g_NativeItemFallbacks{0};
 
 // LCG state snapshot taken at the moment a queued job is executed on the engine thread.
 // The native logic layer must predict with the seed the C++ engine actually had when the action
@@ -413,6 +424,20 @@ void PushBridgeAction(D1BridgeActionType type, int arg1, int arg2, int arg3, int
 	g_BridgeJobs.push_back(job);
 }
 
+void PushBridgeActionWithNativeEffect(D1BridgeActionType type, int arg1, const D1NativeItemEffect &fx,
+    int arg2, int arg3, int arg4)
+{
+	D1BridgeJob job;
+	job.type = type;
+	job.a = arg1;
+	job.b = arg2;
+	job.c = arg3;
+	job.d = arg4;
+	job.nativeEffect = fx;
+	std::lock_guard<std::mutex> lock(g_BridgeJobMutex);
+	g_BridgeJobs.push_back(job);
+}
+
 uint32_t GetLastBridgeActionSeed()
 {
 	return g_BridgeLastActionSeed.load(std::memory_order_relaxed);
@@ -431,6 +456,27 @@ int GetLastBridgeActionType()
 uint64_t GetLastBridgeActionSeq()
 {
 	return g_BridgeLastActionSeq.load(std::memory_order_acquire);
+}
+
+bool ConsumeNativeItemEffect(int miscId, D1NativeItemEffect &out)
+{
+	if (!g_NativeItemEffect)
+		return false;
+	if (g_NativeItemEffect->miscId != miscId) {
+		// The mirror and the engine disagree about which item is being used. Never apply a decision
+		// computed for another item: drop it, let the vanilla switch run, and record the fallback.
+		g_NativeItemEffect.reset();
+		g_NativeItemFallbacks.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
+	out = *g_NativeItemEffect;
+	g_NativeItemEffect.reset();
+	return true;
+}
+
+int GetNativeItemFallbacks()
+{
+	return g_NativeItemFallbacks.load(std::memory_order_relaxed);
 }
 
 void PollGodotBridgeInput()
@@ -457,6 +503,8 @@ void PollGodotBridgeInput()
 		// Release ordering: a reader that sees the counter move is guaranteed to see the seed/type
 		// stores above (acquire in GetLastBridgeActionSeq()).
 		g_BridgeLastActionSeq.fetch_add(1, std::memory_order_release);
+		// Arm the native decision for THIS job only. A job without one clears any leftover.
+		g_NativeItemEffect = job.nativeEffect;
 		switch (job.type) {
 		case D1BridgeActionType::ActivateModal:       ActivateModalItem(job.a); break;
 		case D1BridgeActionType::SelectModal:         SelectModalItem(job.a); break;
@@ -584,6 +632,9 @@ void PollGodotBridgeInput()
 	// Not consumed by the harness yet - see the note in GetLastBridgeActionEndSeed.
 	g_BridgeLastActionEndSeed.store(GetLCGEngineState(), std::memory_order_relaxed);
 	}
+	// The batch is done. A decision that no action consumed (the item turned out not to be usable,
+	// the cursor was holding something, ...) must never survive into a later action.
+	g_NativeItemEffect.reset();
 
 	// 1. Process in-process GDExtension direct input queue
 	{

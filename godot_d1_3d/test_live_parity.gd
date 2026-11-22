@@ -78,6 +78,37 @@ func _init() -> void:
 	OS.delay_msec(1500)
 
 	var checked = 0
+	var native_uses = 0
+	var fallbacks_before = 0
+
+	# Guard, live: a decision must never be applied to an item it was not computed for. Push a
+	# FULLMANA decision onto a slot that holds a partial Potion of Healing: the engine's own item
+	# (IMISC_HEAL) is not even in the handover set, so the gate must ignore the payload entirely -
+	# mana must not move, and the vanilla partial heal must still happen.
+	var guard_slot = -1
+	for i in range(8):
+		var b = bridge.get_belt_items()[i]
+		if int(b.get("count", 0)) > 0 and BELT_TYPE_TO_MISC.get(int(b.get("type", 0)), -1) == ItemLogic.IMISC_HEAL:
+			guard_slot = i
+			break
+	var guard_ok = true
+	if guard_slot >= 0:
+		var g_before = state(bridge)
+		var g_seq = bridge.get_last_action_seq()
+		bridge.use_belt_slot_native(guard_slot, int(ItemLogic.IMISC_FULLMANA), 0, 0, 1, 0, 0, 0, 0, 0)
+		var g_wait = 0
+		while bridge.get_last_action_seq() == g_seq and g_wait < 2000:
+			OS.delay_msec(20)
+			g_wait += 20
+		var g_after = state(bridge)
+		print("[GUARD] foreign decision on belt ", guard_slot, ": hp ", g_before.hp, " -> ", g_after.hp,
+			" mana ", g_before.mana, " -> ", g_after.mana, " (want: healed, mana untouched)")
+		guard_ok = g_after.mana == g_before.mana and g_after.hp > g_before.hp
+		if not guard_ok:
+			print("FAIL: a decision computed for another item was applied")
+	# Baseline for the clean-use check: taken after the deliberate mismatch above.
+	fallbacks_before = int(bridge.get_native_item_fallbacks())
+
 	for i in range(8):
 		var belt = bridge.get_belt_items()[i]
 		var t = int(belt.get("type", 0))
@@ -87,7 +118,17 @@ func _init() -> void:
 		var item = {"misc_id": BELT_TYPE_TO_MISC[t], "can_use": true}
 		var ctx = {"hellfire": bridge.is_hellfire()}
 		var seq_before = bridge.get_last_action_seq()
-		bridge.use_belt_slot(i)
+		# Handover path: when the mirror can decide the effect deterministically it hands the
+		# decision to the engine, which applies it instead of recomputing it. Anything else (and
+		# anything the mirror refuses) goes through the plain C++ switch.
+		var fx = ItemLogic.native_handover_request(item, before, ctx)
+		if fx.is_empty():
+			bridge.use_belt_slot(i)
+		else:
+			native_uses += 1
+			bridge.use_belt_slot_native(i, int(fx.misc_id), int(fx.hp_mode), int(fx.hp_delta),
+				int(fx.mana_mode), int(fx.mana_delta),
+				int(fx.str), int(fx.mag), int(fx.dex), int(fx.vit))
 		# Wait for PROOF of execution on the engine thread (the drain counter moves), not a fixed
 		# sleep: a fixed sleep can read state before PollGodotBridgeInput() has drained the job.
 		var executed = false
@@ -110,13 +151,25 @@ func _init() -> void:
 		var cpp_result = {"hp": after["hp"] - before["hp"], "mana": after["mana"] - before["mana"]}
 		var ok = auth.record("inventory_item_use", native_result, cpp_result)
 		checked += 1
-		print("[PARITY] belt %d (%s) %s native=%s cpp=%s seed=%d type=%d%s" % [
+		print("[PARITY] belt %d (%s) %s native=%s cpp=%s seed=%d type=%d path=%s%s" % [
 			i, belt.get("name", ""), "OK" if ok else "MISMATCH", native_result, cpp_result, seed_at_exec,
 			bridge.get_last_action_type(),
+			"NATIVE" if not fx.is_empty() else "CPP",
 			"  [rng]" if pred["rng_dependent"] else "  [deterministic]"])
+
+	# The engine drops a decision it cannot match to the item it is using, and counts each drop.
+	# Any increase here means the handover was NOT applied and the vanilla switch ran instead.
+	var fallbacks = int(bridge.get_native_item_fallbacks()) - fallbacks_before
+	print("native handover uses: ", native_uses, "  engine fallbacks (clean uses): ", fallbacks)
+	if native_uses == 0:
+		print("[NOTE] this hero carries no deterministic consumable (full heal / elixir), so the "
+			+ "engine-side apply path was not exercised live here. It is covered by "
+			+ "test_hud_belt_and_bindings.gd (payload) and by the guard above (never mis-applied).")
+	if fallbacks != 0:
+		print("FAIL: engine dropped ", fallbacks, " native item-use decision(s)")
 
 	print("--------------------------------------------------")
 	print("checks recorded: ", checked)
 	print("[PARITY REPORT] ", auth.report())
 	bridge.quit_engine()
-	quit(0 if int(auth.report()["inventory_item_use"]["mismatches"]) == 0 else 1)
+	quit(0 if int(auth.report()["inventory_item_use"]["mismatches"]) == 0 and fallbacks == 0 and guard_ok else 1)

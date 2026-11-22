@@ -260,6 +260,43 @@ uint32_t GetLastBridgeActionEndSeed();
 int GetLastBridgeActionType();
 uint64_t GetLastBridgeActionSeq();
 
+// --- Native item-use authority (Task 2 Step 5) ---------------------------------------------
+// The Godot logic layer (godot_d1_3d/scripts/logic/d1_item_logic.gd) mirrors UseItem() and can
+// decide what a consumable does. For the deterministic slice - full potions and elixirs, the
+// effects that contain NO RNG draw - that decision is handed to the engine: the payload travels
+// INSIDE the queued action, and UseItem() applies it instead of running its own switch.
+// Anything RNG-dependent (partial heal / partial mana / rejuv) stays with the engine, because the
+// native layer cannot know the engine's LCG state before the action is drained.
+//
+// Carrying the payload with the job (instead of arming a global) leaves no window where a stale
+// decision could be consumed by a different action. The misc id is a guard: if the engine ends up
+// using another item, the decision is dropped, the vanilla path runs, and the fallback counter
+// increments so the caller can hand the subsystem back to C++.
+struct D1NativeItemEffect {
+	int miscId = -1;   // item_misc_id this decision was computed for
+	// hp/mana: 0 = untouched, 1 = full restore, 2 = add delta (clamped to max, base follows)
+	int hpMode = 0;
+	int hpDelta = 0;
+	int manaMode = 0;
+	int manaDelta = 0;
+	// attribute deltas, applied through ModifyPlr* so the caps and CalcPlrInv stay intact
+	int str = 0;
+	int mag = 0;
+	int dex = 0;
+	int vit = 0;
+};
+
+// Queue an action that carries a native decision. Same thread rules as PushBridgeAction.
+void PushBridgeActionWithNativeEffect(D1BridgeActionType type, int arg1, const D1NativeItemEffect &fx,
+    int arg2 = 0, int arg3 = 0, int arg4 = 0);
+
+// Engine-thread only (called from UseItem). Consumes the decision armed for `miscId`.
+// Returns false when the engine must decide itself; a decision armed for a DIFFERENT item is
+// dropped and counted as a fallback.
+bool ConsumeNativeItemEffect(int miscId, D1NativeItemEffect &out);
+// How many times a native decision was dropped because it did not match the item the engine used.
+int GetNativeItemFallbacks();
+
 void SetActiveUiPanel(int panel);
 void CloseAllUiPanels();
 int GetActiveUiPanel();

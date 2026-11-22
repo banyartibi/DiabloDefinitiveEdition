@@ -139,6 +139,35 @@ func _init() -> void:
 	auth.record("level_transition", tr.snapshot()["state"], Transition.STATE_LOADED)
 	check("transition parity", auth.report()["level_transition"]["mismatches"], 0)
 
+	# --- 5. Native item-use handover payload ---
+	# The payload shape must match D1NativeItemEffect (DevilutionX/Source/engine/render_bridge.hpp)
+	# and the handover set must match IsNativeHandoverMisc() (Source/items.cpp): deterministic
+	# consumables only, everything that draws from the LCG stays with the engine.
+	var h_fh := {"misc_id": ItemLogic.IMISC_FULLHEAL, "can_use": true}
+	var h1 = ItemLogic.native_handover_request(h_fh, warrior)
+	check("FULLHEAL handover misc_id", h1.get("misc_id", -1), ItemLogic.IMISC_FULLHEAL)
+	check("FULLHEAL handover hp full", h1.get("hp_mode", -1), 1)
+	check("FULLHEAL handover mana untouched", h1.get("mana_mode", -1), 0)
+
+	var h2 = ItemLogic.native_handover_request({"misc_id": ItemLogic.IMISC_FULLREJUV, "can_use": true}, warrior)
+	check("FULLREJUV handover hp+mana full", [h2.get("hp_mode", -1), h2.get("mana_mode", -1)], [1, 1])
+
+	var h3 = ItemLogic.native_handover_request({"misc_id": ItemLogic.IMISC_ELIXVIT, "can_use": true}, warrior, {"hellfire": true})
+	check("ELIXVIT handover vit", h3.get("vit", -1), 1)
+	check("ELIXVIT handover also restores life (hellfire)", h3.get("hp_mode", -1), 1)
+
+	var h_se := {"misc_id": ItemLogic.IMISC_SPECELIX, "can_use": true}
+	var h4 = ItemLogic.native_handover_request(h_se, warrior, {"mushroom_quest_done": true})
+	check("SPECELIX handover all stats", [h4.get("str", -1), h4.get("mag", -1), h4.get("dex", -1), h4.get("vit", -1)], [3, 3, 3, 3])
+	check("SPECELIX blocked by quest -> no handover", ItemLogic.native_handover_request(h_se, warrior, {"mushroom_quest_done": false}), {})
+
+	# Refusals: rng-dependent or outside the set, the engine decides (and the null rng in the
+	# request must never be reached, so these must return {} instead of crashing).
+	check("HEAL partial stays with C++", ItemLogic.native_handover_request({"misc_id": ItemLogic.IMISC_HEAL, "can_use": true}, warrior), {})
+	check("MANA partial stays with C++", ItemLogic.native_handover_request({"misc_id": ItemLogic.IMISC_MANA, "can_use": true}, rogue), {})
+	check("BOOK stays with C++", ItemLogic.native_handover_request({"misc_id": ItemLogic.IMISC_BOOK, "can_use": true, "spell_id": 0, "spell_from": 0}, rogue), {})
+	check("handover set matches items.cpp", ItemLogic.NATIVE_HANDOVER_MISC.size(), 8)
+
 	print("--------------------------------------------------")
 	if failures:
 		print("FAILURES: ", failures)

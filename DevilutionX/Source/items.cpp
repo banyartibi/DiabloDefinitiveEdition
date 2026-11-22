@@ -4038,10 +4038,81 @@ void PrintItemDur(const Item &item)
 	PrintItemInfo(item);
 }
 
+namespace {
+// Native item-use authority: the consumables whose effect contains no RNG draw. Only these can be
+// decided ahead of time by the Godot logic layer, because a partial restore depends on the engine's
+// LCG state at the moment the action is drained, which the native layer cannot know in advance.
+bool IsNativeHandoverMisc(item_misc_id mid)
+{
+	switch (mid) {
+	case IMISC_FULLHEAL:
+	case IMISC_FULLMANA:
+	case IMISC_FULLREJUV:
+	case IMISC_ELIXSTR:
+	case IMISC_ELIXMAG:
+	case IMISC_ELIXDEX:
+	case IMISC_ELIXVIT:
+	case IMISC_SPECELIX:
+		return true;
+	default:
+		return false;
+	}
+}
+
+// Apply the decision the native layer armed with this action (see D1NativeItemEffect). The engine
+// still performs the mutation itself - the handover is about WHO DECIDES, not who writes the fields.
+void ApplyNativeItemEffect(Player &player, const D1NativeItemEffect &fx)
+{
+	if (fx.hpMode != 0) {
+		if (fx.hpMode == 1) {
+			player.RestoreFullLife();
+		} else {
+			player._pHitPoints = std::min(player._pHitPoints + fx.hpDelta, player._pMaxHP);
+			player._pHPBase = std::min(player._pHPBase + fx.hpDelta, player._pMaxHPBase);
+		}
+		if (&player == MyPlayer) {
+			RedrawComponent(PanelDrawComponent::Health);
+		}
+	}
+	if (fx.manaMode != 0) {
+		if (fx.manaMode == 1) {
+			player.RestoreFullMana();
+		} else {
+			if (HasNoneOf(player._pIFlags, ItemSpecialEffect::NoMana)) {
+				player._pMana = std::min(player._pMana + fx.manaDelta, player._pMaxMana);
+				player._pManaBase = std::min(player._pManaBase + fx.manaDelta, player._pMaxManaBase);
+			}
+		}
+		if (&player == MyPlayer) {
+			RedrawComponent(PanelDrawComponent::Mana);
+		}
+	}
+	if (fx.str != 0)
+		ModifyPlrStr(player, fx.str);
+	if (fx.mag != 0)
+		ModifyPlrMag(player, fx.mag);
+	if (fx.dex != 0)
+		ModifyPlrDex(player, fx.dex);
+	if (fx.vit != 0)
+		ModifyPlrVit(player, fx.vit);
+}
+} // namespace
+
 void UseItem(size_t pnum, item_misc_id mid, SpellID spellID, int spellFrom)
 {
 	Player &player = Players[pnum];
 	std::optional<SpellID> prepareSpellID;
+
+	// Native item-use authority: when the Godot logic layer decided this effect, the engine applies
+	// that decision instead of computing its own. ConsumeNativeItemEffect only matches a decision
+	// armed for this exact misc id, so any disagreement falls through to the vanilla switch below.
+	if (IsNativeHandoverMisc(mid)) {
+		D1NativeItemEffect nativeFx;
+		if (ConsumeNativeItemEffect(static_cast<int>(mid), nativeFx)) {
+			ApplyNativeItemEffect(player, nativeFx);
+			return;
+		}
+	}
 
 	switch (mid) {
 	case IMISC_HEAL:

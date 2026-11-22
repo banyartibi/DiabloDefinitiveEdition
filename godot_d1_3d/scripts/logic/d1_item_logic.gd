@@ -65,6 +65,63 @@ const CLASS_BARD := 5
 
 const CONTROL_KEYBOARD_AND_MOUSE := 0
 
+# --- Native handover (Task 2 Step 5) -------------------------------------------------------
+# The consumables whose effect contains NO RNG draw. For these the mirror can decide the effect
+# before the engine runs the action, so the decision is handed to C++ (UseItem applies it instead
+# of running its own switch). Partial heals/mana/rejuv are deliberately absent: they draw from the
+# engine's LCG at drain time, which the native layer cannot know in advance.
+const NATIVE_HANDOVER_MISC := [
+	IMISC_FULLHEAL, IMISC_FULLMANA, IMISC_FULLREJUV,
+	IMISC_ELIXSTR, IMISC_ELIXMAG, IMISC_ELIXDEX, IMISC_ELIXVIT,
+	IMISC_SPECELIX,
+]
+
+## The decision to hand to the engine, or {} when the native layer must NOT decide.
+## Shape matches D1NativeItemEffect (DevilutionX/Source/engine/render_bridge.hpp):
+##   hp_mode / mana_mode: 0 = untouched, 1 = full restore, 2 = add delta
+##   str/mag/dex/vit: attribute deltas
+## Refuses whenever the prediction is not deterministic, is not applicable, or contains an action
+## the handover cannot express - the caller then uses the plain C++ path.
+static func native_handover_request(item: Dictionary, player: Dictionary, ctx: Dictionary = {}) -> Dictionary:
+	var misc := int(item.get("misc_id", IMISC_NONE))
+	if misc not in NATIVE_HANDOVER_MISC:
+		return {}
+	# rng is passed null on purpose: none of the handover misc ids reach an rng-dependent branch,
+	# and a null rng turns such a bug into an immediate crash instead of a silent wrong number.
+	var pred := predict_use_item(item, player, null, ctx)
+	if not bool(pred.get("ok", false)) or bool(pred.get("rng_dependent", false)):
+		return {}
+	var fx := {
+		"misc_id": misc,
+		"hp_mode": 0, "hp_delta": 0,
+		"mana_mode": 0, "mana_delta": 0,
+		"str": 0, "mag": 0, "dex": 0, "vit": 0,
+	}
+	var effects: Dictionary = pred.get("effects", {})
+	for action in pred.get("actions", []):
+		match action:
+			"restore_full_life":
+				fx["hp_mode"] = 1
+			"restore_full_mana":
+				fx["mana_mode"] = 1
+			"modify_str":
+				fx["str"] = int(effects.get("str", 0))
+			"modify_mag":
+				fx["mag"] = int(effects.get("mag", 0))
+			"modify_dex":
+				fx["dex"] = int(effects.get("dex", 0))
+			"modify_vit":
+				fx["vit"] = int(effects.get("vit", 0))
+			"modify_all_stats":
+				fx["str"] = int(effects.get("str", 0))
+				fx["mag"] = int(effects.get("mag", 0))
+				fx["dex"] = int(effects.get("dex", 0))
+				fx["vit"] = int(effects.get("vit", 0))
+			_:
+				# An effect the handover payload cannot carry: leave the decision to the engine.
+				return {}
+	return fx
+
 
 static func is_usable(item: Dictionary, ctx: Dictionary = {}) -> bool:
 	## Mirror of Item::isUsable() (Source/items.cpp:4766).

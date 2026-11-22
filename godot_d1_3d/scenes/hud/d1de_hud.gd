@@ -136,6 +136,8 @@ var display_mana: float = 50.0
 # Optimistic (native-predicted) item effect, shown while the engine action is still queued.
 # Only applied when D1LogicAuthority reports AUTH_NATIVE for inventory_item_use.
 var _optimistic: Dictionary = {}
+# Native item-use handover: fallback counter last read from the engine (-1 = not read yet).
+var _native_item_fallbacks_seen := -1
 const OPTIMISTIC_TTL_MS := 1500
 
 
@@ -502,6 +504,7 @@ func _use_hud_belt_slot(idx: int) -> void:
 	if diablo_bridge == null or not diablo_bridge.has_method("use_belt_slot"):
 		return
 	var items: Array = diablo_bridge.get_belt_items() if diablo_bridge.has_method("get_belt_items") else []
+	var fx: Dictionary = {}
 	if idx >= 0 and idx < items.size():
 		var item: Dictionary = items[idx]
 		var type = item.get("type", 0)
@@ -511,9 +514,49 @@ func _use_hud_belt_slot(idx: int) -> void:
 			if tabbed_menu and not tabbed_menu.visible:
 				tabbed_menu.open_tab(1)
 		_shadow_use(item)
-	diablo_bridge.use_belt_slot(idx)
+		fx = _native_handover(item)
+	if not fx.is_empty():
+		diablo_bridge.use_belt_slot_native(idx,
+			int(fx.misc_id), int(fx.hp_mode), int(fx.hp_delta),
+			int(fx.mana_mode), int(fx.mana_delta),
+			int(fx.str), int(fx.mag), int(fx.dex), int(fx.vit))
+	else:
+		diablo_bridge.use_belt_slot(idx)
 	update_belt_slots()
 	_shadow_verify()
+
+
+## Native item-use handover (Task 2 Step 5): ask the mirror what this consumable does.
+## {} means the engine decides. Restricted to AUTH_NATIVE + deterministic effects
+## (d1_item_logic.NATIVE_HANDOVER_MISC): the engine still performs the mutation, it just applies
+## the decision it was handed instead of recomputing it.
+func _native_handover(item: Dictionary) -> Dictionary:
+	if item.is_empty() or diablo_bridge == null:
+		return {}
+	var auth = _auth()
+	if auth == null or auth.get_authority("inventory_item_use") != auth.AUTH_NATIVE:
+		return {}
+	var ctx = {"hellfire": diablo_bridge.is_hellfire()}
+	return item_logic.native_handover_request(item, _player_state(), ctx)
+
+
+## Watchdog: the engine drops a decision it cannot match to the item it is actually using, and
+## counts each drop. A non-zero delta means the mirror and the engine disagreed, so the subsystem
+## goes back to AUTH_SHADOW - the ledger keeps measuring, the native layer stops deciding.
+func _check_native_handover() -> void:
+	if diablo_bridge == null or not diablo_bridge.has_method("get_native_item_fallbacks"):
+		return
+	var seen := int(diablo_bridge.get_native_item_fallbacks())
+	if _native_item_fallbacks_seen < 0:
+		_native_item_fallbacks_seen = seen
+		return
+	if seen == _native_item_fallbacks_seen:
+		return
+	_native_item_fallbacks_seen = seen
+	var auth = _auth()
+	if auth != null:
+		auth.set_authority("inventory_item_use", auth.AUTH_SHADOW)
+	print("[HUD] NATIVE item-use fallback #%d -> inventory_item_use demoted to SHADOW" % seen)
 
 var _last_belt_signature: Array = []
 
@@ -1169,6 +1212,7 @@ func send_key(keycode: int):
 		)
 
 func _process(delta: float):
+	_check_native_handover()
 	if not diablo_bridge or not diablo_bridge.has_method("is_engine_ready") or not diablo_bridge.is_engine_ready():
 		$Root.visible = false
 		if item_tooltip: item_tooltip.visible = false

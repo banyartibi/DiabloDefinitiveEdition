@@ -52,6 +52,8 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_player_spell_type"), &DiabloBridge::get_player_spell_type);
 	ClassDB::bind_method(D_METHOD("get_belt_items"), &DiabloBridge::get_belt_items);
 	ClassDB::bind_method(D_METHOD("use_belt_slot", "slot_index"), &DiabloBridge::use_belt_slot);
+	ClassDB::bind_method(D_METHOD("use_belt_slot_native", "slot_index", "misc_id", "hp_mode", "hp_delta", "mana_mode", "mana_delta", "str_delta", "mag_delta", "dex_delta", "vit_delta"), &DiabloBridge::use_belt_slot_native);
+	ClassDB::bind_method(D_METHOD("get_native_item_fallbacks"), &DiabloBridge::get_native_item_fallbacks);
 	ClassDB::bind_method(D_METHOD("click_belt_slot", "slot_index"), &DiabloBridge::click_belt_slot);
 	ClassDB::bind_method(D_METHOD("set_vanilla_hud_hidden", "hidden"), &DiabloBridge::set_vanilla_hud_hidden);
 	ClassDB::bind_method(D_METHOD("is_vanilla_hud_hidden"), &DiabloBridge::is_vanilla_hud_hidden);
@@ -122,6 +124,7 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_item_texture", "curs_id"), &DiabloBridge::get_item_texture);
 	ClassDB::bind_method(D_METHOD("click_inventory_slot", "slot_type", "slot_idx", "is_shift", "is_ctrl"), &DiabloBridge::click_inventory_slot, DEFVAL(false), DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("use_inventory_slot", "slot_type", "slot_idx"), &DiabloBridge::use_inventory_slot);
+	ClassDB::bind_method(D_METHOD("use_inventory_slot_native", "slot_type", "slot_idx", "misc_id", "hp_mode", "hp_delta", "mana_mode", "mana_delta", "str_delta", "mag_delta", "dex_delta", "vit_delta"), &DiabloBridge::use_inventory_slot_native);
 	ClassDB::bind_method(D_METHOD("get_cursor_id"), &DiabloBridge::get_cursor_id);
 	ClassDB::bind_method(D_METHOD("get_rng_seed"), &DiabloBridge::get_rng_seed);
 	ClassDB::bind_method(D_METHOD("get_last_action_rng_seed"), &DiabloBridge::get_last_action_rng_seed);
@@ -485,6 +488,39 @@ Array DiabloBridge::get_belt_items() const {
 void DiabloBridge::use_belt_slot(int slot_index) {
 	// Route to engine thread (queued): mutates state, can trigger a render cycle.
 	devilution::PushBridgeAction(devilution::D1BridgeActionType::UseBeltSlot, slot_index);
+}
+
+namespace {
+// Build the native item-use decision payload from the flat GDScript arguments. Kept as one helper
+// so the belt and the inventory path cannot drift apart.
+devilution::D1NativeItemEffect make_native_item_effect(int misc_id, int hp_mode, int hp_delta,
+    int mana_mode, int mana_delta, int str_delta, int mag_delta, int dex_delta, int vit_delta)
+{
+	devilution::D1NativeItemEffect fx;
+	fx.miscId = misc_id;
+	fx.hpMode = hp_mode;
+	fx.hpDelta = hp_delta;
+	fx.manaMode = mana_mode;
+	fx.manaDelta = mana_delta;
+	fx.str = str_delta;
+	fx.mag = mag_delta;
+	fx.dex = dex_delta;
+	fx.vit = vit_delta;
+	return fx;
+}
+} // namespace
+
+void DiabloBridge::use_belt_slot_native(int slot_index, int misc_id, int hp_mode, int hp_delta,
+    int mana_mode, int mana_delta, int str_delta, int mag_delta, int dex_delta, int vit_delta) {
+	// Same engine-thread routing as use_belt_slot; the native decision travels WITH the job so it
+	// can never be picked up by a different action.
+	devilution::PushBridgeActionWithNativeEffect(devilution::D1BridgeActionType::UseBeltSlot, slot_index,
+	    make_native_item_effect(misc_id, hp_mode, hp_delta, mana_mode, mana_delta,
+	        str_delta, mag_delta, dex_delta, vit_delta));
+}
+
+int DiabloBridge::get_native_item_fallbacks() const {
+	return devilution::GetNativeItemFallbacks();
 }
 
 void DiabloBridge::click_belt_slot(int slot_index) {
@@ -1449,6 +1485,13 @@ void DiabloBridge::click_inventory_slot(int slot_type, int slot_idx, bool is_shi
 
 void DiabloBridge::use_inventory_slot(int slot_type, int slot_idx) {
 	devilution::PushBridgeAction(devilution::D1BridgeActionType::UseInventorySlot, slot_type, slot_idx);
+}
+
+void DiabloBridge::use_inventory_slot_native(int slot_type, int slot_idx, int misc_id, int hp_mode, int hp_delta,
+    int mana_mode, int mana_delta, int str_delta, int mag_delta, int dex_delta, int vit_delta) {
+	devilution::PushBridgeActionWithNativeEffect(devilution::D1BridgeActionType::UseInventorySlot,
+	    slot_type, make_native_item_effect(misc_id, hp_mode, hp_delta, mana_mode, mana_delta,
+	        str_delta, mag_delta, dex_delta, vit_delta), slot_idx);
 }
 
 int DiabloBridge::get_cursor_id() const {

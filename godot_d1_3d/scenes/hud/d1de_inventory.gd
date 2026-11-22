@@ -111,6 +111,42 @@ func _shadow_use(item: Dictionary) -> void:
 				target.apply_optimistic_item_delta(d_hp, d_mana, seq_now)
 
 
+# --- Native item-use handover (Task 2 Step 5) -----------------------------------------------
+## Ask the native mirror what this consumable does. {} means the engine decides.
+## Only when the subsystem is AUTH_NATIVE and the effect is deterministic (no RNG draw): the
+## engine still performs the mutation, it just applies the decision it was handed.
+func _native_handover(item: Dictionary) -> Dictionary:
+	if item.is_empty() or diablo_bridge == null:
+		return {}
+	var auth = _auth()
+	if auth == null or auth.get_authority("inventory_item_use") != auth.AUTH_NATIVE:
+		return {}
+	var ctx = {"hellfire": diablo_bridge.is_hellfire()}
+	return item_logic.native_handover_request(item, _player_state(), ctx)
+
+
+func _push_use_inventory(slot_type: int, slot_idx: int, item: Dictionary) -> void:
+	var fx := _native_handover(item)
+	if not fx.is_empty() and diablo_bridge.has_method("use_inventory_slot_native"):
+		diablo_bridge.use_inventory_slot_native(slot_type, slot_idx,
+			int(fx.misc_id), int(fx.hp_mode), int(fx.hp_delta),
+			int(fx.mana_mode), int(fx.mana_delta),
+			int(fx.str), int(fx.mag), int(fx.dex), int(fx.vit))
+	else:
+		diablo_bridge.use_inventory_slot(slot_type, slot_idx)
+
+
+func _push_use_belt(belt_idx: int, item: Dictionary) -> void:
+	var fx := _native_handover(item)
+	if not fx.is_empty() and diablo_bridge.has_method("use_belt_slot_native"):
+		diablo_bridge.use_belt_slot_native(belt_idx,
+			int(fx.misc_id), int(fx.hp_mode), int(fx.hp_delta),
+			int(fx.mana_mode), int(fx.mana_delta),
+			int(fx.str), int(fx.mag), int(fx.dex), int(fx.vit))
+	else:
+		diablo_bridge.use_belt_slot(belt_idx)
+
+
 func _shadow_verify() -> void:
 	var auth = _auth()
 	if auth != null and not auth.validation_enabled:
@@ -545,7 +581,7 @@ func _on_equip_slot_gui_input(slot_idx: int, event: InputEvent):
 				return
 		if diablo_bridge and diablo_bridge.has_method("use_inventory_slot"):
 			_shadow_use(_item_at(0, slot_idx))
-			diablo_bridge.use_inventory_slot(0, slot_idx)
+			_push_use_inventory(0, slot_idx, _item_at(0, slot_idx))
 			update_inventory()
 			_shadow_verify()
 			_on_item_mouse_exited()
@@ -570,7 +606,7 @@ func _on_backpack_cell_gui_input(cell_idx: int, event: InputEvent):
 				return
 		if diablo_bridge and diablo_bridge.has_method("use_inventory_slot"):
 			_shadow_use(_item_at(1, cell_idx))
-			diablo_bridge.use_inventory_slot(1, cell_idx)
+			_push_use_inventory(1, cell_idx, _item_at(1, cell_idx))
 			update_inventory()
 			_shadow_verify()
 			_on_item_mouse_exited()
@@ -596,10 +632,10 @@ func _on_backpack_item_gui_input(cell_idx: int, inv_list_idx: int, event: InputE
 		if diablo_bridge and diablo_bridge.has_method("use_inventory_slot"):
 			if inv_list_idx >= 0:
 				_shadow_use(_item_at(2, inv_list_idx))
-				diablo_bridge.use_inventory_slot(2, inv_list_idx)
+				_push_use_inventory(2, inv_list_idx, _item_at(2, inv_list_idx))
 			else:
 				_shadow_use(_item_at(1, cell_idx))
-				diablo_bridge.use_inventory_slot(1, cell_idx)
+				_push_use_inventory(1, cell_idx, _item_at(1, cell_idx))
 			update_inventory()
 			_shadow_verify()
 			_on_item_mouse_exited()
@@ -624,7 +660,7 @@ func _on_belt_slot_gui_input(belt_idx: int, event: InputEvent):
 				return
 		if diablo_bridge and diablo_bridge.has_method("use_belt_slot"):
 			_shadow_use(_belt_item_at(belt_idx))
-			diablo_bridge.use_belt_slot(belt_idx)
+			_push_use_belt(belt_idx, _belt_item_at(belt_idx))
 			update_inventory()
 			_shadow_verify()
 			_on_item_mouse_exited()

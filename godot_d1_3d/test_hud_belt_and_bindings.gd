@@ -31,7 +31,28 @@ class MockBridge extends RefCounted:
 				"misc_id": 3 if i < 4 else 6, # IMISC_HEAL / IMISC_MANA
 				"can_use": true
 			})
+		for slot in belt_overrides:
+			arr[slot] = belt_overrides[slot]
 		return arr
+
+	# Native item-use handover (Task 2 Step 5).
+	var belt_overrides := {}
+	var native_calls := []
+	var fallbacks := 0
+
+	func set_belt_item(idx: int, item: Dictionary) -> void:
+		belt_overrides[idx] = item
+
+	func get_native_item_fallbacks() -> int: return fallbacks
+
+	func use_belt_slot_native(idx: int, misc_id: int, hp_mode: int, hp_delta: int,
+	    mana_mode: int, mana_delta: int, str_d: int, mag_d: int, dex_d: int, vit_d: int) -> void:
+		native_calls.append({
+			"idx": idx, "misc_id": misc_id, "hp_mode": hp_mode, "hp_delta": hp_delta,
+			"mana_mode": mana_mode, "mana_delta": mana_delta,
+			"str": str_d, "mag": mag_d, "dex": dex_d, "vit": vit_d,
+		})
+		seq += 1
 
 	func get_player_hp() -> int: return hp
 	func get_player_max_hp() -> int: return max_hp
@@ -103,6 +124,43 @@ func _init() -> void:
 	click_rmb.pressed = true
 	hud._on_hud_belt_slot_gui_input(5, click_rmb)
 	check("RMB drinks potion", bridge.belt_used.has(5))
+
+	# 6. Native item-use handover. Under AUTH_NATIVE a deterministic consumable is decided by the
+	# mirror and handed to the engine; anything that draws from the LCG still goes the old way.
+	var Authority := preload("res://scripts/logic/d1_logic_authority.gd")
+	var auth = hud._auth()
+	var auth_before: int = auth.get_authority("inventory_item_use")
+	auth.set_authority("inventory_item_use", Authority.AUTH_NATIVE)
+
+	bridge.belt_used.clear()
+	bridge.native_calls.clear()
+	hud._use_hud_belt_slot(0) # IMISC_HEAL: partial restore, rng-dependent
+	check("partial heal still decided by C++", bridge.belt_used.has(0) and bridge.native_calls.is_empty())
+
+	bridge.belt_used.clear()
+	bridge.set_belt_item(1, {"slot_id": 1, "name": "Potion of Full Healing", "type": 1, "count": 1,
+		"misc_id": 2, "can_use": true}) # IMISC_FULLHEAL
+	hud._use_hud_belt_slot(1)
+	check("full heal takes the native path", bridge.native_calls.size() == 1 and bridge.belt_used.is_empty())
+	if bridge.native_calls.size() == 1:
+		var call: Dictionary = bridge.native_calls[0]
+		check("native payload carries the misc id", call["misc_id"] == 2)
+		check("native payload: hp full restore", call["hp_mode"] == 1 and call["hp_delta"] == 0)
+		check("native payload: mana untouched", call["mana_mode"] == 0)
+		check("native payload: slot index", call["idx"] == 1)
+
+	# Watchdog: an engine-side fallback (a decision it could not match to the item in use) demotes
+	# the subsystem back to SHADOW instead of running an unverified decision again.
+	bridge.fallbacks = 1
+	hud._check_native_handover() # first read: establishes the baseline (engine reports 0)
+	bridge.fallbacks = 2
+	hud._check_native_handover()
+	check("fallback demotes to SHADOW", auth.get_authority("inventory_item_use") == Authority.AUTH_SHADOW)
+	bridge.belt_used.clear()
+	bridge.native_calls.clear()
+	hud._use_hud_belt_slot(1)
+	check("after demotion C++ decides again", bridge.belt_used.has(1) and bridge.native_calls.is_empty())
+	auth.set_authority("inventory_item_use", auth_before)
 
 	hud.queue_free()
 

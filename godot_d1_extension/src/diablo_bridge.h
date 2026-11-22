@@ -83,6 +83,13 @@ public:
 	int get_player_spell_type() const;
 	Array get_belt_items() const;
 	void use_belt_slot(int slot_index);
+	// Native item-use authority: queue a belt use that carries the effect the Godot logic layer
+	// decided, instead of letting the engine compute it. See D1NativeItemEffect in
+	// DevilutionX/Source/engine/render_bridge.hpp for the field meanings.
+	void use_belt_slot_native(int slot_index, int misc_id, int hp_mode, int hp_delta,
+	    int mana_mode, int mana_delta, int str_delta, int mag_delta, int dex_delta, int vit_delta);
+	// How many native decisions were dropped because they did not match the item the engine used.
+	int get_native_item_fallbacks() const;
 	void click_belt_slot(int slot_index);
 	void set_vanilla_hud_hidden(bool hidden);
 	bool is_vanilla_hud_hidden() const;
@@ -157,6 +164,10 @@ public:
 	Ref<ImageTexture> get_item_texture(int curs_id);
 	void click_inventory_slot(int slot_type, int slot_idx, bool is_shift = false, bool is_ctrl = false);
 	void use_inventory_slot(int slot_type, int slot_idx);
+	// Native item-use authority for inventory/belt-container use. Same payload as
+	// use_belt_slot_native; see D1NativeItemEffect in render_bridge.hpp.
+	void use_inventory_slot_native(int slot_type, int slot_idx, int misc_id, int hp_mode, int hp_delta,
+	    int mana_mode, int mana_delta, int str_delta, int mag_delta, int dex_delta, int vit_delta);
 	int get_cursor_id() const;
 	int get_rng_seed() const; // vanilla LCG state (native logic parity harness)
 	// LCG state captured at the moment the last queued bridge action executed on the engine
