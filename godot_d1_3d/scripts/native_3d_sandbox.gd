@@ -68,7 +68,7 @@ var arch_mmi: MultiMeshInstance3D
 var modular_3d_walls_enabled: bool = false # Modular 3D .glb boxes (disabled by default in favor of authentic 4K PBR gothic architecture)
 var modular_3d_props_enabled: bool = false # Placeholder .glb props (disabled by default in favor of authentic gothic Blizzard North art with 3D lights)
 var current_upscaler_mode: int = 0
-var current_tile_model: int = 0
+var current_tile_model: int = 1
 var current_hdr_level: int = 1
 var hd_graphics_enabled: bool = true
 var entity_materials: Dictionary = {} # Sprite3D -> ShaderMaterial
