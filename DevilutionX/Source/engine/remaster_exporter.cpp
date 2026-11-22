@@ -6,10 +6,14 @@
 #include "engine/remaster_exporter.hpp"
 
 #include <SDL.h>
+#include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -33,6 +37,126 @@ namespace devilution {
 
 namespace {
 
+// Level theme palettes available in the MPQs. A monster, missile or object CEL
+// stores palette indices that only carry colour in the palette of the level
+// theme it belongs to; the wrong palette renders a pure-black silhouette.
+const char *const kLevelPaletteCandidates[] = {
+	"levels\\l1data\\l1_1.pal", "levels\\l1data\\l1_2.pal", "levels\\l1data\\l1_3.pal", "levels\\l1data\\l1_4.pal",
+	"levels\\l2data\\l2_1.pal", "levels\\l2data\\l2_2.pal", "levels\\l2data\\l2_3.pal", "levels\\l2data\\l2_4.pal",
+	"levels\\l3data\\l3_1.pal", "levels\\l3data\\l3_2.pal", "levels\\l3data\\l3_3.pal", "levels\\l3data\\l3_4.pal",
+	"levels\\l4data\\l4_1.pal", "levels\\l4data\\l4_2.pal", "levels\\l4data\\l4_3.pal", "levels\\l4data\\l4_4.pal",
+	"nlevels\\l5data\\l5_1.pal", "nlevels\\l5data\\l5_2.pal", "nlevels\\l5data\\l5_3.pal", "nlevels\\l5data\\l5_4.pal",
+	"nlevels\\l5data\\l5base.pal",
+	"nlevels\\l6data\\l6_1.pal", "nlevels\\l6data\\l6_2.pal", "nlevels\\l6data\\l6_3.pal", "nlevels\\l6data\\l6_4.pal",
+	"nlevels\\l7data\\l7_1.pal", "nlevels\\l7data\\l7_2.pal", "nlevels\\l7data\\l7_3.pal", "nlevels\\l7data\\l7_4.pal",
+	"nlevels\\l8data\\l8_1.pal", "nlevels\\l8data\\l8_2.pal", "nlevels\\l8data\\l8_3.pal", "nlevels\\l8data\\l8_4.pal",
+	"levels\\l11data\\l11_1.pal", "levels\\l13data\\l13_1.pal", "levels\\l15data\\l15_1.pal", "levels\\l16data\\l16_1.pal",
+	"levels\\towndata\\town.pal",
+};
+
+// Palette indices actually used by the first non-empty sprite of a CL2/CEL.
+// Index 0 is the transparent index.
+bool CollectCelPaletteIndices(const std::string &assetPath, uint16_t widthHint, std::array<bool, 256> &used)
+{
+	std::optional<OwnedClxSpriteListOrSheet> clx;
+	if (FindAsset((assetPath + ".cl2").c_str()).ok()) {
+		clx.emplace(LoadCl2ListOrSheet(assetPath.c_str(), PointerOrValue<uint16_t>(widthHint)));
+	} else if (FindAsset((assetPath + ".cel").c_str()).ok()) {
+		clx.emplace(LoadCelListOrSheet(assetPath.c_str(), PointerOrValue<uint16_t>(widthHint)));
+	} else {
+		return false;
+	}
+	if (clx->dataSize() == 0)
+		return false;
+	ClxSpriteList list = clx->isSheet() ? clx->sheet()[0] : clx->list();
+	for (size_t f = 0; f < list.numSprites(); ++f) {
+		ClxSprite sprite = list[f];
+		const int w = sprite.width();
+		const int h = sprite.height();
+		if (w <= 0 || h <= 0)
+			continue;
+		SDL_Surface *surface8 = SDL_CreateRGBSurfaceWithFormat(0, w, h, 8, SDL_PIXELFORMAT_INDEX8);
+		if (surface8 == nullptr)
+			return false;
+		std::memset(surface8->pixels, 0, surface8->pitch * surface8->h);
+		Surface out(surface8);
+		RenderClxSprite(out, sprite, { 0, 0 });
+		const uint8_t *px = static_cast<const uint8_t *>(surface8->pixels);
+		for (int y = 0; y < h; ++y) {
+			for (int x = 0; x < w; ++x) {
+				const uint8_t index = px[y * surface8->pitch + x];
+				if (index != 0)
+					used[index] = true;
+			}
+		}
+		SDL_FreeSurface(surface8);
+		return true;
+	}
+	return false;
+}
+
+// How many of the CEL's colour indices the currently loaded palette renders in
+// colour rather than black. 0 means the sprite would export as a silhouette.
+int ScoreCurrentPalette(const std::array<bool, 256> &used)
+{
+	const SDL_Color *colors = orig_palette.data();
+	int score = 0;
+	for (int i = 1; i < 256; ++i) {
+		if (!used[i])
+			continue;
+		if (colors[i].r + colors[i].g + colors[i].b > 30)
+			++score;
+	}
+	return score;
+}
+
+// Picks the level palette that gives a CEL the most colour.
+const char *PickLevelPalette(const std::vector<std::string> &assetPaths, uint16_t widthHint)
+{
+	std::array<bool, 256> used{};
+	for (const std::string &path : assetPaths)
+		CollectCelPaletteIndices(path, widthHint, used);
+	const int usedCount = static_cast<int>(std::count(used.begin(), used.end(), true));
+	if (usedCount == 0) {
+		Log("PickLevelPalette: {} produced no palette indices", assetPaths.empty() ? "<none>" : assetPaths[0]);
+		return nullptr;
+	}
+	const char *best = nullptr;
+	int bestScore = 0;
+	int foundPals = 0;
+	for (const char *pal : kLevelPaletteCandidates) {
+		if (!FindAsset(pal).ok())
+			continue;
+		++foundPals;
+		LoadPalette(pal, false);
+		const int score = ScoreCurrentPalette(used);
+		if (score > bestScore) {
+			bestScore = score;
+			best = pal;
+		}
+	}
+	Log("PickLevelPalette: {} uses {} indices, {} candidate palettes available, best {} scores {}", assetPaths[0], usedCount, foundPals, best != nullptr ? best : "<none>", bestScore);
+	if (best != nullptr)
+		LoadPalette(best);
+	return best;
+}
+
+// Keeps the palette that colours this CEL. A CEL whose colour indices all map
+// to black in the currently loaded palette would export as a pure silhouette
+// (that is how 101 of 254 monster folders ended up black), so in that case
+// switch to the level palette that actually colours it.
+void EnsurePaletteColours(const std::string &assetPath, uint16_t widthHint)
+{
+	std::array<bool, 256> used{};
+	if (!CollectCelPaletteIndices(assetPath, widthHint, used))
+		return;
+	if (ScoreCurrentPalette(used) > 0)
+		return;
+	const char *picked = PickLevelPalette({ assetPath }, widthHint);
+	if (picked != nullptr)
+		LoadPalette(picked);
+}
+
 void ExportAndUpscaleCl2(const std::string &assetPath, uint16_t widthHint = 128)
 {
 	std::string baseName = assetPath;
@@ -52,6 +176,8 @@ void ExportAndUpscaleCl2(const std::string &assetPath, uint16_t widthHint = 128)
 	if (!ref.ok()) {
 		return;
 	}
+
+	EnsurePaletteColours(assetPath, widthHint);
 
 	Log("========================================================");
 	Log("Processing Asset: {}", assetPath);
@@ -151,6 +277,8 @@ void ExportAndUpscaleCel(const std::string &assetPath, uint16_t widthHint = 128)
 		return;
 	}
 
+	EnsurePaletteColours(assetPath, widthHint);
+
 	Log("========================================================");
 	Log("Processing CEL Asset: {}", assetPath);
 
@@ -246,6 +374,8 @@ void ExportAndUpscaleCelWidths(const std::string &assetPath, const uint16_t *wid
 		return;
 	}
 
+	EnsurePaletteColours(assetPath, widths[0]);
+
 	Log("========================================================");
 	Log("Processing CEL Asset (Variable Widths): {}", assetPath);
 
@@ -321,11 +451,10 @@ void ExportAndUpscaleCelWidths(const std::string &assetPath, const uint16_t *wid
 	}
 }
 
-void ExportMonsterFamily(const std::string &basePrefix, uint16_t widthHint, const char *palPath = "levels\\l1data\\l1_1.pal")
+void ExportMonsterFamily(const std::string &basePrefix, uint16_t widthHint, const char *palPath = nullptr)
 {
-	if (palPath != nullptr) {
+	if (palPath != nullptr)
 		LoadPalette(palPath);
-	}
 	const char *actions[] = { "a", "d", "h", "s", "w", "t" };
 	for (const char *act : actions) {
 		ExportAndUpscaleCl2("monsters\\" + basePrefix + act, widthHint);
@@ -356,8 +485,55 @@ void RemasterWarriorClass()
 	Log("========================================================");
 	Log("   Starting 4x-UltraSharp Warrior HD Remastering        ");
 	Log("========================================================");
-	LoadPalette("levels\\towndata\\town.pal");
+	// Player CELs use the system palette (class .trn applied at render time);
+	// a level palette maps their indices to black silhouettes.
 	ExportPlayerClass("warrior", 'w');
+}
+
+void RemasterPlayerSet(const std::string &spec)
+{
+	// spec = "<classDir>:<gfxPrefix>", e.g. "monk:mha". Exports the 11 player
+	// animation CELs of one armor/weapon set instead of the full 396-CEL class.
+	const size_t sep = spec.find(':');
+	if (sep == std::string::npos || sep == 0 || sep + 1 >= spec.size()) {
+		Log("RemasterPlayerSet: expected <classDir>:<prefix>, got '{}'", spec);
+		return;
+	}
+	const std::string classDir = spec.substr(0, sep);
+	const std::string prefix = spec.substr(sep + 1);
+	std::vector<std::string> wanted;
+	const size_t sep2 = prefix.find(':');
+	std::string gfxPrefix = prefix;
+	if (sep2 != std::string::npos) {
+		gfxPrefix = prefix.substr(0, sep2);
+		// Optional third field: comma separated action codes (debug/partial runs).
+		std::string acts = prefix.substr(sep2 + 1);
+		size_t pos = 0;
+		while (pos < acts.size()) {
+			size_t comma = acts.find(',', pos);
+			wanted.push_back(acts.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos));
+			if (comma == std::string::npos)
+				break;
+			pos = comma + 1;
+		}
+	}
+	Log("========================================================");
+	Log("   Starting HD Remastering for player set: {}          ", spec);
+	Log("========================================================");
+	// Player CEL indices live in the level palette space (same as monsters);
+	// without any palette orig_palette stays black and every frame is a silhouette.
+	LoadPalette("levels\\l1data\\l1_1.pal");
+	const char *actions[] = { "as", "st", "aw", "wl", "at", "ht", "lm", "fm", "qm", "dt", "bl" };
+	for (const char *act : actions) {
+		if (!wanted.empty()
+		    && std::find(wanted.begin(), wanted.end(), std::string(act)) == wanted.end())
+			continue;
+		std::string path = "plrgfx\\" + classDir + "\\" + gfxPrefix + "\\" + gfxPrefix + act;
+		ExportAndUpscaleCl2(path, 128);
+	}
+	Log("========================================================");
+	Log("   Player set {} remastering completed!          ", spec);
+	Log("========================================================");
 }
 
 void RemasterSingleFamily(const std::string &familyPrefix, uint16_t widthHint, const char *pal)
@@ -512,14 +688,18 @@ void RemasterMissiles()
 		const auto &ms = MissileSpriteData[mi];
 		if (ms.name[0] == '\0')
 			continue;
+		std::vector<std::string> paths;
 		if (ms.animFAmt == 1) {
-			std::string path = "missiles\\" + std::string(ms.name);
-			ExportAndUpscaleCl2(path, ms.animWidth);
+			paths.push_back("missiles\\" + std::string(ms.name));
 		} else {
-			for (size_t i = 1; i <= ms.animFAmt; i++) {
-				std::string path = "missiles\\" + std::string(ms.name) + std::to_string(i);
-				ExportAndUpscaleCl2(path, ms.animWidth);
-			}
+			for (size_t i = 1; i <= ms.animFAmt; i++)
+				paths.push_back("missiles\\" + std::string(ms.name) + std::to_string(i));
+		}
+		// Missile CELs are spread over every level theme palette; the cathedral
+		// palette alone leaves 13 of 245 families black. ExportAndUpscaleCl2
+		// re-picks the palette per CEL when the current one renders it black.
+		for (const std::string &path : paths) {
+			ExportAndUpscaleCl2(path, ms.animWidth);
 		}
 	}
 }
@@ -584,9 +764,7 @@ void RunRemasterAssetPipeline()
 
 	RemasterAllCoreAssets();
 
-	// Player classes
-	Log("--- Remastering Player Classes ---");
-	LoadPalette("levels\\towndata\\town.pal");
+	// Player classes (system palette; see RemasterWarriorClass)
 	ExportPlayerClass("warrior", 'w');
 	ExportPlayerClass("rogue", 'r');
 	ExportPlayerClass("sorceror", 's'); // Diablo 1 MPQ directory is 'sorceror'

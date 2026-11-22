@@ -2998,6 +2998,23 @@ static void RasterizeClxSpriteRgba(const ClxSprite &sprite, int &outW, int &outH
 	}
 }
 
+namespace {
+std::mutex g_PlayerCelPathMutex;
+std::string g_PlayerCelPath;
+} // namespace
+
+void SetBridgePlayerCelPath(const std::string &path)
+{
+	std::lock_guard<std::mutex> lock(g_PlayerCelPathMutex);
+	g_PlayerCelPath = path;
+}
+
+std::string GetBridgePlayerCelPath()
+{
+	std::lock_guard<std::mutex> lock(g_PlayerCelPathMutex);
+	return g_PlayerCelPath;
+}
+
 D1SpriteFrameRgba GetPlayerSpriteRgba()
 {
 	std::lock_guard<std::mutex> lock(g_InventoryMutex);

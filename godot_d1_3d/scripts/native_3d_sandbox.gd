@@ -68,7 +68,7 @@ var arch_mmi: MultiMeshInstance3D
 var modular_3d_walls_enabled: bool = false # Modular 3D .glb boxes (disabled by default in favor of authentic 4K PBR gothic architecture)
 var modular_3d_props_enabled: bool = false # Placeholder .glb props (disabled by default in favor of authentic gothic Blizzard North art with 3D lights)
 var current_upscaler_mode: int = 0
-var current_tile_model: int = 0
+var current_tile_model: int = 1
 var current_hdr_level: int = 1
 var hd_graphics_enabled: bool = true
 var entity_materials: Dictionary = {} # Sprite3D -> ShaderMaterial
@@ -2002,8 +2002,27 @@ func update_player_entity(delta: float):
 		hero_controller.visible = use_3d
 		player_sprite.visible = not use_3d
 
-	# Fetch authentic animated player sprite
-	if diablo_bridge and diablo_bridge.has_method("get_player_sprite_data"):
+	# HD hero frames first (assets/hd_sprites*/player/<class>_<action>); the 1x
+	# bridge raster stays as the fallback for class/action pairs never upscaled.
+	var hd_hero_tex: Texture2D = null
+	if hd_graphics_enabled:
+		# LoadPlrGFX records the exact armor/weapon CEL set the hero renders with
+		# ("plrgfx\monk\mlt\mltbl" -> "mlt"); HD sets are keyed by it.
+		var gfx_prefix := ""
+		if diablo_bridge and diablo_bridge.has_method("get_player_cel_path"):
+			var cel_parts = str(diablo_bridge.get_player_cel_path()).replace("/", "\\").split("\\")
+			if cel_parts.size() >= 3:
+				gfx_prefix = str(cel_parts[2]).to_lower()
+		hd_hero_tex = HdSpriteProvider.get_player_sprite(p_class,
+			str(p_data.get("action", "STAND")), dir, anim_frame, current_tile_model, gfx_prefix)
+
+	if hd_hero_tex != null:
+		if player_sprite.texture != hd_hero_tex:
+			player_sprite.texture = hd_hero_tex
+			player_sprite.offset = Vector2(0, float(hd_hero_tex.get_height()) * 0.5)
+			player_sprite.pixel_size = PIXEL_SIZE_HD
+			apply_entity_hd_material(player_sprite, hd_hero_tex)
+	elif diablo_bridge and diablo_bridge.has_method("get_player_sprite_data"):
 		if anim_frame != last_player_frame or dir != last_player_dir or player_texture == null:
 			last_player_frame = anim_frame
 			last_player_dir = dir

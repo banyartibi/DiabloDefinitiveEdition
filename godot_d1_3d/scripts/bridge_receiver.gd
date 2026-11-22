@@ -145,7 +145,7 @@ var upscaler_names = [
 ]
 
 # Neural Upscale Model for pre-baked 4x tile & sprite assets (offline GPU pipeline)
-var current_tile_model: int = 0  # Default: 0 = Real-ESRGAN 4x-UltraSharp
+var current_tile_model: int = 1  # Default: 1 = Real-ESRGAN x4plus
 var tile_model_names: Array = UpscalerModelConfig.MODEL_NAMES
 
 var color_names = [

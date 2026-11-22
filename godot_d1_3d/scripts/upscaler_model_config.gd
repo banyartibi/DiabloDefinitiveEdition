@@ -8,8 +8,8 @@ class_name UpscalerModelConfig
 
 ## Model indices — used throughout the engine as int IDs
 enum Model {
-	ULTRASHARP = 0,   ## Real-ESRGAN 4x-UltraSharp (default, sharpest photo-realistic)
-	X4PLUS = 1,       ## Real-ESRGAN x4plus (general purpose, slightly softer)
+	ULTRASHARP = 0,   ## Real-ESRGAN 4x-UltraSharp (sharpest photo-realistic)
+	X4PLUS = 1,       ## Real-ESRGAN x4plus (default: general purpose, slightly softer)
 	HAT_S = 2,        ## Nomos8k HAT-S (Hybrid Attention Transformer — best dither→photo)
 	HAT_L = 3,        ## HAT-L (Large HAT — highest quality, slowest)
 	NMKD = 4,         ## 4x_NMKD_Superscale (retro CGI / game textures, grim-dark gothic)
@@ -28,8 +28,8 @@ const TILE_SUFFIXES: Array[String] = [
 
 ## Human-readable display names for the pause-menu UI
 const MODEL_NAMES: Array[String] = [
-	"Real-ESRGAN 4x-UltraSharp (Default)",
-	"Real-ESRGAN x4plus (General)",
+	"Real-ESRGAN 4x-UltraSharp (Sharpest)",
+	"Real-ESRGAN x4plus (Default)",
 	"Nomos8k HAT-S (Hybrid Attention)",
 	"HAT-L (Large Hybrid Attention)",
 	"4x_NMKD_Superscale (Retro Gothic)",

@@ -67,6 +67,7 @@ public:
 	Array get_level_triggers() const;
 	int get_player_gold() const;
 	int get_player_class() const;
+	String get_player_cel_path() const;
 	int get_current_level() const;
 	int get_dungeon_type() const;
 	bool is_left_panel_open() const;

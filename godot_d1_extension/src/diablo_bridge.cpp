@@ -36,6 +36,7 @@ void DiabloBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_level_triggers"), &DiabloBridge::get_level_triggers);
 	ClassDB::bind_method(D_METHOD("get_player_gold"), &DiabloBridge::get_player_gold);
 	ClassDB::bind_method(D_METHOD("get_player_class"), &DiabloBridge::get_player_class);
+	ClassDB::bind_method(D_METHOD("get_player_cel_path"), &DiabloBridge::get_player_cel_path);
 	ClassDB::bind_method(D_METHOD("get_current_level"), &DiabloBridge::get_current_level);
 	ClassDB::bind_method(D_METHOD("get_dungeon_type"), &DiabloBridge::get_dungeon_type);
 	ClassDB::bind_method(D_METHOD("is_left_panel_open"), &DiabloBridge::is_left_panel_open);
@@ -394,6 +395,10 @@ int DiabloBridge::get_player_gold() const {
 
 int DiabloBridge::get_player_class() const {
 	return devilution::g_D1EngineData.playerClass;
+}
+
+String DiabloBridge::get_player_cel_path() const {
+	return String(devilution::GetBridgePlayerCelPath().c_str());
 }
 
 int DiabloBridge::get_current_level() const {
