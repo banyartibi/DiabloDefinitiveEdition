@@ -287,6 +287,7 @@ void CompleteProgress()
 void ShowProgress(interface_mode uMsg)
 {
 	IsProgress = true;
+	ScopedLevelTransitionGuard transitionGuard;
 
 	gbSomebodyWonGameKludge = false;
 	plrmsg_delay(true);
@@ -330,8 +331,6 @@ void ShowProgress(interface_mode uMsg)
 	}
 
 	Player &myPlayer = *MyPlayer;
-
-	g_D1LevelTransitioning = true;
 
 	switch (uMsg) {
 	case WM_DIABLOADGAME:

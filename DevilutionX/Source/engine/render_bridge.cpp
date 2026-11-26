@@ -78,6 +78,37 @@ bool gbHideVanillaHUD = false;
 std::atomic<bool> g_D1LevelTransitioning{false};
 D1EngineData g_D1EngineData;
 
+namespace {
+std::recursive_mutex g_BridgeStateMutex;
+std::atomic<int> g_D1TransitionScopeDepth{0};
+} // namespace
+
+ScopedBridgeStateLock::ScopedBridgeStateLock()
+{
+	g_BridgeStateMutex.lock();
+}
+
+ScopedBridgeStateLock::~ScopedBridgeStateLock()
+{
+	g_BridgeStateMutex.unlock();
+}
+
+ScopedLevelTransitionGuard::ScopedLevelTransitionGuard()
+{
+	g_D1TransitionScopeDepth.fetch_add(1, std::memory_order_acq_rel);
+	g_D1LevelTransitioning.store(true, std::memory_order_seq_cst);
+	// Wait for any Godot reader already past IsBridgeSafeToRead() to finish
+	// before teardown or level load mutates/frees engine memory.
+	ScopedBridgeStateLock barrier;
+}
+
+ScopedLevelTransitionGuard::~ScopedLevelTransitionGuard()
+{
+	if (g_D1TransitionScopeDepth.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+		g_D1LevelTransitioning.store(false, std::memory_order_release);
+	}
+}
+
 bool IsBridgeSafeToRead()
 {
 	return gbRunGame && !g_D1LevelTransitioning.load() && sgbFadedIn.load() && MyPlayer != nullptr && MyPlayer->_pmode != PM_NEWLVL && !MyPlayer->_pLvlChanging;
@@ -839,6 +870,7 @@ bool CopyD1FrameBytes(uint8_t *dest, size_t maxBytes, uint32_t *outFrameId, int 
 
 void CopyD1DungeonGrid(int32_t *dest, size_t maxTiles)
 {
+	ScopedBridgeStateLock lock;
 	if (dest == nullptr) return;
 	size_t count = std::min<size_t>(maxTiles, 112 * 112);
 	for (size_t y = 0; y < 112; ++y) {
@@ -977,7 +1009,6 @@ std::vector<uint8_t> LoadDevilutionXAsset(const char *path)
 }
 
 // Native Godot Diablo IV Inventory Bridge Synchronization
-static std::mutex g_InventoryMutex;
 static std::atomic<uint32_t> g_InventoryVersion { 1 };
 
 uint32_t GetInventoryVersion()
@@ -987,7 +1018,7 @@ uint32_t GetInventoryVersion()
 
 void UseBeltSlot(int slotIndex)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr)
 		return;
 	if (pcurs > CURSOR_HAND && pcurs < CURSOR_FIRSTITEM) {
@@ -1013,7 +1044,7 @@ void UseBeltSlot(int slotIndex)
 
 void ClickBeltSlot(int slotIndex)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr)
 		return;
 	if (slotIndex < 0 || slotIndex >= 8)
@@ -1441,8 +1472,9 @@ std::vector<D1CombatEvent> DrainCombatEvents()
 
 std::vector<D1EngineLight> GetActiveEngineLights()
 {
+	ScopedBridgeStateLock lock;
 	std::vector<D1EngineLight> lights;
-	if (MyPlayer == nullptr || gnScreenWidth <= 0 || gnScreenHeight <= 0)
+	if (!IsBridgeSafeToRead() || MyPlayer == nullptr || gnScreenWidth <= 0 || gnScreenHeight <= 0)
 		return lights;
 
 	// 1. Hero Torch (Type 0)
@@ -1458,8 +1490,12 @@ std::vector<D1EngineLight> GetActiveEngineLights()
 	}
 
 	// 2. Static Dungeon Torches, Braziers & Candles (Type 1)
-	for (int i = 0; i < ActiveObjectCount; ++i) {
-		const Object &obj = Objects[ActiveObjects[i]];
+	int objCount = std::min(ActiveObjectCount, MAXOBJECTS);
+	for (int i = 0; i < objCount; ++i) {
+		int oi = ActiveObjects[i];
+		if (oi < 0 || oi >= MAXOBJECTS)
+			continue;
+		const Object &obj = Objects[oi];
 		if (!IsTorchOrFireObject(obj._otype))
 			continue;
 
@@ -1538,8 +1574,9 @@ std::vector<D1EngineLight> GetActiveEngineLights()
 
 std::vector<D1WallOccluder> GetActiveWallOccluders()
 {
+	ScopedBridgeStateLock lock;
 	std::vector<D1WallOccluder> occluders;
-	if (MyPlayer == nullptr || gnScreenWidth <= 0 || gnScreenHeight <= 0)
+	if (!IsBridgeSafeToRead() || MyPlayer == nullptr || gnScreenWidth <= 0 || gnScreenHeight <= 0)
 		return occluders;
 
 	auto lights = GetActiveEngineLights();
@@ -1581,6 +1618,7 @@ std::vector<D1WallOccluder> GetActiveWallOccluders()
 
 D1CharacterInfo GetCharacterInfo()
 {
+	ScopedBridgeStateLock lock;
 	D1CharacterInfo info;
 	if (MyPlayer == nullptr)
 		return info;
@@ -1962,7 +2000,7 @@ static D1InvItemData ConvertItemToInvData(const Item &item, int slotId, int cell
 
 std::vector<D1InvItemData> GetPlayerEquipmentData()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr)
 		return {};
 
@@ -1979,7 +2017,7 @@ std::vector<D1InvItemData> GetPlayerEquipmentData()
 
 std::vector<D1InvItemData> GetPlayerBackpackData()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr)
 		return {};
 
@@ -2003,7 +2041,7 @@ std::vector<D1InvItemData> GetPlayerBackpackData()
 
 D1InvItemData GetPlayerHoldItemData()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr || MyPlayer->HoldItem.isEmpty())
 		return {};
 
@@ -2012,13 +2050,13 @@ D1InvItemData GetPlayerHoldItemData()
 
 bool HasHeldItem()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	return gbRunGame && MyPlayer != nullptr && !MyPlayer->HoldItem.isEmpty();
 }
 
 bool DropHeldItem()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr || MyPlayer->HoldItem.isEmpty())
 		return false;
 
@@ -2032,7 +2070,7 @@ bool DropHeldItem()
 
 int GetPlayerGold()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr)
 		return 0;
 	return MyPlayer->_pGold;
@@ -2040,7 +2078,7 @@ int GetPlayerGold()
 
 D1ItemIconRgba GetItemSpriteRgba(int cursId)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (cursId <= 0 || !IsInvItemSpriteLoaded() || cursId > static_cast<int>(GetNumInvItems()))
 		return {};
 
@@ -2055,13 +2093,21 @@ D1ItemIconRgba GetItemSpriteRgba(int cursId)
 
 	ClxDraw(surface, { 0, h - 1 }, sprite);
 
-	const auto &pal = orig_palette;
+	bool orig_has_color = (orig_palette[1].r != 0 || orig_palette[1].g != 0 || orig_palette[1].b != 0 ||
+	                       orig_palette[15].r != 0 || orig_palette[15].g != 0 || orig_palette[15].b != 0 ||
+	                       orig_palette[240].r != 0 || orig_palette[240].g != 0 || orig_palette[240].b != 0);
+	bool sys_has_color = (system_palette[1].r != 0 || system_palette[1].g != 0 || system_palette[1].b != 0 ||
+	                      system_palette[2].r != 0 || system_palette[2].g != 0 || system_palette[2].b != 0);
+	if (!orig_has_color && !sys_has_color)
+		return {};
+	const auto &pal = (sgbFadedIn.load() && sys_has_color) ? system_palette : orig_palette;
 	D1ItemIconRgba res;
 	res.width = w;
 	res.height = h;
 	res.rgba.resize(w * h * 4, 0);
 
 	bool hasPixels = false;
+	uint8_t maxChannel = 0;
 	for (int y = 0; y < h; ++y) {
 		const uint8_t *src = surface.at(0, y);
 		uint8_t *dst = res.rgba.data() + (y * w * 4);
@@ -2070,6 +2116,7 @@ D1ItemIconRgba GetItemSpriteRgba(int cursId)
 			if (idx != 0) {
 				SDL_Color c = pal[idx];
 				hasPixels = true;
+				maxChannel = std::max(maxChannel, std::max(c.r, std::max(c.g, c.b)));
 				dst[x * 4 + 0] = c.r;
 				dst[x * 4 + 1] = c.g;
 				dst[x * 4 + 2] = c.b;
@@ -2077,7 +2124,7 @@ D1ItemIconRgba GetItemSpriteRgba(int cursId)
 			}
 		}
 	}
-	if (!hasPixels)
+	if (!hasPixels || (maxChannel == 0 && !sys_has_color))
 		return {};
 
 	return res;
@@ -2108,7 +2155,7 @@ static int GetDurIconIndex(const Item &item, inv_body_loc slot)
 
 std::vector<D1DurabilityWarning> GetPlayerDurabilityWarnings()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr)
 		return {};
 
@@ -2157,7 +2204,7 @@ std::vector<D1DurabilityWarning> GetPlayerDurabilityWarnings()
 
 D1ItemIconRgba GetDurabilityIconRgba(int frameIdx)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (frameIdx < 0 || frameIdx >= 16)
 		return {};
 
@@ -2213,7 +2260,7 @@ D1ItemIconRgba GetDurabilityIconRgba(int frameIdx)
 
 D1ItemIconRgba GetDurabilityCompositeIconRgba(int iconIdx, int durability)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (iconIdx < 0 || iconIdx >= 8)
 		return {};
 
@@ -2288,7 +2335,7 @@ D1ItemIconRgba GetDurabilityCompositeIconRgba(int iconIdx, int durability)
 
 void ClickInventorySlot(int slotType, int slotIdx, bool isShift, bool isCtrl)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr)
 		return;
 
@@ -2395,7 +2442,7 @@ void ClickInventorySlot(int slotType, int slotIdx, bool isShift, bool isCtrl)
 
 void UseInventorySlot(int slotType, int slotIdx)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr)
 		return;
 
@@ -2463,7 +2510,7 @@ void UseInventorySlot(int slotType, int slotIdx)
 
 void CancelTargetingCursor()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame)
 		return;
 	if (pcurs > CURSOR_HAND && pcurs < CURSOR_FIRSTITEM) {
@@ -2486,7 +2533,7 @@ int GetCurrentCursorId()
 
 D1PotionSummary GetPotionSummary()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1PotionSummary sum;
 	if (!IsBridgeSafeToRead() || MyPlayer == nullptr)
 		return sum;
@@ -2541,7 +2588,7 @@ D1PotionSummary GetPotionSummary()
 
 void UseSmartPotion(int category)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr)
 		return;
 
@@ -2589,7 +2636,7 @@ void UseSmartPotion(int category)
 
 D1TownPortalSummary GetTownPortalSummary()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1TownPortalSummary s;
 	if (!gbRunGame || MyPlayer == nullptr)
 		return s;
@@ -2646,7 +2693,7 @@ D1TownPortalSummary GetTownPortalSummary()
 
 void UseSmartTownPortal()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr)
 		return;
 
@@ -2706,7 +2753,7 @@ void UseSmartTownPortal()
 
 D1TargetMonsterSummary GetTargetMonsterSummary(int targetId)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1TargetMonsterSummary s;
 	if (!gbRunGame || leveltype == DTYPE_TOWN) {
 		return s;
@@ -2787,7 +2834,7 @@ D1TargetMonsterSummary GetTargetMonsterSummary(int targetId)
 
 D1PlayerEntityData GetPlayerEntityData()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1PlayerEntityData data;
 	if (!IsBridgeSafeToRead())
 		return data;
@@ -2817,7 +2864,13 @@ D1PlayerEntityData GetPlayerEntityData()
 	case PM_BLOCK: pact = "BLOCK"; break;
 	case PM_GOTHIT: pact = "HIT"; break;
 	case PM_DEATH: pact = "DEATH"; break;
-	case PM_SPELL: pact = "SPELL"; break;
+	case PM_SPELL:
+		switch (player.getGraphic()) {
+		case player_graphic::Lightning: pact = "SPELL_LM"; break;
+		case player_graphic::Magic: pact = "SPELL_QM"; break;
+		default: pact = "SPELL"; break;
+		}
+		break;
 	case PM_NEWLVL: pact = "NEWLVL"; break;
 	case PM_QUIT: pact = "QUIT"; break;
 	default: pact = "STAND"; break;
@@ -2844,7 +2897,7 @@ D1PlayerEntityData GetPlayerEntityData()
 
 std::vector<D1MonsterEntityData> GetActiveMonstersData()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	std::vector<D1MonsterEntityData> result;
 	if (!IsBridgeSafeToRead())
 		return result;
@@ -2964,7 +3017,7 @@ std::vector<D1MonsterEntityData> GetActiveMonstersData()
 
 std::vector<uint8_t> GetDungeonSolidityGrid()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	std::vector<uint8_t> grid(MAXDUNX * MAXDUNY, 0);
 	if (!IsBridgeSafeToRead())
 		return grid;
@@ -3068,7 +3121,7 @@ std::string GetBridgePlayerCelPath()
 
 D1SpriteFrameRgba GetPlayerSpriteRgba()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1SpriteFrameRgba result;
 	if (!IsBridgeSafeToRead())
 		return result;
@@ -3086,7 +3139,7 @@ D1SpriteFrameRgba GetPlayerSpriteRgba()
 
 D1SpriteFrameRgba GetMonsterSpriteRgba(int monsterId)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1SpriteFrameRgba result;
 	if (!IsBridgeSafeToRead() || g_D1LevelTransitioning.load() || monsterId < 0)
 		return result;
@@ -3133,7 +3186,7 @@ D1SpriteFrameRgba GetMonsterSpriteRgba(int monsterId)
 
 D1TilePieceRgba GetDungeonPieceRgba(int pieceId)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1TilePieceRgba result;
 	if (!IsBridgeSafeToRead() || pieceId < 0 || pieceId >= MAXTILES || pDungeonCels == nullptr)
 		return result;
@@ -3201,7 +3254,7 @@ D1TilePieceRgba GetDungeonPieceRgba(int pieceId)
 
 D1SpecialCelRgba GetSpecialCelRgba(int specialId)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1SpecialCelRgba result;
 	if (!IsBridgeSafeToRead() || !pSpecialCels.has_value() || specialId <= 0 || static_cast<size_t>(specialId) > pSpecialCels->numSprites())
 		return result;
@@ -3240,6 +3293,7 @@ D1SpecialCelRgba GetSpecialCelRgba(int specialId)
 
 void CopyD1SpecialGrid(int32_t *dest, size_t maxTiles)
 {
+	ScopedBridgeStateLock lock;
 	if (dest == nullptr) return;
 	size_t count = std::min<size_t>(maxTiles, 112 * 112);
 	if (!IsBridgeSafeToRead()) {
@@ -3258,6 +3312,7 @@ void CopyD1SpecialGrid(int32_t *dest, size_t maxTiles)
 
 void CopyD1LightGrid(uint8_t *dest, size_t maxTiles)
 {
+	ScopedBridgeStateLock lock;
 	if (dest == nullptr) return;
 	size_t count = std::min<size_t>(maxTiles, 112 * 112);
 	if (!IsBridgeSafeToRead()) {
@@ -3276,6 +3331,7 @@ void CopyD1LightGrid(uint8_t *dest, size_t maxTiles)
 
 void CopyD1FlagsGrid(uint8_t *dest, size_t maxTiles)
 {
+	ScopedBridgeStateLock lock;
 	if (dest == nullptr) return;
 	size_t count = std::min<size_t>(maxTiles, 112 * 112);
 	if (!IsBridgeSafeToRead()) {
@@ -3294,6 +3350,7 @@ void CopyD1FlagsGrid(uint8_t *dest, size_t maxTiles)
 
 void CopyD1TransGrid(uint8_t *dest, size_t maxTiles)
 {
+	ScopedBridgeStateLock lock;
 	if (dest == nullptr) return;
 	size_t count = std::min<size_t>(maxTiles, 112 * 112);
 	if (!IsBridgeSafeToRead()) {
@@ -3312,6 +3369,7 @@ void CopyD1TransGrid(uint8_t *dest, size_t maxTiles)
 
 void CopyD1TransparencyMask(uint8_t *dest, size_t maxTiles)
 {
+	ScopedBridgeStateLock lock;
 	if (dest == nullptr) return;
 	size_t count = std::min<size_t>(maxTiles, 112 * 112);
 	if (!IsBridgeSafeToRead()) {
@@ -3331,7 +3389,7 @@ void CopyD1TransparencyMask(uint8_t *dest, size_t maxTiles)
 
 std::vector<uint8_t> GetTransList()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	std::vector<uint8_t> result(256, 0);
 	if (!IsBridgeSafeToRead())
 		return result;
@@ -3343,6 +3401,7 @@ std::vector<uint8_t> GetTransList()
 
 std::vector<D1LevelTrigger> GetLevelTriggers()
 {
+	ScopedBridgeStateLock lock;
 	std::vector<D1LevelTrigger> list;
 	if (!IsBridgeSafeToRead()) return list;
 	for (int i = 0; i < numtrigs; ++i) {
@@ -3358,7 +3417,7 @@ std::vector<D1LevelTrigger> GetLevelTriggers()
 
 std::vector<D1ObjectInfo> GetActiveObjectsList()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	std::vector<D1ObjectInfo> list;
 	if (!IsBridgeSafeToRead() || currlevel == 0) return list;
 
@@ -3430,7 +3489,7 @@ std::vector<D1ObjectInfo> GetActiveObjectsList()
 
 D1ObjectSpriteRgba GetObjectSpriteRgba(int objectId)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1ObjectSpriteRgba result;
 	if (!IsBridgeSafeToRead() || currlevel == 0 || objectId < 0 || objectId >= MAXOBJECTS) return result;
 	const Object &obj = Objects[objectId];
@@ -3445,7 +3504,7 @@ D1ObjectSpriteRgba GetObjectSpriteRgba(int objectId)
 
 std::vector<D1ItemInfo> GetActiveItemsList()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	std::vector<D1ItemInfo> list;
 	if (!IsBridgeSafeToRead()) return list;
 
@@ -3565,7 +3624,7 @@ std::vector<D1ItemInfo> GetActiveItemsList()
 
 D1ItemSpriteRgba GetGroundItemSpriteRgba(int itemId)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1ItemSpriteRgba result;
 	if (!IsBridgeSafeToRead() || itemId < 0 || itemId >= MAXITEMS) return result;
 	Item &item = Items[itemId];
@@ -3597,7 +3656,7 @@ bool IsItemLabelHighlightEnabled()
 
 std::vector<D1CorpseInfo> GetActiveCorpsesList()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	std::vector<D1CorpseInfo> list;
 	if (!IsBridgeSafeToRead()) return list;
 
@@ -3650,7 +3709,7 @@ std::vector<D1CorpseInfo> GetActiveCorpsesList()
 
 D1CorpseSpriteRgba GetCorpseSpriteRgba(int corpseIdx, int dir)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1CorpseSpriteRgba result;
 	if (!IsBridgeSafeToRead() || corpseIdx < 0 || corpseIdx >= static_cast<int>(MaxCorpses))
 		return result;
@@ -3689,7 +3748,7 @@ Point MapIsometricToScreenCoords(float isoX, float isoY)
 
 std::vector<D1MissileInfo> GetActiveMissilesList()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	std::vector<D1MissileInfo> list;
 	if (!IsBridgeSafeToRead()) return list;
 
@@ -3742,7 +3801,7 @@ std::vector<D1MissileInfo> GetActiveMissilesList()
 
 D1MissileSpriteRgba GetMissileSpriteRgba(int missileId)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1MissileSpriteRgba result;
 	if (!IsBridgeSafeToRead() || missileId < 0) return result;
 
@@ -3813,7 +3872,7 @@ std::vector<D1MenuItemInfo> GetCurrentMenuItems()
 	auto out = std::vector<D1MenuItemInfo>();
 	if (!IsBridgeSafeToRead())
 		return out;
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	const int t = GetModalType();
 	if (t == 2) {
 		if (qtextflag) {
@@ -3835,7 +3894,7 @@ std::vector<D1MenuItemInfo> GetCurrentMenuItems()
 int GetCurrentModalSelectionIndex()
 {
 	if (!IsBridgeSafeToRead()) return -1;
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	const int t = GetModalType();
 	if (t == 2) return devilution::GetCurrentStextSel();
 	if (t == 1) return GetCurrentGamemenuSelection();
@@ -3844,7 +3903,7 @@ int GetCurrentModalSelectionIndex()
 
 void ActivateModalItem(int index)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!IsBridgeSafeToRead()) return;
 	const int t = GetModalType();
 	if (t == 1) {
@@ -3860,7 +3919,7 @@ void ActivateModalItem(int index)
 
 void SelectModalItem(int index)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!IsBridgeSafeToRead()) return;
 	const int t = GetModalType();
 	if (t == 1) {
@@ -3952,7 +4011,7 @@ void DismissQText()
 
 D1AutomapRgba GetAutomapRgba()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	D1AutomapRgba result;
 	if (!IsBridgeSafeToRead() || !AutomapActive || gnScreenWidth <= 0 || gnViewportHeight <= 0)
 		return result;
@@ -3988,7 +4047,7 @@ D1AutomapRgba GetAutomapRgba()
 int GetBridgeStoreGold()
 {
 	if (!IsBridgeSafeToRead()) return -1;
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!devilution::IsRenderGold()) return -1;
 	return static_cast<int>(devilution::GetStoreGold());
 }
@@ -4001,7 +4060,7 @@ bool IsBridgeStashOpen()
 
 void CloseBridgeStash()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame) return;
 	devilution::CloseStash();
 	g_InventoryVersion.fetch_add(1);
@@ -4011,7 +4070,7 @@ D1StashInfo GetStashInfo()
 {
 	D1StashInfo info;
 	if (!IsBridgeSafeToRead()) return info;
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	info.page = devilution::Stash.GetPage() + 1;
 	info.totalPages = 100;
 	info.gold = devilution::Stash.gold;
@@ -4021,7 +4080,7 @@ D1StashInfo GetStashInfo()
 std::vector<D1InvItemData> GetStashItems()
 {
 	if (!IsBridgeSafeToRead() || !devilution::IsStashOpen) return {};
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 
 	std::vector<D1InvItemData> result;
 	for (int y = 0; y < 10; ++y) {
@@ -4046,7 +4105,7 @@ std::vector<D1InvItemData> GetStashItems()
 
 void StashChangePage(int delta)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || !devilution::IsStashOpen) return;
 	if (delta > 0)
 		devilution::Stash.NextPage(static_cast<unsigned>(delta));
@@ -4057,7 +4116,7 @@ void StashChangePage(int delta)
 
 void StashSetPage(int page)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || !devilution::IsStashOpen) return;
 	if (page >= 1 && page <= 100)
 		devilution::Stash.SetPage(static_cast<unsigned>(page - 1));
@@ -4066,7 +4125,7 @@ void StashSetPage(int page)
 
 void ClickStashSlot(int cellIdx, bool isShift, bool isCtrl)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr || !devilution::IsStashOpen)
 		return;
 
@@ -4121,7 +4180,7 @@ void ClickStashSlot(int cellIdx, bool isShift, bool isCtrl)
 
 void StashWithdrawGold(int amount)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr || !devilution::IsStashOpen)
 		return;
 	if (amount <= 0 || amount > devilution::Stash.gold)
@@ -4144,7 +4203,7 @@ bool IsSpellBookOpen()
 
 void ToggleSpellBook()
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame) return;
 	devilution::SpellBookKeyPressed();
 	g_InventoryVersion.fetch_add(1);
@@ -4158,7 +4217,7 @@ int GetSpellBookPage()
 
 void SetSpellBookPage(int page)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame) return;
 	int maxTab = gbIsHellfire ? 4 : 3;
 	devilution::sbooktab = std::clamp(page, 0, maxTab);
@@ -4167,7 +4226,7 @@ void SetSpellBookPage(int page)
 std::vector<D1SpellBookEntry> GetSpellBookEntries()
 {
 	if (!IsBridgeSafeToRead() || MyPlayer == nullptr) return {};
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 
 	std::vector<D1SpellBookEntry> result;
 	Player &player = *MyPlayer;
@@ -4224,7 +4283,7 @@ std::vector<D1SpellBookEntry> GetSpellBookEntries()
 
 void SelectSpellBookEntry(int spellId, int spellType)
 {
-	std::lock_guard<std::mutex> lock(g_InventoryMutex);
+	ScopedBridgeStateLock lock;
 	if (!gbRunGame || MyPlayer == nullptr) return;
 
 	SpellID sn = static_cast<SpellID>(spellId);
@@ -4599,12 +4658,7 @@ bool GetShowFpsEnabled()
 
 int GetResurrectedDisplayMode()
 {
-	auto mode = *sgOptions.Resurrected.displayMode;
-	if (static_cast<int>(mode) == 1) {
-		sgOptions.Resurrected.displayMode.SetValue(DisplayMode::Native_3D);
-		return static_cast<int>(DisplayMode::Native_3D);
-	}
-	return static_cast<int>(mode);
+	return static_cast<int>(*sgOptions.Resurrected.displayMode);
 }
 
 int GetModeSwitchKey()

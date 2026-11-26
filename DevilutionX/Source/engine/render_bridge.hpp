@@ -58,6 +58,28 @@ static_assert(sizeof(D1BridgeHeader) == 4096, "D1BridgeHeader must be exactly 40
 extern bool gbGodotBridgeActive;
 extern std::atomic<bool> g_D1LevelTransitioning;
 
+// Guards shared engine state (Missiles, entities, tile grids, sprite tables)
+// against concurrent Godot main-thread reads. Backed by a recursive mutex so
+// re-entrant engine paths (e.g. ProcessMissiles -> AddMissile) cannot deadlock.
+class ScopedBridgeStateLock {
+public:
+	ScopedBridgeStateLock();
+	~ScopedBridgeStateLock();
+	ScopedBridgeStateLock(const ScopedBridgeStateLock &) = delete;
+	ScopedBridgeStateLock &operator=(const ScopedBridgeStateLock &) = delete;
+};
+
+// Keeps g_D1LevelTransitioning true across nested load/transition scopes (e.g.
+// LoadGameLevel inside LoadGame inside ShowProgress) and waits for any active
+// bridge reader to exit before teardown/rebuild begins.
+class ScopedLevelTransitionGuard {
+public:
+	ScopedLevelTransitionGuard();
+	~ScopedLevelTransitionGuard();
+	ScopedLevelTransitionGuard(const ScopedLevelTransitionGuard &) = delete;
+	ScopedLevelTransitionGuard &operator=(const ScopedLevelTransitionGuard &) = delete;
+};
+
 struct D1EngineData {
 	uint32_t frameId = 0;
 	int width = 2560;

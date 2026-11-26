@@ -596,6 +596,7 @@ void MoveMissileAndCheckMissileCol(Missile &missile, DamageType damageType, int 
 
 void SetMissAnim(Missile &missile, MissileGraphicID animtype)
 {
+	ScopedBridgeStateLock bridgeLock;
 	int dir = missile._mimfnum;
 
 	if (animtype > MissileGraphicID::None) {
@@ -1128,6 +1129,7 @@ void SetMissDir(Missile &missile, int dir)
 
 void InitMissiles()
 {
+	ScopedBridgeStateLock bridgeLock;
 	Player &myPlayer = *MyPlayer;
 
 	AutoMapShowItems = false;
@@ -2734,6 +2736,7 @@ Missile *AddMissile(Point src, Point dst, Direction midir, MissileID mitype,
     mienemy_type micaster, int id, int midam, int spllvl,
     Missile *parent, std::optional<_sfx_id> lSFX)
 {
+	ScopedBridgeStateLock bridgeLock;
 	if (Missiles.size() >= Missiles.max_size()) {
 		return nullptr;
 	}
@@ -4173,6 +4176,7 @@ void ProcessManaShield()
 
 void ProcessMissiles()
 {
+	ScopedBridgeStateLock bridgeLock;
 	for (auto &missile : Missiles) {
 		const auto &position = missile.position.tile;
 		if (InDungeonBounds(position)) {
@@ -4211,6 +4215,7 @@ void ProcessMissiles()
 
 void missiles_process_charge()
 {
+	ScopedBridgeStateLock bridgeLock;
 	for (auto &missile : Missiles) {
 		missile._miAnimData = GetMissileSpriteData(missile._miAnimType).spritesForDirection(missile._mimfnum);
 		if (missile._mitype != MissileID::Rhino)

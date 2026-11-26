@@ -10,6 +10,7 @@
 #include "missiles.h"
 #include "multi.h"
 #include "player.h"
+#include "engine/render_bridge.hpp"
 
 namespace devilution {
 
@@ -109,6 +110,7 @@ bool PortalOnLevel(size_t i)
 
 void RemovePortalMissile(int id)
 {
+	ScopedBridgeStateLock bridgeLock;
 	Missiles.remove_if([id](Missile &missile) {
 		if (missile._mitype == MissileID::TownPortal && missile._misource == id) {
 			dFlags[missile.position.tile.x][missile.position.tile.y] &= ~DungeonFlag::Missile;

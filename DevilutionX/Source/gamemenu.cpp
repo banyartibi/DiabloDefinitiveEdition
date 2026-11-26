@@ -8,6 +8,7 @@
 #include "cursor.h"
 #include "engine/backbuffer_state.hpp"
 #include "engine/events.hpp"
+#include "engine/render_bridge.hpp"
 #include "engine/sound.h"
 #include "engine/sound_defs.hpp"
 #include "error.h"
@@ -292,6 +293,7 @@ void gamemenu_quit_game(bool bActivate)
 
 void gamemenu_load_game(bool /*bActivate*/)
 {
+	ScopedLevelTransitionGuard transitionGuard;
 	EventHandler saveProc = SetEventHandler(DisableInputEventHandler);
 	gamemenu_off();
 	ClearFloatingNumbers();

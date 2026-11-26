@@ -23,6 +23,7 @@
 #include "engine.h"
 #include "engine/point.hpp"
 #include "engine/random.hpp"
+#include "engine/render_bridge.hpp"
 #include "init.h"
 #include "inv.h"
 #include "lighting.h"
@@ -773,6 +774,7 @@ void LoadMissile(LoadHelper *file)
 	missile.var7 = file->NextLE<int32_t>();
 	missile.limitReached = file->NextBool32();
 	missile.lastCollisionTargetHash = 0;
+	ScopedBridgeStateLock bridgeLock;
 	if (Missiles.size() < Missiles.max_size()) {
 		Missiles.push_back(missile);
 	}
@@ -2320,6 +2322,7 @@ void RemoveEmptyInventory(Player &player)
 
 void LoadGame(bool firstflag)
 {
+	ScopedLevelTransitionGuard transitionGuard;
 	FreeGameMem();
 
 	LoadHelper file(OpenSaveArchive(gSaveNumber), "game");
@@ -2510,15 +2513,18 @@ void LoadGame(bool firstflag)
 	}
 
 	// convert stray manashield missiles into pManaShield flag
-	for (auto &missile : Missiles) {
-		if (missile._mitype == MissileID::ManaShield && !missile._miDelFlag) {
-			Players[missile._misource].pManaShield = true;
-			missile._miDelFlag = true;
+	{
+		ScopedBridgeStateLock bridgeLock;
+		for (auto &missile : Missiles) {
+			if (missile._mitype == MissileID::ManaShield && !missile._miDelFlag) {
+				Players[missile._misource].pManaShield = true;
+				missile._miDelFlag = true;
+			}
 		}
-	}
 
-	missiles_process_charge();
-	RedoMissileFlags();
+		missiles_process_charge();
+		RedoMissileFlags();
+	}
 	NewCursor(CURSOR_HAND);
 	gbProcessPlayers = IsDiabloAlive(!firstflag);
 

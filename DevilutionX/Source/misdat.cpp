@@ -9,6 +9,7 @@
 
 #include "engine/load_cl2.hpp"
 #include "engine/load_clx.hpp"
+#include "engine/render_bridge.hpp"
 #include "missiles.h"
 #include "mpq/mpq_common.hpp"
 #include "utils/file_name_generator.hpp"
@@ -310,6 +311,7 @@ void InitMissileGFX(bool loadHellfireGraphics)
 	if (HeadlessMode)
 		return;
 
+	ScopedBridgeStateLock bridgeLock;
 	for (size_t mi = 0; MissileSpriteData[mi].animFAmt != 0; mi++) {
 		if (!loadHellfireGraphics && mi > static_cast<uint8_t>(MissileGraphicID::BloodStarRedExplosion))
 			break;
@@ -321,6 +323,7 @@ void InitMissileGFX(bool loadHellfireGraphics)
 
 void FreeMissileGFX()
 {
+	ScopedBridgeStateLock bridgeLock;
 	for (auto &missileData : MissileSpriteData) {
 		missileData.FreeGFX();
 	}

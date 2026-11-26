@@ -23,6 +23,7 @@
 #include "dead.h"
 #include "engine/backbuffer_state.hpp"
 #include "engine/random.hpp"
+#include "engine/render_bridge.hpp"
 #include "engine/world_tile.hpp"
 #include "gamemenu.h"
 #include "levels/crypt.h"
@@ -1777,6 +1778,7 @@ size_t OnAwakeGolem(const TCmd *pCmd, size_t pnum)
 		if (!player.isOnActiveLevel()) {
 			DeltaSyncGolem(message, pnum, message._currlevel);
 		} else if (&player != MyPlayer) {
+			ScopedBridgeStateLock bridgeLock;
 			// Check if this player already has an active golem
 			for (auto &missile : Missiles) {
 				if (missile._mitype == MissileID::Golem && &Players[missile._misource] == &player) {
@@ -2133,6 +2135,7 @@ size_t OnActivatePortal(const TCmd *pCmd, size_t pnum)
 			if (leveltype == DTYPE_TOWN) {
 				AddInTownPortal(pnum);
 			} else if (player.isOnActiveLevel()) {
+				ScopedBridgeStateLock bridgeLock;
 				bool addPortal = true;
 				for (auto &missile : Missiles) {
 					if (missile._mitype == MissileID::TownPortal && &Players[missile._misource] == &player) {

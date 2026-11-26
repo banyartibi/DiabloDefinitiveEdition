@@ -183,6 +183,8 @@ void StartGame(interface_mode uMsg)
 
 void FreeGame()
 {
+	ScopedLevelTransitionGuard transitionGuard;
+	ScopedBridgeStateLock bridgeLock;
 	FreeMonsterHealthBar();
 	FreeXPBar();
 	FreeControlPan();
@@ -937,7 +939,10 @@ void RunGameLoop(interface_mode uMsg)
 			continue;
 		}
 
-		multi_process_network_packets();
+		{
+			ScopedBridgeStateLock bridgeLock;
+			multi_process_network_packets();
+		}
 		if (game_loop(gbGameLoopStartup))
 			diablo_color_cyc_logic();
 		gbGameLoopStartup = false;
@@ -1240,7 +1245,6 @@ void ApplicationInit()
 		LoadGameArchives();
 		InitPalette();
 		RunRemasterAssetPipeline();
-		RunPackHdClxPipeline();
 		diablo_quit(0);
 	}
 
@@ -1307,7 +1311,6 @@ void ApplicationInit()
 		LoadGameArchives();
 		InitPalette();
 		RemasterWarriorClass();
-		RunPackHdClxPipeline();
 		diablo_quit(0);
 	}
 
@@ -1618,6 +1621,7 @@ void UpdateMonsterLights()
 
 void GameLogic()
 {
+	ScopedBridgeStateLock bridgeLock;
 	if (!ProcessInput()) {
 		return;
 	}
@@ -2568,6 +2572,7 @@ void SetCursorPos(Point position)
 
 void FreeGameMem()
 {
+	ScopedBridgeStateLock bridgeLock;
 	pDungeonCels = nullptr;
 	pMegaTiles = nullptr;
 	pSpecialCels = std::nullopt;
@@ -2952,6 +2957,7 @@ void DisableInputEventHandler(const SDL_Event &event, uint16_t modState)
 
 void LoadGameLevel(bool firstflag, lvl_entry lvldir)
 {
+	ScopedLevelTransitionGuard transitionGuard;
 	_music_id neededTrack = GetLevelMusic(leveltype);
 	ClearFloatingNumbers();
 
@@ -3240,7 +3246,6 @@ void LoadGameLevel(bool firstflag, lvl_entry lvldir)
 	ResetItemlabelHighlighted(); // level changed => item changed
 	pcursmonst = -1;             // ensure pcurstemp is set to a valid value
 	CheckCursMove();
-	g_D1LevelTransitioning = false;
 }
 
 bool game_loop(bool bStartup)

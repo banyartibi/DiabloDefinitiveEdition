@@ -2942,6 +2942,7 @@ void SyncPlrKill(Player &player, DeathReason deathReason)
 
 void RemovePlrMissiles(const Player &player)
 {
+	ScopedBridgeStateLock bridgeLock;
 	if (leveltype != DTYPE_TOWN && &player == MyPlayer) {
 		Monster &golem = Monsters[MyPlayerId];
 		if (golem.position.tile.x != 1 || golem.position.tile.y != 0) {
