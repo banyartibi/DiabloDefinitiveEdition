@@ -1539,6 +1539,17 @@ Ref<ImageTexture> DiabloBridge::get_cursor_texture(int curs_id) {
 	if (icon.rgba.empty() || icon.width <= 0 || icon.height <= 0)
 		return Ref<ImageTexture>();
 
+	uint8_t max_rgb = 0;
+	for (size_t i = 0; i + 3 < icon.rgba.size(); i += 4) {
+		if (icon.rgba[i + 3] > 0) {
+			uint8_t ch = std::max(icon.rgba[i], std::max(icon.rgba[i + 1], icon.rgba[i + 2]));
+			if (ch > max_rgb)
+				max_rgb = ch;
+		}
+	}
+	if (max_rgb <= 16)
+		return Ref<ImageTexture>();
+
 	PackedByteArray pba;
 	pba.resize(icon.rgba.size());
 	std::memcpy(pba.ptrw(), icon.rgba.data(), icon.rgba.size());

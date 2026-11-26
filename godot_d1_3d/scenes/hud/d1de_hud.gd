@@ -2175,8 +2175,6 @@ func update_custom_cursor():
 	if cid == last_custom_cursor_id:
 		return
 
-	last_custom_cursor_id = cid
-
 	# Targeting cursors: 2=Identify, 3=Repair, 4=Recharge, 5=Disarm, 6=Oil, 7=Telekinesis, 8=Resurrect, 9=Teleport, 10=HealOther, 11=Hourglass
 	if cid > 1 and cid < 12:
 		var tex: Texture2D = null
@@ -2185,11 +2183,13 @@ func update_custom_cursor():
 		if not tex and cid == 2:
 			tex = TEX_SCROLL
 		if tex:
+			last_custom_cursor_id = cid
 			var hotspot = Vector2(4.0, 4.0)
 			if cid == 9: # Teleport / crosshair targeting cursor
 				hotspot = Vector2(tex.get_width() * 0.5, tex.get_height() * 0.5)
 			Input.set_custom_mouse_cursor(tex, Input.CURSOR_ARROW, hotspot)
 		else:
+			last_custom_cursor_id = -1
 			Input.set_custom_mouse_cursor(null)
 	else:
 		# Normal gameplay (cid == 1, CURSOR_HAND) - authentic Diablo golden gauntlet
@@ -2197,8 +2197,10 @@ func update_custom_cursor():
 		if diablo_bridge.has_method("get_cursor_texture"):
 			hand_tex = diablo_bridge.get_cursor_texture(1)
 		if hand_tex:
+			last_custom_cursor_id = cid
 			Input.set_custom_mouse_cursor(hand_tex, Input.CURSOR_ARROW, Vector2(1.0, 1.0))
 		else:
+			last_custom_cursor_id = -1
 			Input.set_custom_mouse_cursor(null)
 
 func _exit_tree():

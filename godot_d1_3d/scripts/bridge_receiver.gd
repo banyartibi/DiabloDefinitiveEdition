@@ -1,6 +1,7 @@
 extends Node3D
 
 const UpscalerModelConfig = preload("res://scripts/upscaler_model_config.gd")
+const Native25DViewScript = preload("res://scripts/native_25d_view.gd")
 
 @export var mesh_instance: MeshInstance3D
 @export var hero_light: OmniLight3D
@@ -68,12 +69,12 @@ var loading_layer: CanvasLayer = null
 var loading_rect: ColorRect = null
 var loading_label: Label = null
 
-# Display Architecture:
-# Mode 0: Classic 2.5D Blit (Vanilla 1996 + 3D Relief Shader)
-# Mode 1: Native 2.5D (Deprecated - automatically upgraded to Native 3D Engine)
-# Mode 2: Native Godot 3D Engine (Forward+ Vulkan, Real 3D Geometry, Billboard Sprites, Q/E Orbit, PgUp/PgDn Tilt)
+# 3-Mode Display Architecture:
+# Mode 0: Classic 2.5D Blit (Vanilla 1996 + PBR Relief Shader)
+# Mode 1: Native Godot 2.5D Engine (Primary: Authentic 2:1 Isometric, 144Hz Smooth Camera, Y-Sorted Sprites, GPU Lightmap)
+# Mode 2: Native Godot 3D Engine (Experimental 3D Sandbox, Real 3D Geometry, Q/E Orbit, PgUp/PgDn Tilt)
 enum DisplayMode { ORIGINAL_25D = 0, NATIVE_25D = 1, NATIVE_3D = 2 }
-var current_display_mode: int = DisplayMode.NATIVE_3D
+var current_display_mode: int = DisplayMode.NATIVE_25D
 # Track modal open/close in native modes so we can re-apply the display mode (show/hide the authentic D1 UI blit)
 var last_modal_active := false
 
@@ -552,7 +553,11 @@ func _setup_game_view():
 	game_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	game_view.use_hdr_2d = true
 	# Mirror the project rendering settings onto GameView (they only apply to the root window by default).
-	game_view.msaa_3d = 2
+	# MSAA stays OFF on purpose: GameView is an HDR target rendered at the full window size
+	# (2560x1440 here), and a 4x multisampled HDR target costs ~35ms/frame on RADV/RDNA2 once the
+	# floor covers the screen (measured 26fps vs 145fps with MSAA off). FXAA below does the edge
+	# smoothing for a pixel-perceptible difference instead (measured mean diff 0.16/255).
+	game_view.msaa_3d = 0
 	game_view.screen_space_aa = 1
 	game_view.snap_2d_transforms_to_pixel = false
 	game_view.snap_2d_vertices_to_pixel = false
@@ -807,7 +812,22 @@ func _dbg_capture() -> void:
 	current_brightness_pct])
 	DirAccess.remove_absolute("/tmp/d1_dbg_shot_req")
 
+var _pf_n := 0
+var _pf_total := 0
+var _gv_ovr_size := Vector2i(0, 0)
+
 func _process(delta: float):
+	var _t0 = Time.get_ticks_usec()
+	_process_body(delta)
+	if OS.get_environment("PROFILE") == "1":
+		_pf_total += Time.get_ticks_usec() - _t0
+		_pf_n += 1
+		if _pf_n >= 240:
+			print("[BR] receiver_process=%.2f ms/frame" % (_pf_total / float(_pf_n) / 1000.0))
+			_pf_total = 0
+			_pf_n = 0
+
+func _process_body(delta: float):
 	time_accum += delta
 	frame_counter += 1
 	fps_timer += delta
@@ -839,9 +859,7 @@ func _process(delta: float):
 				new_disp = int(diablo_bridge.get_d1de_display_mode())
 			elif diablo_bridge.has_method("get_resurrected_display_mode"):
 				new_disp = int(diablo_bridge.get_resurrected_display_mode())
-			if new_disp == DisplayMode.NATIVE_25D:
-				new_disp = DisplayMode.NATIVE_3D
-			if new_disp != current_display_mode and (new_disp == DisplayMode.ORIGINAL_25D or new_disp == DisplayMode.NATIVE_3D):
+			if new_disp != current_display_mode and new_disp >= 0 and new_disp < 3:
 				switch_display_mode(new_disp)
 
 			var new_vs = bool(diablo_bridge.get_vsync_enabled())
@@ -942,8 +960,14 @@ func _process(delta: float):
 			osd_label.text = ""
 
 	if game_view:
+		var _gv_ovr = OS.get_environment("GV_SIZE")
 		var root_vp_size = Vector2i(get_viewport().get_visible_rect().size)
-		if root_vp_size.x > 0 and root_vp_size.y > 0 and game_view.size != root_vp_size:
+		if _gv_ovr != "" and "x" in _gv_ovr:
+			if _gv_ovr_size == Vector2i(0, 0):
+				_gv_ovr_size = Vector2i(int(_gv_ovr.split("x")[0]), int(_gv_ovr.split("x")[1]))
+			if game_view.size != _gv_ovr_size:
+				game_view.size = _gv_ovr_size
+		elif root_vp_size.x > 0 and root_vp_size.y > 0 and game_view.size != root_vp_size:
 			game_view.size = root_vp_size
 
 	# Authentic Red Death Screen post-processing update
@@ -1198,9 +1222,6 @@ func apply_display_mode():
 		return
 
 	# In-game mode activation:
-	if current_display_mode == DisplayMode.NATIVE_25D:
-		current_display_mode = DisplayMode.NATIVE_3D
-
 	if native_25d_instance:
 		native_25d_instance.deactivate()
 	if sandbox_instance:
@@ -1230,9 +1251,9 @@ func apply_display_mode():
 			dungeon_embers.visible = should_emit
 		_apply_environment_glow()
 		update_fog_mode()
-		# Mode 0 uses 3D QuadMesh: re-enable 3D anti-aliasing on SubViewport
+		# Mode 0 uses 3D QuadMesh: FXAA only. MSAA is deliberately disabled (see _setup_game_view).
 		if game_view:
-			game_view.msaa_3d = 2
+			game_view.msaa_3d = 0
 			game_view.screen_space_aa = 1
 		if brightness_material:
 			brightness_material.set_shader_parameter("color_profile", 0)
@@ -1344,10 +1365,8 @@ func apply_display_mode():
 	apply_upscaler_mode()
 
 func switch_display_mode(new_mode: int):
-	if new_mode == DisplayMode.NATIVE_25D:
-		new_mode = DisplayMode.NATIVE_3D
-	current_display_mode = new_mode
-	print("[D1DE] display_mode -> %d" % new_mode)
+	current_display_mode = clampi(new_mode, DisplayMode.ORIGINAL_25D, DisplayMode.NATIVE_3D)
+	print("[D1DE] display_mode -> %d" % current_display_mode)
 	apply_display_mode()
 
 func _unhandled_input(event: InputEvent):
@@ -1387,15 +1406,16 @@ func _unhandled_input(event: InputEvent):
 			if event.alt_pressed: pressed_mask |= 4
 			if event.meta_pressed: pressed_mask |= 8
 			if int(event.physical_keycode) == sw_key and pressed_mask == sw_mods:
-				var next_mode = DisplayMode.ORIGINAL_25D if current_display_mode == DisplayMode.NATIVE_3D else DisplayMode.NATIVE_3D
+				var next_mode = (current_display_mode + 1) % 3
 				switch_display_mode(next_mode)
 				_write_display_mode(next_mode)   # persists to diablo.ini
 				if not is_ingame:
 					var mode_names = {
 						DisplayMode.ORIGINAL_25D: "Classic 2.5D Blit (Vanilla 1996)",
-						DisplayMode.NATIVE_3D: "Native Godot 3D Engine (Forward+ Vulkan)"
+						DisplayMode.NATIVE_25D: "Native Godot 2.5D PBR (Recommended)",
+						DisplayMode.NATIVE_3D: "Native Godot 3D Engine (Experimental)"
 					}
-					show_osd("Mode selected: " + mode_names.get(next_mode, "Native 3D Engine") + " (Active when game begins)", 3.0)
+					show_osd("Mode selected: " + mode_names.get(next_mode, "Native Godot 2.5D PBR") + " (Active when game begins)", 3.0)
 				return
 
 	if is_ingame:
@@ -1487,7 +1507,7 @@ func _write_display_mode(mode_idx: int):
 					found = true
 					break
 			if found and diablo_bridge.has_method("set_setting_list"):
-				var list_idx = 0 if mode_idx == DisplayMode.ORIGINAL_25D else 1
+				var list_idx = clampi(mode_idx, 0, 2)
 				diablo_bridge.set_setting_list(int(cat.get("id", 0)), e_id, list_idx)
 				diablo_bridge.save_settings()
 			return
@@ -1568,8 +1588,10 @@ func update_dynamic_lighting(delta: float) -> void:
 		else:
 			hero_light.visible = false
 
-	# 2. Environmental & Spell Lights (Wall torches, braziers, fireballs)
+	# 2. Environmental & Spell Lights (Wall torches, braziers, fireballs, lightning)
 	var env_count = active_lights.size() - 1
+	var cached_missiles: Array = []
+	var missiles_fetched: bool = false
 	while pooled_torch_lights.size() < env_count:
 		var o_light = OmniLight3D.new()
 		o_light.shadow_enabled = false
@@ -1611,8 +1633,23 @@ func update_dynamic_lighting(delta: float) -> void:
 				if sparks:
 					sparks.visible = true
 					sparks.emitting = true
-			elif l_type == 2: # Spell / Missile (Fireball, Flame)
-				o_light.light_color = Color(1.0, 0.88, 0.45, 1.0)
+			elif l_type == 2: # Spell / Missile (element-aware color)
+				if not missiles_fetched and diablo_bridge.has_method("get_active_missiles"):
+					cached_missiles = diablo_bridge.get_active_missiles()
+					missiles_fetched = true
+				var lx = float(info.get("tile_x", 0))
+				var ly = float(info.get("tile_y", 0))
+				var spell_col = Color(1.0, 0.85, 0.45, 1.0)
+				var best_d2 := 6.25
+				for m in cached_missiles:
+					var d2 = pow(float(m.get("tile_x", -999)) - lx, 2.0) + pow(float(m.get("tile_y", -999)) - ly, 2.0)
+					if d2 <= best_d2:
+						best_d2 = d2
+						var c = Native25DViewScript._get_missile_light_color(
+							Native25DViewScript._classify_missile_element(int(m.get("type", 0)), str(m.get("cel", "")))
+						)
+						spell_col = Color(c.r, c.g, c.b, 1.0)
+				o_light.light_color = spell_col
 				o_light.omni_range = clamp(info["radius"] * 0.32, 2.0, 3.5)
 				o_light.omni_attenuation = 2.0
 				o_light.light_energy = 1.50

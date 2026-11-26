@@ -1114,9 +1114,10 @@ std::string OptionEntryKeyCapture::FormatBinding(int godotKey, uint8_t modsMask)
 ResurrectedOptions::ResurrectedOptions()
     : OptionCategoryBase("Definitive Edition", N_("Definitive Edition"), N_("Diablo: Definitive Edition: native display mode switch binding + effects (Legacy Blit / Godot 2.5D / Godot 3D)"))
     , modeSwitchBinding("Mode Switch", N_("Display Mode Switch"), N_("Cycles Original 2.5D / Native Godot 2.5D / Native Godot 3D Sandbox."), /*Godot KEY_F12*/ 4194343, /*Ctrl modifier bit*/ 2)
-    , displayMode("Display Mode", OptionEntryFlags::None, N_("Display Mode"), N_("Legacy Blit (Original 2.5D) / Native Godot 3D Engine."), DisplayMode::Native_3D,
+    , displayMode("Display Mode", OptionEntryFlags::None, N_("Display Mode"), N_("Legacy Blit (Original 2.5D) / Native Godot 2.5D PBR / Native Godot 3D Engine."), DisplayMode::Native_25D,
           {
               { DisplayMode::Original_25D, N_("Legacy Blit (1996 Classic)") },
+              { DisplayMode::Native_25D, N_("Native Godot 2.5D PBR (Recommended)") },
               { DisplayMode::Native_3D, N_("Native Godot 3D Engine") },
           })
     , softTorchlight("Soft Torchlight", OptionEntryFlags::None, N_("Soft Torchlight"), N_("Warm candlelight around the hero in dungeons."), true)

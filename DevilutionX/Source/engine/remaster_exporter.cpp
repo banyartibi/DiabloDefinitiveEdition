@@ -23,11 +23,14 @@
 #include "engine/dx.h"
 #include "engine/load_cel.hpp"
 #include "engine/load_cl2.hpp"
+#include "engine/load_file.hpp"
 #include "engine/palette.h"
 #include "engine/render/clx_render.hpp"
 #include "engine/surface.hpp"
 #include "misdat.h"
+#include "monstdat.h"
 #include "objdat.h"
+#include "playerdat.hpp"
 #include "utils/log.hpp"
 #include "utils/png.h"
 
@@ -53,6 +56,44 @@ const char *const kLevelPaletteCandidates[] = {
 	"levels\\l11data\\l11_1.pal", "levels\\l13data\\l13_1.pal", "levels\\l15data\\l15_1.pal", "levels\\l16data\\l16_1.pal",
 	"levels\\towndata\\town.pal",
 };
+
+// True while hero CELs are being exported. player.cpp applies the class .trn
+// to the animation CELs (ClxApplyTrans) before drawing, so the game never looks
+// up a raw player CEL index in the palette. Exporting without that transform
+// resolves raw indices against a dark region of the level palette and every
+// frame comes out a pure-black silhouette — which is what happened to all 1056
+// deployed plrgfx folders. While this is set the transform is already folded
+// into orig_palette, so palette re-picking must be skipped.
+bool gPlayerTrnApplied = false;
+
+// Folds plrgfx\<class>.trn into orig_palette (palette' = palette ∘ trn), which
+// is equivalent to the ClxApplyTrans the game performs on the sprites.
+void ApplyClassTrnToPalette(const std::string &classDir)
+{
+	// The MPQ spells the sorcerer's animation directory 'sorceror'; probe the
+	// plausible transform names rather than trusting one spelling.
+	const std::string trnName = classDir;
+	std::array<uint8_t, 256> trn{};
+	std::string foundPath;
+	for (const std::string &cand : { trnName + ".trn", std::string("sorcerer.trn"), std::string("sorceror.trn") }) {
+		const std::string path = "plrgfx\\" + cand;
+		if (cand == "sorcerer.trn" && trnName != "sorceror" && trnName != "sorcerer")
+			continue;
+		if (LoadOptionalFileInMem(path.c_str(), &trn[0], 256)) {
+			foundPath = path;
+			break;
+		}
+	}
+	if (foundPath.empty()) {
+		Log("Remaster exporter: no plrgfx transform for '{}' — exporting with the raw CEL indices", classDir);
+		return;
+	}
+	const std::array<SDL_Color, 256> base = orig_palette;
+	for (int i = 1; i < 256; ++i)
+		orig_palette[i] = base[trn[i]];
+	gPlayerTrnApplied = true;
+	Log("Remaster exporter: applied {} to the palette", foundPath);
+}
 
 // Palette indices actually used by the first non-empty sprite of a CL2/CEL.
 // Index 0 is the transparent index.
@@ -147,6 +188,10 @@ const char *PickLevelPalette(const std::vector<std::string> &assetPaths, uint16_
 // switch to the level palette that actually colours it.
 void EnsurePaletteColours(const std::string &assetPath, uint16_t widthHint)
 {
+	// The class transform is already baked into orig_palette; re-picking a level
+	// palette would drop it and score the raw (dark) indices as black.
+	if (gPlayerTrnApplied)
+		return;
 	std::array<bool, 256> used{};
 	if (!CollectCelPaletteIndices(assetPath, widthHint, used))
 		return;
@@ -157,21 +202,143 @@ void EnsurePaletteColours(const std::string &assetPath, uint16_t widthHint)
 		LoadPalette(picked);
 }
 
-void ExportAndUpscaleCl2(const std::string &assetPath, uint16_t widthHint = 128)
+// D1DE_REMASTER_RAW_ONLY: write the authentic 1x frames and skip the GPU
+// upscale, so the raw pass runs in seconds and the 4x leg is batched
+// separately by tools/hd_upscale_batch.py.
+bool RemasterRawOnly()
 {
-	std::string baseName = assetPath;
+	return std::getenv("D1DE_REMASTER_RAW_ONLY") != nullptr;
+}
+
+std::string SanitizeBaseName(std::string baseName)
+{
 	for (char &c : baseName) {
 		if (c == '\\' || c == '/')
 			c = '_';
 	}
+	return baseName;
+}
 
-	std::string hdDir = "/home/biti/antigravity/magical-bell/scratch/hd_sprites/" + baseName;
-	bool force = (std::getenv("D1DE_FORCE_REMASTER") != nullptr);
-	if (!force && fs::exists(hdDir) && !fs::is_empty(hdDir)) {
+void ExportClxSpriteToPng(ClxSprite sprite, const SDL_Color *origPalette, const char *pngPath)
+{
+	const int w = sprite.width();
+	const int h = sprite.height();
+	if (w <= 0 || h <= 0 || w > 1024 || h > 1024)
+		return;
+
+	SDL_Surface *surface0 = SDL_CreateRGBSurfaceWithFormat(0, w, h, 8, SDL_PIXELFORMAT_INDEX8);
+	SDL_Surface *surface1 = SDL_CreateRGBSurfaceWithFormat(0, w, h, 8, SDL_PIXELFORMAT_INDEX8);
+	if (!surface0 || !surface1) {
+		if (surface0)
+			SDL_FreeSurface(surface0);
+		if (surface1)
+			SDL_FreeSurface(surface1);
 		return;
 	}
 
-	std::string fullCl2 = assetPath + ".cl2";
+	// Render onto two differently cleared 8-bit buffers so opaque palette index 0
+	// (pure black interior shadow pixels in chests/objects) stays opaque while
+	// untouched transparent background pixels differ between the two buffers.
+	std::memset(surface0->pixels, 0x00, surface0->pitch * surface0->h);
+	std::memset(surface1->pixels, 0xFF, surface1->pitch * surface1->h);
+
+	Surface out0(surface0);
+	Surface out1(surface1);
+	RenderClxSprite(out0, sprite, { 0, 0 });
+	RenderClxSprite(out1, sprite, { 0, 0 });
+
+	SDL_Surface *surface32 = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_RGBA32);
+	if (surface32) {
+		const uint8_t *src0 = static_cast<const uint8_t *>(surface0->pixels);
+		const uint8_t *src1 = static_cast<const uint8_t *>(surface1->pixels);
+		uint32_t *dst = static_cast<uint32_t *>(surface32->pixels);
+		const int dstPitch = surface32->pitch / 4;
+		for (int y = 0; y < h; ++y) {
+			for (int x = 0; x < w; ++x) {
+				const uint8_t idx0 = src0[y * surface0->pitch + x];
+				const uint8_t idx1 = src1[y * surface1->pitch + x];
+				if (idx0 != idx1) {
+					dst[y * dstPitch + x] = 0; // Transparent background
+				} else {
+					const SDL_Color c = origPalette[idx0];
+					dst[y * dstPitch + x] = (0xFFU << 24)
+					    | (static_cast<uint32_t>(c.b) << 16)
+					    | (static_cast<uint32_t>(c.g) << 8)
+					    | static_cast<uint32_t>(c.r);
+				}
+			}
+		}
+		IMG_SavePNG(surface32, pngPath);
+		SDL_FreeSurface(surface32);
+	}
+
+	SDL_FreeSurface(surface0);
+	SDL_FreeSurface(surface1);
+}
+
+void ExportClxAndMaybeUpscale(const std::string &baseName, const OwnedClxSpriteListOrSheet &clx, const std::string &rawDir, const std::string &hdDir, bool rawOnly)
+{
+	fs::create_directories(rawDir);
+	fs::create_directories(hdDir);
+
+	const SDL_Color *origPalette = orig_palette.data();
+	auto processList = [&](ClxSpriteList list, size_t groupIndex) {
+		const uint32_t frameCount = list.numSprites();
+		const uint32_t listSize = list.dataSize();
+		const uint32_t minOffset = 4U + (frameCount + 1U) * 4U;
+		if (frameCount == 0 || frameCount > 1024 || listSize < minOffset) {
+			Log("Skipping corrupt group {} of {} (frames={}, listSize={})", groupIndex, baseName, frameCount, listSize);
+			return;
+		}
+		for (size_t f = 0; f < frameCount; ++f) {
+			const uint32_t begin = list.spriteOffset(f);
+			const uint32_t end = list.spriteOffset(f + 1);
+			if (begin < minOffset || end <= begin || end > listSize) {
+				Log("Skipping corrupt frame {} in group {} of {} (begin={}, end={}, listSize={})", f, groupIndex, baseName, begin, end, listSize);
+				continue;
+			}
+			char pngPath[512];
+			std::snprintf(pngPath, sizeof(pngPath), "%s/g%zu_f%03zu.png", rawDir.c_str(), groupIndex, f);
+			ExportClxSpriteToPng(list[f], origPalette, pngPath);
+		}
+	};
+
+	if (clx.isSheet()) {
+		ClxSpriteSheet sheet = clx.sheet();
+		for (size_t g = 0; g < sheet.numLists(); ++g) {
+			const uint32_t gOff = sheet.sheetOffset(g);
+			if (gOff < 4U * sheet.numLists()) {
+				Log("Skipping corrupt sheet group {} of {} (offset={})", g, baseName, gOff);
+				continue;
+			}
+			processList(sheet[g], g);
+		}
+	} else {
+		processList(clx.list(), 0);
+	}
+
+	if (rawOnly)
+		return;
+	std::string cmd = "/home/biti/antigravity/magical-bell/tools/realesrgan/upscale_folder.sh " + rawDir + " " + hdDir + " 4x-UltraSharp";
+	int ret = std::system(cmd.c_str());
+	if (ret == 0) {
+		Log("Successfully upscaled asset {} with 4x-UltraSharp AI!", baseName);
+	}
+}
+
+void ExportAndUpscaleCl2(const std::string &assetPath, uint16_t widthHint = 128)
+{
+	const std::string baseName = SanitizeBaseName(assetPath);
+	const std::string hdDir = "/home/biti/antigravity/magical-bell/scratch/hd_sprites/" + baseName;
+	const std::string rawDir = "/home/biti/antigravity/magical-bell/scratch/raw_sprites/" + baseName;
+	const bool rawOnly = RemasterRawOnly();
+	const std::string skipDir = rawOnly ? rawDir : hdDir;
+	const bool force = (std::getenv("D1DE_FORCE_REMASTER") != nullptr);
+	if (!force && fs::exists(skipDir) && !fs::is_empty(skipDir)) {
+		return;
+	}
+
+	const std::string fullCl2 = assetPath + ".cl2";
 	AssetRef ref = FindAsset(fullCl2.c_str());
 	if (!ref.ok()) {
 		return;
@@ -187,91 +354,22 @@ void ExportAndUpscaleCl2(const std::string &assetPath, uint16_t widthHint = 128)
 		return;
 	}
 
-	std::string rawDir = "/home/biti/antigravity/magical-bell/scratch/raw_sprites/" + baseName;
-	fs::create_directories(rawDir);
-	fs::create_directories(hdDir);
-
-	// Get system palette
-	const SDL_Color *origPalette = orig_palette.data();
-
-	auto processList = [&](ClxSpriteList list, size_t groupIndex) {
-		size_t frameCount = list.numSprites();
-		for (size_t f = 0; f < frameCount; ++f) {
-			ClxSprite sprite = list[f];
-			int w = sprite.width();
-			int h = sprite.height();
-			if (w <= 0 || h <= 0)
-				continue;
-
-			SDL_Surface *surface8 = SDL_CreateRGBSurfaceWithFormat(0, w, h, 8, SDL_PIXELFORMAT_INDEX8);
-			if (!surface8)
-				continue;
-
-			SDL_SetPaletteColors(surface8->format->palette, origPalette, 0, 256);
-			std::memset(surface8->pixels, 0, surface8->pitch * surface8->h);
-
-			Surface out(surface8);
-			RenderClxSprite(out, sprite, { 0, 0 });
-
-			// Convert to 32-bit RGBA
-			SDL_Surface *surface32 = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_RGBA32);
-			if (surface32) {
-				const uint8_t *src = static_cast<const uint8_t *>(surface8->pixels);
-				uint32_t *dst = static_cast<uint32_t *>(surface32->pixels);
-				for (int y = 0; y < h; ++y) {
-					for (int x = 0; x < w; ++x) {
-						uint8_t palIdx = src[y * surface8->pitch + x];
-						if (palIdx == 0) {
-							dst[y * (surface32->pitch / 4) + x] = 0; // Transparent
-						} else {
-							SDL_Color c = origPalette[palIdx];
-							dst[y * (surface32->pitch / 4) + x] = (0xFF << 24) | (c.b << 16) | (c.g << 8) | c.r;
-						}
-					}
-				}
-
-				char pngPath[512];
-				std::snprintf(pngPath, sizeof(pngPath), "%s/g%zu_f%03zu.png", rawDir.c_str(), groupIndex, f);
-				IMG_SavePNG(surface32, pngPath);
-				SDL_FreeSurface(surface32);
-			}
-
-			SDL_FreeSurface(surface8);
-		}
-	};
-
-	if (clx.isSheet()) {
-		ClxSpriteSheet sheet = clx.sheet();
-		for (size_t g = 0; g < sheet.numLists(); ++g) {
-			processList(sheet[g], g);
-		}
-	} else {
-		processList(clx.list(), 0);
-	}
-
-	// Run 4x-UltraSharp on GPU!
-	std::string cmd = "/home/biti/antigravity/magical-bell/tools/realesrgan/upscale_folder.sh " + rawDir + " " + hdDir + " 4x-UltraSharp";
-	int ret = std::system(cmd.c_str());
-	if (ret == 0) {
-		Log("Successfully upscaled asset {} with 4x-UltraSharp AI!", baseName);
-	}
+	ExportClxAndMaybeUpscale(baseName, clx, rawDir, hdDir, rawOnly);
 }
 
 void ExportAndUpscaleCel(const std::string &assetPath, uint16_t widthHint = 128)
 {
-	std::string baseName = assetPath;
-	for (char &c : baseName) {
-		if (c == '\\' || c == '/')
-			c = '_';
-	}
-
-	std::string hdDir = "/home/biti/antigravity/magical-bell/scratch/hd_sprites/" + baseName;
-	bool force = (std::getenv("D1DE_FORCE_REMASTER") != nullptr);
-	if (!force && fs::exists(hdDir) && !fs::is_empty(hdDir)) {
+	const std::string baseName = SanitizeBaseName(assetPath);
+	const std::string hdDir = "/home/biti/antigravity/magical-bell/scratch/hd_sprites/" + baseName;
+	const std::string rawDir = "/home/biti/antigravity/magical-bell/scratch/raw_sprites/" + baseName;
+	const bool rawOnly = RemasterRawOnly();
+	const std::string skipDir = rawOnly ? rawDir : hdDir;
+	const bool force = (std::getenv("D1DE_FORCE_REMASTER") != nullptr);
+	if (!force && fs::exists(skipDir) && !fs::is_empty(skipDir)) {
 		return;
 	}
 
-	std::string fullCel = assetPath + ".cel";
+	const std::string fullCel = assetPath + ".cel";
 	AssetRef ref = FindAsset(fullCel.c_str());
 	if (!ref.ok()) {
 		return;
@@ -287,88 +385,22 @@ void ExportAndUpscaleCel(const std::string &assetPath, uint16_t widthHint = 128)
 		return;
 	}
 
-	std::string rawDir = "/home/biti/antigravity/magical-bell/scratch/raw_sprites/" + baseName;
-	fs::create_directories(rawDir);
-	fs::create_directories(hdDir);
-
-	const SDL_Color *origPalette = orig_palette.data();
-
-	auto processList = [&](ClxSpriteList list, size_t groupIndex) {
-		size_t frameCount = list.numSprites();
-		for (size_t f = 0; f < frameCount; ++f) {
-			ClxSprite sprite = list[f];
-			int w = sprite.width();
-			int h = sprite.height();
-			if (w <= 0 || h <= 0)
-				continue;
-
-			SDL_Surface *surface8 = SDL_CreateRGBSurfaceWithFormat(0, w, h, 8, SDL_PIXELFORMAT_INDEX8);
-			if (!surface8)
-				continue;
-
-			SDL_SetPaletteColors(surface8->format->palette, origPalette, 0, 256);
-			std::memset(surface8->pixels, 0, surface8->pitch * surface8->h);
-
-			Surface out(surface8);
-			RenderClxSprite(out, sprite, { 0, 0 });
-
-			SDL_Surface *surface32 = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_RGBA32);
-			if (surface32) {
-				const uint8_t *src = static_cast<const uint8_t *>(surface8->pixels);
-				uint32_t *dst = static_cast<uint32_t *>(surface32->pixels);
-				for (int y = 0; y < h; ++y) {
-					for (int x = 0; x < w; ++x) {
-						uint8_t palIdx = src[y * surface8->pitch + x];
-						if (palIdx == 0) {
-							dst[y * (surface32->pitch / 4) + x] = 0;
-						} else {
-							SDL_Color c = origPalette[palIdx];
-							dst[y * (surface32->pitch / 4) + x] = (0xFF << 24) | (c.b << 16) | (c.g << 8) | c.r;
-						}
-					}
-				}
-
-				char pngPath[512];
-				std::snprintf(pngPath, sizeof(pngPath), "%s/g%zu_f%03zu.png", rawDir.c_str(), groupIndex, f);
-				IMG_SavePNG(surface32, pngPath);
-				SDL_FreeSurface(surface32);
-			}
-
-			SDL_FreeSurface(surface8);
-		}
-	};
-
-	if (clx.isSheet()) {
-		ClxSpriteSheet sheet = clx.sheet();
-		for (size_t g = 0; g < sheet.numLists(); ++g) {
-			processList(sheet[g], g);
-		}
-	} else {
-		processList(clx.list(), 0);
-	}
-
-	std::string cmd = "/home/biti/antigravity/magical-bell/tools/realesrgan/upscale_folder.sh " + rawDir + " " + hdDir + " 4x-UltraSharp";
-	int ret = std::system(cmd.c_str());
-	if (ret == 0) {
-		Log("Successfully upscaled CEL asset {} with 4x-UltraSharp AI!", baseName);
-	}
+	ExportClxAndMaybeUpscale(baseName, clx, rawDir, hdDir, rawOnly);
 }
 
 void ExportAndUpscaleCelWidths(const std::string &assetPath, const uint16_t *widths)
 {
-	std::string baseName = assetPath;
-	for (char &c : baseName) {
-		if (c == '\\' || c == '/')
-			c = '_';
-	}
-
-	std::string hdDir = "/home/biti/antigravity/magical-bell/scratch/hd_sprites/" + baseName;
-	bool force = (std::getenv("D1DE_FORCE_REMASTER") != nullptr);
-	if (!force && fs::exists(hdDir) && !fs::is_empty(hdDir)) {
+	const std::string baseName = SanitizeBaseName(assetPath);
+	const std::string hdDir = "/home/biti/antigravity/magical-bell/scratch/hd_sprites/" + baseName;
+	const std::string rawDir = "/home/biti/antigravity/magical-bell/scratch/raw_sprites/" + baseName;
+	const bool rawOnly = RemasterRawOnly();
+	const std::string skipDir = rawOnly ? rawDir : hdDir;
+	const bool force = (std::getenv("D1DE_FORCE_REMASTER") != nullptr);
+	if (!force && fs::exists(skipDir) && !fs::is_empty(skipDir)) {
 		return;
 	}
 
-	std::string fullCel = assetPath + ".cel";
+	const std::string fullCel = assetPath + ".cel";
 	AssetRef ref = FindAsset(fullCel.c_str());
 	if (!ref.ok()) {
 		return;
@@ -384,71 +416,43 @@ void ExportAndUpscaleCelWidths(const std::string &assetPath, const uint16_t *wid
 		return;
 	}
 
-	std::string rawDir = "/home/biti/antigravity/magical-bell/scratch/raw_sprites/" + baseName;
-	fs::create_directories(rawDir);
-	fs::create_directories(hdDir);
+	ExportClxAndMaybeUpscale(baseName, clx, rawDir, hdDir, rawOnly);
+}
 
-	const SDL_Color *origPalette = orig_palette.data();
+uint16_t GetPlayerExportWidthHint(const std::string &classDir, const std::string &gfxPrefix, const std::string &act)
+{
+	HeroClass cls = HeroClass::Warrior;
+	if (classDir == "rogue")
+		cls = HeroClass::Rogue;
+	else if (classDir == "sorceror" || classDir == "sorcerer")
+		cls = HeroClass::Sorcerer;
+	else if (classDir == "monk")
+		cls = HeroClass::Monk;
+	else if (classDir == "bard")
+		cls = HeroClass::Bard;
+	else if (classDir == "barbarian")
+		cls = HeroClass::Barbarian;
 
-	auto processList = [&](ClxSpriteList list, size_t groupIndex) {
-		size_t frameCount = list.numSprites();
-		for (size_t f = 0; f < frameCount; ++f) {
-			ClxSprite sprite = list[f];
-			int w = sprite.width();
-			int h = sprite.height();
-			if (w <= 0 || h <= 0)
-				continue;
-
-			SDL_Surface *surface8 = SDL_CreateRGBSurfaceWithFormat(0, w, h, 8, SDL_PIXELFORMAT_INDEX8);
-			if (!surface8)
-				continue;
-
-			SDL_SetPaletteColors(surface8->format->palette, origPalette, 0, 256);
-			std::memset(surface8->pixels, 0, surface8->pitch * surface8->h);
-
-			Surface out(surface8);
-			RenderClxSprite(out, sprite, { 0, 0 });
-
-			SDL_Surface *surface32 = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_RGBA32);
-			if (surface32) {
-				const uint8_t *src = static_cast<const uint8_t *>(surface8->pixels);
-				uint32_t *dst = static_cast<uint32_t *>(surface32->pixels);
-				for (int y = 0; y < h; ++y) {
-					for (int x = 0; x < w; ++x) {
-						uint8_t palIdx = src[y * surface8->pitch + x];
-						if (palIdx == 0) {
-							dst[y * (surface32->pitch / 4) + x] = 0;
-						} else {
-							SDL_Color c = origPalette[palIdx];
-							dst[y * (surface32->pitch / 4) + x] = (0xFF << 24) | (c.b << 16) | (c.g << 8) | c.r;
-						}
-					}
-				}
-
-				char pngPath[512];
-				std::snprintf(pngPath, sizeof(pngPath), "%s/g%zu_f%03zu.png", rawDir.c_str(), groupIndex, f);
-				IMG_SavePNG(surface32, pngPath);
-				SDL_FreeSurface(surface32);
-			}
-
-			SDL_FreeSurface(surface8);
-		}
-	};
-
-	if (clx.isSheet()) {
-		ClxSpriteSheet sheet = clx.sheet();
-		for (size_t g = 0; g < sheet.numLists(); ++g) {
-			processList(sheet[g], g);
-		}
-	} else {
-		processList(clx.list(), 0);
-	}
-
-	std::string cmd = "/home/biti/antigravity/magical-bell/tools/realesrgan/upscale_folder.sh " + rawDir + " " + hdDir + " 4x-UltraSharp";
-	int ret = std::system(cmd.c_str());
-	if (ret == 0) {
-		Log("Successfully upscaled CEL asset {} with 4x-UltraSharp AI!", baseName);
-	}
+	const PlayerSpriteData &sd = PlayersSpriteData[static_cast<size_t>(cls)];
+	if (act == "as" || act == "st")
+		return sd.stand;
+	if (act == "aw" || act == "wl")
+		return sd.walk;
+	if (act == "at")
+		return (gfxPrefix.size() >= 3 && gfxPrefix[2] == 'b') ? sd.bow : sd.attack;
+	if (act == "ht")
+		return sd.swHit;
+	if (act == "bl")
+		return sd.block;
+	if (act == "lm")
+		return sd.lightning;
+	if (act == "fm")
+		return sd.fire;
+	if (act == "qm")
+		return sd.magic;
+	if (act == "dt")
+		return sd.death;
+	return 128;
 }
 
 void ExportMonsterFamily(const std::string &basePrefix, uint16_t widthHint, const char *palPath = nullptr)
@@ -463,6 +467,8 @@ void ExportMonsterFamily(const std::string &basePrefix, uint16_t widthHint, cons
 
 void ExportPlayerClass(const char *classDir, char classChar)
 {
+	LoadPalette("levels\\l1data\\l1_1.pal");
+	ApplyClassTrnToPalette(classDir);
 	const char armors[] = { 'a', 'l', 'm', 'h' };
 	const char weapons[] = { 'n', 's', 'a', 'b', 'm', 't', 'u', 'd', 'h' };
 	const char *actions[] = { "as", "st", "aw", "wl", "at", "ht", "lm", "fm", "qm", "dt", "bl" };
@@ -472,7 +478,7 @@ void ExportPlayerClass(const char *classDir, char classChar)
 			char prefix[4] = { classChar, a, w, '\0' };
 			for (const char *act : actions) {
 				std::string path = "plrgfx\\" + std::string(classDir) + "\\" + prefix + "\\" + prefix + act;
-				ExportAndUpscaleCl2(path, 128);
+				ExportAndUpscaleCl2(path, GetPlayerExportWidthHint(classDir, prefix, act));
 			}
 		}
 	}
@@ -520,20 +526,35 @@ void RemasterPlayerSet(const std::string &spec)
 	Log("========================================================");
 	Log("   Starting HD Remastering for player set: {}          ", spec);
 	Log("========================================================");
-	// Player CEL indices live in the level palette space (same as monsters);
-	// without any palette orig_palette stays black and every frame is a silhouette.
+	// Hero CELs are indexed in the level-palette space (same character-colour
+	// region across themes) and the game draws them through the class .trn.
+	// Both are required: with no palette orig_palette stays black, and with the
+	// palette but no transform every frame is a silhouette.
 	LoadPalette("levels\\l1data\\l1_1.pal");
+	ApplyClassTrnToPalette(classDir);
 	const char *actions[] = { "as", "st", "aw", "wl", "at", "ht", "lm", "fm", "qm", "dt", "bl" };
 	for (const char *act : actions) {
 		if (!wanted.empty()
 		    && std::find(wanted.begin(), wanted.end(), std::string(act)) == wanted.end())
 			continue;
 		std::string path = "plrgfx\\" + classDir + "\\" + gfxPrefix + "\\" + gfxPrefix + act;
-		ExportAndUpscaleCl2(path, 128);
+		ExportAndUpscaleCl2(path, GetPlayerExportWidthHint(classDir, gfxPrefix, act));
 	}
 	Log("========================================================");
 	Log("   Player set {} remastering completed!          ", spec);
 	Log("========================================================");
+}
+
+uint16_t GetMonsterExportWidthHint(const std::string &familyPrefix, uint16_t fallbackWidth)
+{
+	if (fallbackWidth != 128)
+		return fallbackWidth;
+	for (size_t i = 0; i < NUM_MTYPES; ++i) {
+		const MonsterData &md = MonstersData[i];
+		if (md.assetsSuffix != nullptr && familyPrefix == md.assetsSuffix && md.width > 0)
+			return md.width;
+	}
+	return fallbackWidth;
 }
 
 void RemasterSingleFamily(const std::string &familyPrefix, uint16_t widthHint, const char *pal)
@@ -541,7 +562,7 @@ void RemasterSingleFamily(const std::string &familyPrefix, uint16_t widthHint, c
 	Log("========================================================");
 	Log("   Starting Remastering for Single Monster: {}          ", familyPrefix);
 	Log("========================================================");
-	ExportMonsterFamily(familyPrefix, widthHint, pal);
+	ExportMonsterFamily(familyPrefix, GetMonsterExportWidthHint(familyPrefix, widthHint), pal);
 }
 
 void RemasterTowners()

@@ -16,10 +16,25 @@ uniform bool wet_floor = true; // Wet cobblestone PBR reflections & specular glo
 
 varying vec2 v_world_pos;
 varying vec2 v_foot_pos;
+varying float v_mod_alpha;
+
+float _seam_feather(vec2 uv_coord, vec2 texel_sz, float diamond_d, bool floor_piece, float alpha_val) {
+	float f = smoothstep(0.0, 8.0 * texel_sz.x, uv_coord.x)
+	        * smoothstep(1.0, 1.0 - 8.0 * texel_sz.x, uv_coord.x);
+	if (floor_piece) {
+		f *= smoothstep(0.94, 0.75, diamond_d);
+	} else {
+		// Feather at internal midline cuts (e.g. half-wall split at u=0.5) and outer silhouette borders.
+		f *= smoothstep(0.0, 5.0 * texel_sz.x, abs(uv_coord.x - 0.5));
+		f *= smoothstep(0.50, 0.99, alpha_val);
+	}
+	return f;
+}
 
 void vertex() {
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 	v_foot_pos = MODEL_MATRIX[3].xy;
+	v_mod_alpha = COLOR.a;
 }
  
 void fragment() {
@@ -31,50 +46,55 @@ void fragment() {
 	bool is_floor_piece = (floor_row_h >= 0.90);
 	bool in_floor_row = is_floor_piece || (UV.y >= (floor_row_start - 0.002));
 
-	vec2 final_uv = UV;
-	if (relief_mode >= 3 && !is_town) {
-		// Parallax Occlusion Mapping (POM) for high-resolution dungeon PBR surfaces
-		vec2 view_dir = vec2(0.0, 0.45);
-		float h_scale = (relief_mode == 4 ? 0.008 : 0.004) * bump_scale;
-
-		const int pom_steps = 6;
-		float step_size = 1.0 / float(pom_steps);
-		vec2 step_delta = view_dir * (h_scale / float(pom_steps));
-
-		vec2 curr_uv = UV;
-		float curr_depth = 0.0;
-		float curr_height = 1.0 - dot(texture(TEXTURE, curr_uv).rgb, vec3(0.299, 0.587, 0.114));
-
-		for (int i = 0; i < pom_steps; i++) {
-			if (curr_depth >= curr_height) {
-				break;
-			}
-			vec2 next_uv = curr_uv + step_delta;
-			if (texture(TEXTURE, next_uv).a < 0.25) {
-				break;
-			}
-			curr_uv = next_uv;
-			curr_depth += step_size;
-			curr_height = 1.0 - dot(texture(TEXTURE, curr_uv).rgb, vec3(0.299, 0.587, 0.114));
-		}
-		final_uv = curr_uv;
-	}
-
-	vec4 tex = texture(TEXTURE, final_uv);
-
 	// Universal 2:1 Isometric Diamond Geometry in world coordinates
 	vec2 tile_center = v_foot_pos - vec2(0.0, 16.0);
 	float d_diamond = (abs(v_world_pos.x - tile_center.x) / 32.0) + (abs(v_world_pos.y - tile_center.y) / 16.0);
 
+	vec2 final_uv = UV;
+	if (relief_mode >= 3 && !is_town) {
+		// Parallax Occlusion Mapping (POM) constrained strictly to tile interiors
+		// so silhouettes and tile/diamond seams never displace or crack.
+		vec4 base_edge_check = texture(TEXTURE, UV);
+		float pom_edge_fade = _seam_feather(UV, TEXTURE_PIXEL_SIZE, d_diamond, is_floor_piece, base_edge_check.a);
+		if (pom_edge_fade > 0.01) {
+			vec2 view_dir = vec2(0.0, 0.45);
+			float h_scale = (relief_mode == 4 ? 0.008 : 0.004) * bump_scale * pom_edge_fade;
+
+			const int pom_steps = 6;
+			float step_size = 1.0 / float(pom_steps);
+			vec2 step_delta = view_dir * (h_scale / float(pom_steps));
+
+			vec2 curr_uv = UV;
+			float curr_depth = 0.0;
+			float curr_height = 1.0 - dot(base_edge_check.rgb, vec3(0.299, 0.587, 0.114));
+
+			for (int i = 0; i < pom_steps; i++) {
+				if (curr_depth >= curr_height) {
+					break;
+				}
+				vec2 next_uv = curr_uv + step_delta;
+				if (texture(TEXTURE, next_uv).a < 0.35) {
+					break;
+				}
+				curr_uv = next_uv;
+				curr_depth += step_size;
+				curr_height = 1.0 - dot(texture(TEXTURE, curr_uv).rgb, vec3(0.299, 0.587, 0.114));
+			}
+			final_uv = curr_uv;
+		}
+	}
+
+	vec4 tex = texture(TEXTURE, final_uv);
+
 	// Discard rules:
-	// - Floor pieces (both town & dungeon): allow slight subpixel overlap (d_diamond <= 1.06)
-	//   and only discard quad corners if tex.a is low, eliminating black grid lines between tiles.
-	// - Tall wall / scenery / tree pieces: preserve natural alpha cutouts (tex.a < 0.15)
+	// - Floor pieces (both town & dungeon): allow slight subpixel overlap (d_diamond <= 1.045)
+	//   and keep dilated solid interior free of seam holes across all zoom levels.
+	// - Tall wall / scenery / tree pieces: discard transparent exterior while keeping antialiased borders.
 	if (is_floor_piece) {
-		if (d_diamond > 1.06 && tex.a < 0.25) {
+		if (d_diamond > 1.045) {
 			discard;
 		}
-		if (tex.a < 0.15) {
+		if (tex.a < 0.12) {
 			discard;
 		}
 	} else {
@@ -96,15 +116,29 @@ void fragment() {
 
 	float l = texture(light_map, clamp(uv_light, vec2(0.0), vec2(1.0))).r;
 
-	// For walls: keep bottom 32 world pixels solid when front wall fades transparently
-	float effective_a = COLOR.a;
-	if (!is_floor_piece && v_world_pos.y >= (v_foot_pos.y - 32.0)) {
-		effective_a = 1.0;
+	// Use vertex modulate alpha (v_mod_alpha) — NOT texture-premultiplied COLOR.a — so opaque
+	// wall/floor edges never dip below 1.0 alpha under PointLight2D (eliminates dark vertical seams).
+	float effective_a = v_mod_alpha;
+	if (!is_floor_piece && v_mod_alpha < 0.99) {
+		float base_solid = smoothstep(v_foot_pos.y - 40.0, v_foot_pos.y - 24.0, v_world_pos.y);
+		effective_a = mix(v_mod_alpha, 1.0, base_solid);
 	}
 
-	// Floor pieces are 100% solid stone/earth so ground never leaks black background gaps across any zoom level;
-	// Upper walls, trees, roofs, fences preserve natural texture alpha:
-	float final_a = is_floor_piece ? effective_a : (tex.a * effective_a);
+	bool is_translucent = (!is_floor_piece && effective_a < 0.99);
+	float final_a = 1.0;
+	if (is_translucent) {
+		// Tightly clip mipmap/dilation fringes on translucent foreground walls so abutting 50% walls
+		// do not double-blend into vertical bright stripes.
+		float x_edge_clip = smoothstep(0.0, 0.75 * TEXTURE_PIXEL_SIZE.x, final_uv.x)
+		                  * smoothstep(1.0, 1.0 - 0.75 * TEXTURE_PIXEL_SIZE.x, final_uv.x);
+		float crisp_alpha = smoothstep(0.45, 0.75, tex.a) * x_edge_clip;
+		final_a = crisp_alpha * effective_a;
+	} else if (!is_floor_piece) {
+		if (tex.a < 0.25) {
+			discard;
+		}
+		final_a = 1.0;
+	}
 
 	if (is_town) {
 		// Preserves authentic Tristram daytime sunlit ambiance with deep contrast
@@ -257,8 +291,8 @@ void fragment() {
 				vec2 liquid_norm = vec2(lw1 * 0.045 - lw2 * 0.035, lw1 * 0.025 + lw2 * 0.040) * 8.0 * mult;
 				NORMAL = normalize(vec3(NORMAL.xy + liquid_norm, 1.0));
 			} else if (length(NORMAL.xy) > 0.001) {
-				// Scale pre-baked normal map from CanvasTexture feathered at quad edges to prevent seam striping
-				float edge_feather = smoothstep(0.0, 4.0 * TEXTURE_PIXEL_SIZE.x, final_uv.x) * smoothstep(1.0, 1.0 - 4.0 * TEXTURE_PIXEL_SIZE.x, final_uv.x);
+				// Scale pre-baked normal map from CanvasTexture feathered at edges, midlines & floor perimeters
+				float edge_feather = _seam_feather(final_uv, TEXTURE_PIXEL_SIZE, d_diamond, is_floor_piece, tex.a);
 				NORMAL = normalize(vec3(NORMAL.xy * mult * bump_scale * edge_feather, NORMAL.z));
 			} else {
 				// Real-time procedural Sobel normal for levels without pre-baked PBR
@@ -289,8 +323,8 @@ void fragment() {
 				float gy = (l_bl + 2.0 * l_bc + l_br) - (l_tl + 2.0 * l_tc + l_tr);
 
 				float strength = 1.2 * mult * bump_scale;
-				// Feather normal to neutral (+Z) at quad edges to prevent seam striping between wall segments
-				float edge_feather = smoothstep(0.0, 4.0 * texel.x, final_uv.x) * smoothstep(1.0, 1.0 - 4.0 * texel.x, final_uv.x);
+				// Feather normal to neutral (+Z) at quad edges, midlines and perimeters to prevent seam striping
+				float edge_feather = _seam_feather(final_uv, texel, d_diamond, is_floor_piece, tex.a);
 				NORMAL = normalize(vec3(-gx * strength * edge_feather, -gy * strength * edge_feather, 1.0));
 			}
 		} else {

@@ -20,6 +20,11 @@ extends RefCounted
 # ==============================================================================
 
 const UpscalerModelConfig = preload("res://scripts/upscaler_model_config.gd")
+# Preloaded rather than relied on as a global class_name: the generated table is
+# new and the project's global class cache only learns it after a full editor
+# scan, so a bare identifier reference used to fail compilation of this file
+# (and with it every HD lookup) until the cache was rebuilt.
+const MonsterFamilyTable = preload("res://scripts/monster_family_table.gd")
 
 static var _cache: Dictionary = {}
 static var _warned: Dictionary = {}
@@ -29,9 +34,78 @@ static var _warned: Dictionary = {}
 static var _bad_folders: Dictionary = {}
 static var _black_hits: Dictionary = {}
 const BLACK_HITS_TO_DISABLE := 4
+# Deferred creation. Loading a cold HD PNG (decode + mips + upload) inside the
+# entity pass makes that frame a spike, and a whole screen of first-time frames
+# costs hundreds of ms at once. A miss therefore only QUEUES the file; pump()
+# builds a few queued frames at the end of each frame, and the sprite draws them
+# from the next frame on. Callers treat a null result as "not ready yet" and
+# keep the texture they already have.
+static var _pending: Dictionary = {}
+static var _queue: Array = []
+# Least-recently-used bound: 26k+ HD frames x ~1.3 MB cannot all be resident.
+const MAX_CACHED_TEXTURES := 1200
+const LRU_STALE_FRAMES := 600
+static var _tick := 0
+static var _lru: Dictionary = {}
+
+# True when the most recent lookup found an uncached HD frame on disk and
+# queued it (or it is already waiting in _pending). Callers treat a null return
+# with last_lookup_pending == true as "wait for pump(), do not cache 1x".
+static var last_lookup_pending: bool = false
+
+# Cache behaviour counters, read by the sandbox perf report to tell a warm-up
+# (new paths) from an LRU thrash (evicted paths re-queued).
+static var stat_hits := 0
+static var stat_misses := 0
+static var stat_created := 0
+static var stat_evicted := 0
+
+# Create up to `budget` queued frames. Call once per frame, AFTER the entity
+# update pass, so nothing created here is drawn until the next frame.
+static func pump(budget: int = 4) -> int:
+	_tick += 1
+	var made := 0
+	while made < budget and _queue.size() > 0:
+		var p = _queue.pop_front()
+		_pending.erase(p)
+		if _cache.has(p):
+			continue
+		_create_from_path(p)
+		stat_created += 1
+		made += 1
+	_evict_if_needed()
+	return made
+
+static func pending_count() -> int:
+	return _queue.size()
+
+static func cache_count() -> int:
+	return _cache.size()
+
+static func _queue_path(p: String) -> void:
+	if not _pending.has(p):
+		_pending[p] = true
+		_queue.append(p)
+
+static func _evict_if_needed() -> void:
+	if _cache.size() <= MAX_CACHED_TEXTURES:
+		return
+	var stale = []
+	for p in _cache.keys():
+		if int(_lru.get(p, -1)) < _tick - LRU_STALE_FRAMES:
+			stale.append(p)
+			if stale.size() >= 200:
+				break
+	for p in stale:
+		_cache.erase(p)
+		_lru.erase(p)
+	stat_evicted += stale.size()
 
 static func clear_cache() -> void:
 	_cache.clear()
+	_lru.clear()
+	_pending.clear()
+	_queue.clear()
 	# _bad_folders / _warned are keyed by full asset path and stay valid across
 	# tile-model switches and dungeon rebuilds; clearing them re-probes and
 	# re-warns for every rebuild, which floods the log.
@@ -55,6 +129,20 @@ static func _load_frame(dir_path: String, dir_idx: int, frame_idx: int) -> Textu
 			tex = _load_exact_frame(dir_path, dir_idx, cand)
 			if tex != null:
 				return tex
+	# Some sheets ship a single direction for every facing (golem death is the
+	# classic case: one CEL strip, drawn for all 8 directions). Asking for dir 3
+	# must resolve to dir 0 instead of dropping the sprite to the 1x bridge raster.
+	if dir_idx != 0:
+		tex = _load_exact_frame(dir_path, 0, frame_idx)
+		if tex != null:
+			return tex
+		for delta in [1, 2]:
+			for cand in [frame_idx - delta, frame_idx + delta]:
+				if cand < 0:
+					continue
+				tex = _load_exact_frame(dir_path, 0, cand)
+				if tex != null:
+					return tex
 	return null
 
 static func _load_exact_frame(dir_path: String, dir_idx: int, frame_idx: int) -> Texture2D:
@@ -70,40 +158,57 @@ static func _load_exact_frame(dir_path: String, dir_idx: int, frame_idx: int) ->
 	for fname in file_names:
 		var p = dir_path + "/" + fname
 		if _cache.has(p):
+			_lru[p] = _tick
+			stat_hits += 1
 			return _cache[p]
+		if _pending.has(p):
+			last_lookup_pending = true
+			return null
 		if not FileAccess.file_exists(p):
 			continue
-		var img = Image.load_from_file(ProjectSettings.globalize_path(p))
-		if img == null or img.is_empty():
-			_cache[p] = null
-			continue
-		# Sample inside the non-empty bounding box: thin sprites (arrows, fireball
-		# cores, portals) occupy a small fraction of the padded CEL canvas, so a
-		# full-canvas grid sees zero opaque pixels and misreads them as corrupt.
-		var used = img.get_used_rect()
-		if used.size.x <= 0 or used.size.y <= 0:
-			_cache[p] = null
-			continue
-		if _is_black(img, used):
-			_cache[p] = null
-			var hits = int(_black_hits.get(dir_path, 0)) + 1
-			_black_hits[dir_path] = hits
-			if hits >= BLACK_HITS_TO_DISABLE and not _bad_folders.has(dir_path):
-				_bad_folders[dir_path] = true
-				if not _warned.has(dir_path):
-					_warned[dir_path] = true
-					push_warning("HdSpriteProvider: HD frame set is a black silhouette, disabled: " + dir_path)
-			continue
-		img.generate_mipmaps()
-		var tex = ImageTexture.create_from_image(img)
-		_cache[p] = tex
-		return tex
+		_queue_path(p)
+		stat_misses += 1
+		last_lookup_pending = true
+		return null
 	return null
+
+# Decode + screen + upload one queued file. Runs only from pump().
+static func _create_from_path(p: String) -> void:
+	var dir_path = p.rsplit("/", true, 1)[0]
+	var img = Image.load_from_file(ProjectSettings.globalize_path(p))
+	if img == null or img.is_empty():
+		_cache[p] = null
+		return
+	# Sample inside the non-empty bounding box: thin sprites (arrows, fireball
+	# cores, portals) occupy a small fraction of the padded CEL canvas, so a
+	# full-canvas grid sees zero opaque pixels and misreads them as corrupt.
+	var used = img.get_used_rect()
+	if used.size.x <= 0 or used.size.y <= 0:
+		_cache[p] = null
+		return
+	if _is_black(img, used):
+		_cache[p] = null
+		var hits = int(_black_hits.get(dir_path, 0)) + 1
+		_black_hits[dir_path] = hits
+		if hits >= BLACK_HITS_TO_DISABLE and not _bad_folders.has(dir_path):
+			_bad_folders[dir_path] = true
+			if not _warned.has(dir_path):
+				_warned[dir_path] = true
+				push_warning("HdSpriteProvider: HD frame set is a black silhouette, disabled: " + dir_path)
+		return
+	# Ground-item frames are padded to the full CEL canvas and are drawn cropped;
+	# entity frames keep the padded canvas, which their offset/pixel_size assumes.
+	if p.contains("items/curs_") and used.size.x > 0 and used.size.y > 0:
+		img = img.get_region(used)
+	img.generate_mipmaps()
+	var tex = ImageTexture.create_from_image(img)
+	_cache[p] = tex
+	_lru[p] = _tick
 
 static func _resolve(sub_path: String, dir_idx: int, frame_idx: int, model_id: int) -> Texture2D:
 	var folder: String = UpscalerModelConfig.get_sprite_folder(model_id)
 	var tex = _load_frame(folder + "/" + sub_path, dir_idx, frame_idx)
-	if tex == null and model_id != 0:
+	if tex == null and not last_lookup_pending and model_id != 0:
 		tex = _load_frame(UpscalerModelConfig.get_sprite_folder(0) + "/" + sub_path, dir_idx, frame_idx)
 	return tex
 
@@ -308,6 +413,8 @@ static func _resolve_prefix(m_name: String) -> String:
 	var name_lower = m_name.strip_edges().to_lower()
 	var prefix = MONSTER_NAME_MAP.get(name_lower, "")
 	if prefix == "":
+		prefix = MonsterFamilyTable.UNIQUE_MONSTER_FAMILY.get(name_lower, "")
+	if prefix == "":
 		if "butcher" in name_lower:
 			prefix = "fatc_fatc"
 		elif "leoric" in name_lower or "skeleton king" in name_lower:
@@ -346,9 +453,14 @@ static func _resolve_prefix(m_name: String) -> String:
 			prefix = "mage_mage"
 	return prefix
 
+# Engine MonsterMode values (DevilutionX/Source/monster.h) mapped to the MPQ animation
+# letters "nwahds" (stand/walk/attack/hit/death/special), following the graphic selection
+# in Monster::ChangeAnimationData: Move* -> Walk, Melee/Ranged/Charge -> Attack,
+# HitRecovery -> GotHit, Death -> Death, Special*/FadeIn/FadeOut/Heal -> Special,
+# Stand/Delay/Talk -> Stand, Petrified keeps its previous graphic (idle is the sane pick).
 static func _mode_to_action(mode: int) -> String:
 	match mode:
-		0, 13, 17:
+		0, 13, 15, 17:
 			return "stand"
 		1, 2, 3:
 			return "walk"
@@ -363,18 +475,72 @@ static func _mode_to_action(mode: int) -> String:
 		_:
 			return "walk"
 
-static func get_monster_sprite(m_name: String, mode: int, dir: int, frame: int, model_id: int) -> Texture2D:
-	var prefix = _resolve_prefix(m_name)
+# MPQ family name -> folder name actually deployed under monsters/. Used when
+# the engine's monstdat family has no sheets on disk.
+const MONSTER_FAMILY_ALIAS: Dictionary = {
+	"worm_worm": "antworm_worm",
+	"worm_slog": "antworm_worm",
+}
+
+# Neighbour actions to try when a family ships without this animation. Death
+# has no substitute: a standing monster must never be drawn as a corpse.
+static func _action_fallbacks(act: String) -> Array:
+	match act:
+		"special":
+			return ["attack", "walk", "stand"]
+		"attack":
+			return ["walk", "stand"]
+		"hit":
+			return ["stand", "walk"]
+		"block":
+			return ["stand", "walk"]
+		"death":
+			return []
+		# Monsters with no idle sheet stand on their walk cycle (engine behaviour).
+		"stand":
+			return ["walk"]
+		_:
+			return ["stand"]
+
+static func get_monster_sprite(m_name: String, mode: int, dir: int, frame: int, model_id: int, m_type: int = -1) -> Texture2D:
+	last_lookup_pending = false
+	# m_type indexes monstdat, so the generated table gives the exact sheet family.
+	# The name map is only a fallback for callers that have no type (m_type < 0);
+	# guessing from a translated name mis-routes families (Firebat is a hellbat).
+	var prefix = MonsterFamilyTable.MONSTER_FAMILY[m_type] if m_type >= 0 and m_type < MonsterFamilyTable.MONSTER_FAMILY.size() else _resolve_prefix(m_name)
 	if prefix == "":
 		return null
 	# Towner NPCs lack textured HD sheets: keep live bridge raster (Mode 1 policy).
 	if prefix.begins_with("towners_"):
 		return null
 	var act = _mode_to_action(mode)
+	if (prefix == "mage_mage" or prefix == "darkmage_dmage") and (act == "stand" or act == "walk"):
+		for alt in ["attack", "special"]:
+			var mtex = _resolve("monsters/%s_%s" % [prefix, alt], dir, frame, model_id)
+			if mtex != null or last_lookup_pending:
+				return mtex
 	var sub = "monsters/%s_%s" % [prefix, act]
 	var tex = _resolve(sub, dir, frame, model_id)
-	if tex != null:
+	if tex != null or last_lookup_pending:
 		return tex
+	# Family aliases: the sheets on disk are exported under the MPQ family name,
+	# which is not always monstdat's (worm sheets ship as antworm_worm_*).
+	var fam_alias = MONSTER_FAMILY_ALIAS.get(prefix, "")
+	var prefixes = [prefix]
+	if fam_alias != "":
+		prefixes.append(fam_alias)
+	# Action fallbacks: families without a special/hit/block sheet still render
+	# HD from a neighbouring action instead of dropping to the 1x bridge raster.
+	# The alias must also be tried with the REQUESTED action: worm sheets ship as
+	# antworm_worm_walk, and 'walk' has no neighbouring action of its own, so a
+	# chain over fallback actions alone never found the aliased walk sheet.
+	var actions = [act]
+	actions.append_array(_action_fallbacks(act))
+	for p in prefixes:
+		for alt in actions:
+			tex = _resolve("monsters/%s_%s" % [p, alt], dir, frame, model_id)
+			if tex != null or last_lookup_pending:
+				return tex
 	# Legacy directory aliases (same set as Mode 1).
 	var alias = ""
 	if prefix == "skelaxe_sklax":
@@ -394,6 +560,7 @@ static func get_monster_sprite(m_name: String, mode: int, dir: int, frame: int, 
 	return null
 
 static func get_corpse_sprite(m_name: String, dir: int, frame: int, model_id: int) -> Texture2D:
+	last_lookup_pending = false
 	var prefix = _resolve_prefix(m_name)
 	if prefix == "" or prefix.begins_with("towners_"):
 		return null
@@ -404,6 +571,7 @@ static func get_corpse_sprite(m_name: String, dir: int, frame: int, model_id: in
 # Engine _oAnimFrame is 1-based; HD frame index is 0-based.
 # ------------------------------------------------------------------------------
 static func get_object_sprite(graphic: String, anim_frame_1based: int, model_id: int) -> Texture2D:
+	last_lookup_pending = false
 	if graphic == "":
 		return null
 	var frame_idx = max(0, anim_frame_1based - 1)
@@ -414,13 +582,23 @@ static func get_object_sprite(graphic: String, anim_frame_1based: int, model_id:
 # Engine _miAnimFrame is 1-based; HD frame index is 0-based.
 # ------------------------------------------------------------------------------
 static func get_missile_sprite(cel: String, dir: int, anim_frame_1based: int, model_id: int) -> Texture2D:
+	last_lookup_pending = false
 	if cel == "":
 		return null
 	var frame_idx = max(0, anim_frame_1based - 1)
+	# Multi-variant missiles (animFAmt > 1, e.g. fireba1..fireba16) pick their
+	# sheet by direction: the number is part of the folder name and every frame
+	# of that sheet lives under dir_0.
+	if dir >= 0:
+		var texv = _resolve("missiles/%s%d" % [cel, dir + 1], 0, frame_idx, model_id)
+		if texv != null or last_lookup_pending:
+			return texv
 	var tex = _resolve("missiles/" + cel, dir, frame_idx, model_id)
-	if tex == null and dir != 0:
+	if tex == null and not last_lookup_pending and dir != 0:
 		# Direction-agnostic missile sheets export everything under dir_0.
 		tex = _resolve("missiles/" + cel, 0, frame_idx, model_id)
+	if tex == null and not last_lookup_pending:
+		tex = _resolve("missiles/%s1" % cel, 0, frame_idx, model_id)
 	return tex
 
 # ------------------------------------------------------------------------------
@@ -433,11 +611,15 @@ static func get_missile_sprite(cel: String, dir: int, anim_frame_1based: int, mo
 const PLAYER_CLASS_NAMES = ["warrior", "rogue", "sorceror", "monk", "bard", "barbarian"]
 
 static func _player_actions(action: String) -> Array:
+	# Names follow the MPQ sheets the engine actually loads for this action
+	# (DevilutionX/Source/player.cpp LoadPlrGFX): dungeon Stand is 'as', dungeon
+	# Walk is 'aw' (weapon drawn); 'st'/'wl' are the town variants, deployed as
+	# *_town and used only when the dungeon sheet is missing.
 	match action.to_upper():
 		"STAND", "NEWLVL", "QUIT":
-			return ["stand", "walk"]
+			return ["stand", "stand_town", "walk"]
 		"WALK":
-			return ["walk", "stand"]
+			return ["walk", "walk_town", "stand"]
 		"ATTACK":
 			return ["attack", "special", "stand"]
 		"RATTACK":
@@ -450,29 +632,88 @@ static func _player_actions(action: String) -> Array:
 			return ["death", "hit", "stand"]
 		"SPELL":
 			return ["spell", "spell_lm", "spell_qm", "attack", "stand"]
+		"SPELL_LM":
+			return ["spell_lm", "spell_qm", "attack", "stand"]
+		"SPELL_QM":
+			return ["spell_qm", "spell_lm", "attack", "stand"]
 		_:
 			return ["stand", "walk"]
 
 static func get_player_sprite(class_id: int, action: String, dir: int, frame: int, model_id: int, gfx_prefix: String = "") -> Texture2D:
+	last_lookup_pending = false
 	if class_id < 0 or class_id >= PLAYER_CLASS_NAMES.size():
 		return null
 	var cls = PLAYER_CLASS_NAMES[class_id]
-	for act in _player_actions(action):
+	var acts = _player_actions(action)
+	for act in acts:
 		# Armor/weapon specific set (player/<class>_<prefix>_<action>) wins; the
 		# gear-independent folder is the fallback.
 		if gfx_prefix != "":
 			var tex = _resolve("player/%s_%s_%s" % [cls, gfx_prefix, act], dir, frame, model_id)
-			if tex != null:
+			if tex != null or last_lookup_pending:
 				return tex
 		var tex2 = _resolve("player/%s_%s" % [cls, act], dir, frame, model_id)
-		if tex2 != null:
+		if tex2 != null or last_lookup_pending:
 			return tex2
+	# Another gear set of the same class: changing equipment must never drop the
+	# hero back to the 1x bridge raster when the exact prefix has no sheets.
+	var folders = [UpscalerModelConfig.get_sprite_folder(model_id)]
+	if model_id != 0:
+		folders.append(UpscalerModelConfig.get_sprite_folder(0))
+	for f in folders:
+		var on_disk = _hero_dirs(f)
+		for act in acts:
+			for d in on_disk:
+				if not d.begins_with(cls + "_") or not d.ends_with("_" + act):
+					continue
+				# Queue exactly one candidate: without this guard every gear dir of the
+				# class (260+ for monk) is queued per lookup, thrashing the texture LRU.
+				if not _frame_on_disk(f + "/player/" + d, dir, frame):
+					continue
+				var tex3 = _load_frame(f + "/player/" + d, dir, frame)
+				if tex3 != null:
+					return tex3
+				return null
 	return null
+
+# Does this frame exist on disk under any of the accepted file-name patterns?
+static func _frame_on_disk(dir_path: String, dir_idx: int, frame_idx: int) -> bool:
+	if dir_idx < 0 or frame_idx < 0:
+		return false
+	for fname in [
+		"dir_%d_frame_%d.png" % [dir_idx, frame_idx],
+		"g%d_f%03d.png" % [dir_idx, frame_idx],
+		"g%d_f%d.png" % [dir_idx, frame_idx],
+	]:
+		if FileAccess.file_exists(dir_path + "/" + fname):
+			return true
+	return false
+
+# Directory names under <folder>/player, listed once per folder.
+static var _hero_dirs_cache: Dictionary = {}
+
+static func _hero_dirs(folder: String) -> Array:
+	if _hero_dirs_cache.has(folder):
+		return _hero_dirs_cache[folder]
+	var out: Array = []
+	var da = DirAccess.open(folder + "/player")
+	if da != null:
+		da.list_dir_begin()
+		var n = da.get_next()
+		while n != "":
+			if da.current_is_dir() and not n.begins_with("."):
+				out.append(n)
+			n = da.get_next()
+		da.list_dir_end()
+		out.sort()
+	_hero_dirs_cache[folder] = out
+	return out
 
 # ------------------------------------------------------------------------------
 # Ground items: curs_<id> flip animation frames (deploy_hd_ground_items.py).
 # ------------------------------------------------------------------------------
 static func get_item_sprite(curs_id: int, anim_frame: int, model_id: int) -> Texture2D:
+	last_lookup_pending = false
 	var sub = "items/curs_%d_f%d.png" % [curs_id, anim_frame]
 	var sub2 = "items/curs_%d.png" % curs_id
 	var folder_ids = [model_id]
@@ -482,23 +723,14 @@ static func get_item_sprite(curs_id: int, anim_frame: int, model_id: int) -> Tex
 		var folder: String = UpscalerModelConfig.get_sprite_folder(folder_id)
 		for p in [folder + "/" + sub, folder + "/" + sub2]:
 			if _cache.has(p):
+				_lru[p] = _tick
 				return _cache[p]
+			if _pending.has(p):
+				last_lookup_pending = true
+				return null
 			if not FileAccess.file_exists(p):
 				continue
-			var img = Image.load_from_file(ProjectSettings.globalize_path(p))
-			if img == null or img.is_empty():
-				_cache[p] = null
-				continue
-			# Sample inside the used rect: curs frames are padded to the full CEL
-			# canvas, so a full-canvas grid sees almost no opaque pixels.
-			var used_rect = img.get_used_rect()
-			if _is_black(img, used_rect):
-				_cache[p] = null
-				continue
-			if used_rect.size.x > 0 and used_rect.size.y > 0:
-				img = img.get_region(used_rect)
-			img.generate_mipmaps()
-			var tex = ImageTexture.create_from_image(img)
-			_cache[p] = tex
-			return tex
+			_queue_path(p)
+			last_lookup_pending = true
+			return null
 	return null

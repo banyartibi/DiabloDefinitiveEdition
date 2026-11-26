@@ -58,15 +58,17 @@ void fragment() {
 	float effective_density = density;
 
 	if (fog_mode == 1) {
-		// Crypt Mist: subtle eerie spectral blue-grey pára
+		// Crypt Mist: subtle eerie spectral blue-grey mist
 		fog_color = vec3(0.42, 0.48, 0.56);
-		effective_density *= 0.75;
+		effective_density *= 0.48;
 	} else {
-		// Dense Drift: heavy rolling warm amber/ash hellfire smoke
+		// Dense Drift: warm amber/ash hellfire smoke without obscuring hero or loot
 		fog_color = vec3(0.55, 0.34, 0.20);
-		effective_density *= 1.25;
+		effective_density *= 0.52;
 	}
 
-	float alpha = clamp(mist * effective_density, 0.0, 0.70);
+	float center_dist = length(UV - vec2(0.5, 0.5));
+	float center_clarity = mix(0.24, 1.0, smoothstep(0.08, 0.48, center_dist));
+	float alpha = clamp(mist * effective_density * center_clarity, 0.0, 0.30);
 	COLOR = vec4(fog_color, alpha);
 }

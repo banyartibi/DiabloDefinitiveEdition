@@ -105,6 +105,7 @@ var player_sprite: Sprite3D
 var player_texture: ImageTexture = null
 var last_player_frame: int = -1
 var last_player_dir: int = -1
+var last_player_action: String = ""
 var player_lantern: OmniLight3D
 var player_ring: MeshInstance3D
 var player_arrow: MeshInstance3D
@@ -122,12 +123,14 @@ var monster_anim_cache: Dictionary = {}   # String (name_mode_dir_frame) -> Text
 var monster_last_frame: Dictionary = {}   # id (int) -> int
 var monster_last_dir: Dictionary = {}     # id (int) -> int
 var monster_unseen_frames: Dictionary = {}# id (int) -> int
+var monster_hd_pending: Dictionary = {}   # id (int) -> bool
 var last_gamma_value: int = -1
 var monsters_3d_enabled: bool = false
 
 # --- Interactive 3D Props ---
 var props_root: Node3D
 var prop_instances: Dictionary = {}       # id (int) -> Node3D
+var prop_hd_pending: Dictionary = {}      # id (int) -> bool
 var torch_instances: Dictionary = {}      # int (light index) -> Node3D
 var last_prop_check_timer: float = 0.0
 
@@ -136,17 +139,21 @@ var items_root: Node3D
 var item_instances: Dictionary = {}       # id (int) -> Node3D
 var item_textures: Dictionary = {}        # String cache_key -> ImageTexture
 var item_is_hd_cache: Dictionary = {}     # String cache_key -> bool
+var item_hd_pending: Dictionary = {}      # id (int) -> bool
 var last_item_check_timer: float = 0.0
 
 # --- Missiles & Projectiles ---
 var missiles_root: Node3D = null
 var missile_instances: Dictionary = {}    # id (int) -> Node3D
 var missile_textures: Dictionary = {}     # String cache_key -> ImageTexture
+var missile_textures_hd: Dictionary = {}  # String cache_key -> bool (true = HD upscaled frame, 4x density)
+var missile_hd_pending: Dictionary = {}   # id (int) -> bool
 
 # --- Corpses & Fallen Entities ---
 var corpses_root: Node3D = null
 var corpse_instances: Dictionary = {}     # String key -> Node3D
 var corpse_textures: Dictionary = {}      # String cache_key -> ImageTexture
+var corpse_hd_pending: Dictionary = {}    # String key -> bool
 
 # --- Waypoint / Click Feedback ---
 var click_marker: MeshInstance3D
@@ -170,6 +177,9 @@ const TILE_SCALE: float = 0.75
 const ENTITY_SCALE_MULT: float = 1.15        # Balanced heroic scale (fixes miniature cast & oversized idle)
 const PIXEL_SIZE_1X: float = 0.0234375 * ENTITY_SCALE_MULT       # ~0.02695
 const PIXEL_SIZE_HD: float = 0.005859375 * ENTITY_SCALE_MULT     # ~0.00674
+# HD frames whose PNG is not cached yet are queued and built at the end of
+# the frame, instead of blocking the entity pass.
+const HD_PREFETCH_PER_FRAME := 20
 
 var prop_last_frame: Dictionary = {}         # o_id (int) -> int (anim_frame)
 
@@ -509,6 +519,27 @@ func set_upscaler_mode(mode: int) -> void:
 		if f_mat is BaseMaterial3D:
 			f_mat.texture_filter = filter
 
+func _clear_entity_texture_caches() -> void:
+	player_texture = null
+	last_player_frame = -1
+	last_player_dir = -1
+	last_player_action = ""
+	monster_textures.clear()
+	monster_anim_cache.clear()
+	monster_last_frame.clear()
+	monster_last_dir.clear()
+	monster_hd_pending.clear()
+	prop_last_frame.clear()
+	prop_hd_pending.clear()
+	item_textures.clear()
+	item_is_hd_cache.clear()
+	item_hd_pending.clear()
+	missile_textures.clear()
+	missile_textures_hd.clear()
+	missile_hd_pending.clear()
+	corpse_textures.clear()
+	corpse_hd_pending.clear()
+
 func set_tile_model(model_id: int) -> void:
 	var new_id = clampi(model_id, 0, UpscalerModelConfig.get_model_count() - 1)
 	if current_tile_model == new_id:
@@ -519,6 +550,7 @@ func set_tile_model(model_id: int) -> void:
 	scenery_texture_cache.clear()
 	scenery_special_cache.clear()
 	HdSpriteProvider.clear_cache()
+	_clear_entity_texture_caches()
 	rebuild_dungeon_if_needed(true)
 	print("[Native 3D Sandbox] Tile Model switched to: %s" % UpscalerModelConfig.get_model_short_name(current_tile_model))
 
@@ -534,11 +566,7 @@ func set_hd_graphics_enabled(enabled: bool) -> void:
 	scenery_texture_cache.clear()
 	scenery_special_cache.clear()
 	HdSpriteProvider.clear_cache()
-	monster_anim_cache.clear()
-	missile_textures.clear()
-	corpse_textures.clear()
-	item_textures.clear()
-	item_is_hd_cache.clear()
+	_clear_entity_texture_caches()
 	for mat in entity_materials.values():
 		if is_instance_valid(mat):
 			mat.set_shader_parameter("hd_enabled", hd_graphics_enabled)
@@ -580,6 +608,34 @@ func apply_all_d1de_settings(torch: bool, fog: int, upscaler: int, relief: int, 
 
 func apply_all_resurrected_settings(torch: bool, fog: int, upscaler: int, relief: int, wet: bool, hdr: int = 1, tile_model: int = 0) -> void:
 	apply_all_d1de_settings(torch, fog, upscaler, relief, wet, hdr, tile_model)
+
+# Sprite3D geometry writes (pixel_size / offset / sorting_offset) dirty the sprite's
+# built-in quad mesh, which is re-tessellated and re-uploaded at draw time; with
+# hundreds of sprites that costs tens of milliseconds per frame. Comparing against the
+# property is useless — Godot stores these as float32 while GDScript compares doubles,
+# so `spr.pixel_size != wanted` is true on every frame — so the intended values are
+# cached on the node and only a real change reaches the engine.
+func apply_sprite_geom(spr: Sprite3D, pix: float, off: Vector2, sort_off: float = -1.0, src: String = "?") -> void:
+	var n = 0
+	if spr.get_meta("_sg_pix", -1.0) != pix:
+		spr.pixel_size = pix
+		spr.set_meta("_sg_pix", pix)
+		n += 1
+		_geom_by[src + ":pix"] = int(_geom_by.get(src + ":pix", 0)) + 1
+	if spr.get_meta("_sg_off", Vector2.INF) != off:
+		spr.offset = off
+		spr.set_meta("_sg_off", off)
+		n += 1
+		_geom_by[src + ":off"] = int(_geom_by.get(src + ":off", 0)) + 1
+	if sort_off >= 0.0 and spr.get_meta("_sg_sort", -1.0) != sort_off:
+		spr.sorting_offset = sort_off
+		spr.set_meta("_sg_sort", sort_off)
+		n += 1
+		_geom_by[src + ":sort"] = int(_geom_by.get(src + ":sort", 0)) + 1
+	if n > 0:
+		_geom_by[src] = int(_geom_by.get(src, 0)) + n
+		_geom_by[src + "_calls"] = int(_geom_by.get(src + "_calls", 0)) + 1
+		_geom_pix += n
 
 func apply_entity_hd_material(spr: Sprite3D, tex: Texture2D) -> void:
 	if spr == null or tex == null:
@@ -906,9 +962,22 @@ func get_theme_base_floor_piece_id(level_idx: int) -> int:
 	elif level_idx >= 5 and level_idx <= 8:
 		return 1 # Catacombs stone paver
 	elif level_idx >= 9 and level_idx <= 12:
-		return 4 # Caves stone paver
+		return 24 # Caves full-diamond stone paver (piece 4 is only a 9% corner bevel)
 	else:
 		return 3 # Hell lava-rock paver
+
+func _get_dungeon_scenery_modulate(theme: String) -> Color:
+	# Match wall/pillar scenery luminance and tint to the shaded floor colors per theme
+	# so baked row-0 rock bases blend seamlessly into the lit floor.
+	match theme:
+		"caves":
+			return Color(0.88, 0.48, 0.36)
+		"hell":
+			return Color(0.85, 0.42, 0.34)
+		"catacombs":
+			return Color(0.82, 0.85, 0.78)
+		_:
+			return Color(0.92, 0.94, 1.00)
 
 func _is_image_empty_or_transparent(img: Image) -> bool:
 	if img == null or img.is_empty():
@@ -934,7 +1003,8 @@ func get_floor_material(piece_id: int, cur_level: int) -> Material:
 	var mat = StandardMaterial3D.new()
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	mat.alpha_scissor_threshold = 0.5
 	mat.roughness = 0.65
 	mat.metallic = 0.04
 
@@ -1484,6 +1554,7 @@ func _on_level_changed(new_lvl: int):
 	monster_last_frame.clear()
 	monster_last_dir.clear()
 	monster_unseen_frames.clear()
+	monster_hd_pending.clear()
 
 	# 5. Clear all ground items
 	if items_root:
@@ -1492,6 +1563,7 @@ func _on_level_changed(new_lvl: int):
 	item_instances.clear()
 	item_textures.clear()
 	item_is_hd_cache.clear()
+	item_hd_pending.clear()
 
 	# 5.5 Clear missiles & corpses
 	if missiles_root:
@@ -1499,12 +1571,15 @@ func _on_level_changed(new_lvl: int):
 			c.queue_free()
 	missile_instances.clear()
 	missile_textures.clear()
+	missile_textures_hd.clear()
+	missile_hd_pending.clear()
 
 	if corpses_root:
 		for c in corpses_root.get_children():
 			c.queue_free()
 	corpse_instances.clear()
 	corpse_textures.clear()
+	corpse_hd_pending.clear()
 
 	# 5.6 Clear visual effects
 	if effects_root:
@@ -1691,14 +1766,16 @@ func rebuild_dungeon_if_needed(force: bool = false):
 							base_floor_texture_cache[pid] = ImageTexture.create_from_image(floor_img)
 							has_solid_paver = true
 
-			# 1. Floor diamond: ensure every active dungeon tile has a solid ground paver
-			var eff_floor_pid = pid
-			if not has_solid_paver:
-				eff_floor_pid = get_theme_base_floor_piece_id(cur_level)
-			if not floor_piece_transforms.has(eff_floor_pid):
-				floor_piece_transforms[eff_floor_pid] = []
-			floor_piece_transforms[eff_floor_pid].append(f_tf)
-			total_floor_count += 1
+			# 1. Floor diamond: ensure every walkable/wall tile has a solid ground paver,
+			#    but do not tile empty rock void outside the dungeon perimeter with synthetic pads.
+			if (not is_dungeon) or (val != 0) or has_solid_paver:
+				var eff_floor_pid = pid
+				if not has_solid_paver:
+					eff_floor_pid = get_theme_base_floor_piece_id(cur_level)
+				if not floor_piece_transforms.has(eff_floor_pid):
+					floor_piece_transforms[eff_floor_pid] = []
+				floor_piece_transforms[eff_floor_pid].append(f_tf)
+				total_floor_count += 1
 
 			# 2. Wall & Scenery Geometry:
 			# If modular 3D walls are enabled in Dungeon: generate true 3D modular meshes for solid walls
@@ -1750,7 +1827,7 @@ func rebuild_dungeon_if_needed(force: bool = false):
 					spr.offset = Vector2(0.0, float(th) * 0.5)
 					spr.position = Vector3(wpos.x, 0.01, wpos.z)
 					spr.render_priority = 3
-					spr.modulate = Color(1.48, 1.45, 1.38) if (cur_level == 0) else Color(1.48, 1.44, 1.36)
+					spr.modulate = Color(1.48, 1.45, 1.38) if (cur_level == 0) else _get_dungeon_scenery_modulate(cur_theme)
 					town_scenery_root.add_child(spr)
 					town_scenery_nodes[idx] = spr
 
@@ -1774,7 +1851,7 @@ func rebuild_dungeon_if_needed(force: bool = false):
 					aspr.position = Vector3(wpos.x, 0.02, wpos.z + 0.005)
 					aspr.sorting_offset = 1.0
 					aspr.render_priority = 3
-					aspr.modulate = Color(1.48, 1.44, 1.36)
+					aspr.modulate = _get_dungeon_scenery_modulate(cur_theme)
 					town_scenery_root.add_child(aspr)
 					special_scenery_nodes[idx] = aspr
 
@@ -2019,13 +2096,14 @@ func update_player_entity(delta: float):
 	if hd_hero_tex != null:
 		if player_sprite.texture != hd_hero_tex:
 			player_sprite.texture = hd_hero_tex
-			player_sprite.offset = Vector2(0, float(hd_hero_tex.get_height()) * 0.5)
-			player_sprite.pixel_size = PIXEL_SIZE_HD
+			apply_sprite_geom(player_sprite, PIXEL_SIZE_HD, Vector2(0, float(hd_hero_tex.get_height()) * 0.5), 0.05, "hero_hd")
 			apply_entity_hd_material(player_sprite, hd_hero_tex)
 	elif diablo_bridge and diablo_bridge.has_method("get_player_sprite_data"):
-		if anim_frame != last_player_frame or dir != last_player_dir or player_texture == null:
+		var cur_action = str(p_data.get("action", "STAND"))
+		if anim_frame != last_player_frame or dir != last_player_dir or cur_action != last_player_action or player_texture == null:
 			last_player_frame = anim_frame
 			last_player_dir = dir
+			last_player_action = cur_action
 			var s_data: Dictionary = diablo_bridge.get_player_sprite_data()
 			var sw = s_data.get("width", 0)
 			var sh = s_data.get("height", 0)
@@ -2038,8 +2116,7 @@ func update_player_entity(delta: float):
 					player_sprite.texture = player_texture
 				else:
 					player_texture.update(img)
-				player_sprite.pixel_size = PIXEL_SIZE_HD if sw >= 200 else PIXEL_SIZE_1X
-				player_sprite.offset = Vector2(0, float(sh) * 0.5)
+				apply_sprite_geom(player_sprite, PIXEL_SIZE_HD if sw >= 200 else PIXEL_SIZE_1X, Vector2(0, float(sh) * 0.5), 0.05, "hero_1x")
 				apply_entity_hd_material(player_sprite, player_texture)
 
 	if player_sprite and player_texture and player_sprite.material_override == null:
@@ -2091,7 +2168,9 @@ func update_monster_entities(delta: float):
 		node.set_meta("name", m_name)
 		node.set_meta("hp", hp)
 		node.set_meta("max_hp", max_hp)
-		if delta <= 0.0 or node.position == Vector3.ZERO:
+		if _skip == "mons_pos":
+			pass
+		elif delta <= 0.0 or node.position == Vector3.ZERO:
 			node.position = target_pos
 		else:
 			node.position = node.position.lerp(target_pos, delta * 12.0)
@@ -2119,7 +2198,7 @@ func update_monster_entities(delta: float):
 		var cur_tex: Texture2D = monster_textures.get(m_id, null)
 
 		if diablo_bridge and diablo_bridge.has_method("get_monster_sprite_data"):
-			if anim_frame != last_f or dir != last_d or cur_tex == null:
+			if anim_frame != last_f or dir != last_d or cur_tex == null or monster_hd_pending.get(m_id, false):
 				monster_last_frame[m_id] = anim_frame
 				monster_last_dir[m_id] = dir
 				var m_mode = int(m.get("mode", 0))
@@ -2127,33 +2206,48 @@ func update_monster_entities(delta: float):
 				var anim_cache_key = "%s_%d_%d_%d_%d" % [m_name, m_mode, dir, anim_frame, m_type]
 				if monster_anim_cache.has(anim_cache_key):
 					cur_tex = monster_anim_cache[anim_cache_key]
+					monster_hd_pending.erase(m_id)
 				else:
 					# 1. Offline-upscaled HD frame (assets/hd_sprites*/monsters/<family>_<action>/)
-					var hd_m_tex = HdSpriteProvider.get_monster_sprite(m_name, m_mode, dir, anim_frame, current_tile_model) if hd_graphics_enabled else null
+					var hd_m_tex = HdSpriteProvider.get_monster_sprite(m_name, m_mode, dir, anim_frame, current_tile_model, m_type) if hd_graphics_enabled else null
 					if hd_m_tex != null:
 						cur_tex = hd_m_tex
+						monster_hd_pending.erase(m_id)
 						monster_anim_cache[anim_cache_key] = cur_tex
 					else:
-						# 2. Fallback: authentic 1x bridge rasterization
-						var ms_data: Dictionary = diablo_bridge.get_monster_sprite_data(m_id)
-						var mw = ms_data.get("width", 0)
-						var mh = ms_data.get("height", 0)
-						var m_rgba: PackedByteArray = ms_data.get("rgba", PackedByteArray())
-						if mw > 0 and mh > 0 and m_rgba.size() == mw * mh * 4:
-							var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
-							m_img.generate_mipmaps()
-							cur_tex = ImageTexture.create_from_image(m_img)
-							monster_anim_cache[anim_cache_key] = cur_tex
+						var is_pending = (hd_graphics_enabled and HdSpriteProvider.last_lookup_pending)
+						monster_hd_pending[m_id] = is_pending
+						# 2. Fallback: authentic 1x bridge rasterization. If the sprite
+						# already shows an HD frame, keep it while the new frame loads,
+						# and never lock the temporary 1x fallback into monster_anim_cache.
+						if cur_tex != null and cur_tex.get_width() >= 200:
+							pass
 						else:
-							monster_anim_cache[anim_cache_key] = null
+							var ms_data: Dictionary = diablo_bridge.get_monster_sprite_data(m_id)
+							var mw = ms_data.get("width", 0)
+							var mh = ms_data.get("height", 0)
+							var m_rgba: PackedByteArray = ms_data.get("rgba", PackedByteArray())
+							if mw > 0 and mh > 0 and m_rgba.size() == mw * mh * 4:
+								var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
+								m_img.generate_mipmaps()
+								cur_tex = ImageTexture.create_from_image(m_img)
+								if not is_pending:
+									monster_anim_cache[anim_cache_key] = cur_tex
+							elif not is_pending:
+								monster_anim_cache[anim_cache_key] = null
 
 				monster_textures[m_id] = cur_tex
-				if m_sprite and cur_tex:
+				# Assign only when the frame's texture actually changed: re-setting
+				# texture/pixel_size/offset and the albedo shader parameter on every
+				# Sprite3D every frame rebuilds its geometry and rewrites its shader
+				# binding, which costs ~30 ms per frame on Vulkan.
+				if m_sprite and cur_tex and m_sprite.texture != cur_tex:
 					m_sprite.texture = cur_tex
-					m_sprite.pixel_size = PIXEL_SIZE_HD if cur_tex.get_width() >= 200 else PIXEL_SIZE_1X
-					m_sprite.offset = Vector2(0, float(cur_tex.get_height()) * 0.5)
+					apply_sprite_geom(m_sprite, PIXEL_SIZE_HD if cur_tex.get_width() >= 200 else PIXEL_SIZE_1X, Vector2(0, float(cur_tex.get_height()) * 0.5), 0.05, "mon")
 					apply_entity_hd_material(m_sprite, cur_tex)
 
+		if _skip == "mons_tex":
+			continue
 		if m_sprite and cur_tex and m_sprite.material_override == null:
 			apply_entity_hd_material(m_sprite, cur_tex)
 
@@ -2168,7 +2262,7 @@ func update_monster_entities(delta: float):
 
 		# Update HP Bar (Dungeon monsters only; hide on friendly Town NPCs or dead corpses)
 		var hp_r = node.get_node_or_null("HPRoot")
-		if hp_r:
+		if hp_r and _skip != "mons_hud":
 			hp_r.position.y = head_y
 			hp_r.visible = is_active_alive
 		var hp_bar = node.get_node_or_null("HPRoot/HPBar") as MeshInstance3D
@@ -2186,7 +2280,7 @@ func update_monster_entities(delta: float):
 
 		# Update Name Label (Dungeon monsters only; hide on friendly Town NPCs or dead corpses)
 		var label = node.get_node_or_null("NameLabel") as Label3D
-		if label:
+		if label and _skip != "mons_hud":
 			label.position.y = head_y + 0.24
 			label.visible = is_active_alive
 			if is_active_alive:
@@ -2232,6 +2326,8 @@ func get_or_create_monster_node(m_id: int, m_name: String = "") -> Node3D:
 	sprite.pixel_size = PIXEL_SIZE_1X
 	sprite.render_priority = 3
 	sprite.sorting_offset = 0.05
+	sprite.set_meta("_sg_pix", PIXEL_SIZE_1X)
+	sprite.set_meta("_sg_sort", 0.05)
 	sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	sprite.modulate = Color(1.38, 1.35, 1.28)
 	node.add_child(sprite)
@@ -2392,10 +2488,20 @@ func update_props(delta: float):
 		var graphic = str(obj.get("graphic", ""))
 
 		var prop = get_or_create_prop_node(o_id, o_type, tx, ty, category, graphic)
-		var wpos = tile_to_world_3d(float(tx), float(ty))
-		prop.position = wpos
-		prop.set_meta("tile_x", tx)
-		prop.set_meta("tile_y", ty)
+		if _skip == "props_create":
+			continue
+		# The engine swaps an object's graphic in place (barrel -> barrelex while it
+		# explodes, chest -> chestopen, ...). The node keeps the graphic it was built
+		# with, so re-target the HD lookup and force a texture reload when it changes.
+		if graphic != "" and str(prop.get_meta("hd_graphic", "")) != graphic:
+			prop.set_meta("hd_graphic", graphic)
+			prop_last_frame[o_id] = -999
+		if _skip != "props_pos":
+			var wpos = tile_to_world_3d(float(tx), float(ty))
+			prop.position = wpos
+		if _skip != "props_meta":
+			prop.set_meta("tile_x", tx)
+			prop.set_meta("tile_y", ty)
 
 		# Visibility / Fog-of-war gating for dungeon props
 		var is_prop_visible = true
@@ -2420,7 +2526,8 @@ func update_props(delta: float):
 			# Props require either active line-of-sight OR previous exploration
 			is_prop_visible = is_visible or is_explored
 
-		prop.visible = is_prop_visible
+		if _skip != "props_vis":
+			prop.visible = is_prop_visible
 		if not is_prop_visible:
 			continue
 
@@ -2431,7 +2538,9 @@ func update_props(delta: float):
 		var is_sarc = (category == "SARCOPHAGUS") or (o_type in [48, 96])
 		var is_fire = (category == "TORCH") or (o_type in [0, 3, 8, 9, 10, 44, 45, 46, 47, 49, 85, 95, 150, 151])
 
-		if is_chest:
+		if _skip == "props_anim":
+			pass
+		elif is_chest:
 			var lid = prop.get_node_or_null("ChestLid")
 			if lid == null:
 				lid = prop.get_node_or_null("ChestProp/ChestLid")
@@ -2449,7 +2558,7 @@ func update_props(delta: float):
 				var target_rot = 85.0 if is_open else 0.0
 				door_pivot.rotation_degrees.y = lerp(door_pivot.rotation_degrees.y, target_rot, delta * 12.0)
 		# Light flickering for fire props (wall torches, standing braziers)
-		if is_fire:
+		if is_fire and _skip != "props_fire":
 			var light = prop.get_node_or_null("TorchLight") as OmniLight3D
 			if light == null:
 				light = prop.get_node_or_null("WallTorch/TorchLight") as OmniLight3D
@@ -2459,41 +2568,58 @@ func update_props(delta: float):
 
 		# Update billboard sprite animations for any prop using ObjectSprite3D
 		var obj_spr = prop.get_node_or_null("ObjectSprite3D") as Sprite3D
-		if obj_spr:
+		if obj_spr and _skip != "props_spr":
+			_spr_vis += 1
 			var last_f = prop_last_frame.get(o_id, -999)
-			if anim_frame != last_f or obj_spr.texture == null:
+			var was_pending = prop_hd_pending.get(o_id, false)
+			if anim_frame != last_f or obj_spr.texture == null or was_pending:
+				_spr_change += 1
+				_prb("spr_blk")
 				prop_last_frame[o_id] = anim_frame
 				# 1. Offline-upscaled HD frame (assets/hd_sprites*/objects/<graphic>/)
 				var hd_graphic = str(prop.get_meta("hd_graphic", "")) if prop.has_meta("hd_graphic") else ""
 				var hd_o_tex = HdSpriteProvider.get_object_sprite(hd_graphic, anim_frame, current_tile_model) if (hd_graphics_enabled and hd_graphic != "") else null
 				if hd_o_tex != null:
-					obj_spr.texture = hd_o_tex
-					obj_spr.offset = Vector2(0, float(hd_o_tex.get_height()) * 0.5)
-					obj_spr.sorting_offset = 0.05
-					obj_spr.pixel_size = PIXEL_SIZE_HD
-					apply_entity_hd_material(obj_spr, obj_spr.texture)
-				elif diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
-					var s_data = diablo_bridge.get_object_sprite_data(o_id)
-					var sw = s_data.get("width", 0)
-					var sh = s_data.get("height", 0)
-					var rgba = s_data.get("rgba", PackedByteArray())
-					if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
-						var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
-						img.generate_mipmaps()
-						if obj_spr.texture == null or obj_spr.texture.get_width() != sw or obj_spr.texture.get_height() != sh:
-							obj_spr.texture = ImageTexture.create_from_image(img)
-						else:
-							obj_spr.texture.update(img)
-						obj_spr.offset = Vector2(0, float(sh) * 0.5)
-						obj_spr.sorting_offset = 0.05
-						if sw >= 200:
-							obj_spr.pixel_size = PIXEL_SIZE_HD
-						else:
-							obj_spr.pixel_size = PIXEL_SIZE_1X
+					prop_hd_pending.erase(o_id)
+					_cnt_hd += 1
+					_t0 = Time.get_ticks_usec()
+					if obj_spr.texture != hd_o_tex:
+						obj_spr.texture = hd_o_tex
+					if _geom_dbg_left > 0 and (obj_spr.pixel_size != PIXEL_SIZE_HD or obj_spr.sorting_offset != 0.05):
+						_geom_dbg_left -= 1
+						print("[GEOMDBG] %s pix=%.6f want=%.6f sort=%.6f off=%s want=%s tex=%s w=%d h=%d mat=%s" % [
+							obj_spr.name, obj_spr.pixel_size, PIXEL_SIZE_HD, obj_spr.sorting_offset,
+							obj_spr.offset, Vector2(0, float(hd_o_tex.get_height()) * 0.5),
+							str(obj_spr.texture), obj_spr.texture.get_width() if obj_spr.texture else 0,
+							obj_spr.texture.get_height() if obj_spr.texture else 0,
+							str(obj_spr.material_override)])
+					apply_sprite_geom(obj_spr, PIXEL_SIZE_HD, Vector2(0, float(hd_o_tex.get_height()) * 0.5), 0.05, "prop_hd")
+					if _skip != "props_spr_mat":
 						apply_entity_hd_material(obj_spr, obj_spr.texture)
+					_ms_hd += float(Time.get_ticks_usec() - _t0)
+				else:
+					prop_hd_pending[o_id] = (hd_graphics_enabled and hd_graphic != "" and HdSpriteProvider.last_lookup_pending)
+					if (not was_pending or obj_spr.texture == null) and diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
+						var s_data = diablo_bridge.get_object_sprite_data(o_id)
+						var sw = s_data.get("width", 0)
+						var sh = s_data.get("height", 0)
+						var rgba = s_data.get("rgba", PackedByteArray())
+						if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
+							_cnt_1x += 1
+							_t0 = Time.get_ticks_usec()
+							var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
+							img.generate_mipmaps()
+							if obj_spr.texture == null or obj_spr.texture.get_width() != sw or obj_spr.texture.get_height() != sh:
+								obj_spr.texture = ImageTexture.create_from_image(img)
+							else:
+								obj_spr.texture.update(img)
+							apply_sprite_geom(obj_spr, PIXEL_SIZE_HD if sw >= 200 else PIXEL_SIZE_1X, Vector2(0, float(sh) * 0.5), 0.05, "prop_1x")
+							apply_entity_hd_material(obj_spr, obj_spr.texture)
+							_ms_1x += float(Time.get_ticks_usec() - _t0)
 
 			if obj_spr.texture and obj_spr.material_override == null:
 				apply_entity_hd_material(obj_spr, obj_spr.texture)
+			_pre("spr_blk")
 
 	# Clean up inactive props
 	for id in prop_instances.keys():
@@ -2747,6 +2873,8 @@ func _attach_universal_object_sprite(node: Node3D, o_id: int):
 	spr.shaded = false
 	spr.pixel_size = PIXEL_SIZE_1X
 	spr.sorting_offset = 0.05
+	spr.set_meta("_sg_pix", PIXEL_SIZE_1X)
+	spr.set_meta("_sg_sort", 0.05)
 	spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	spr.modulate = Color(1.45, 1.42, 1.35)
 
@@ -2755,27 +2883,30 @@ func _attach_universal_object_sprite(node: Node3D, o_id: int):
 	var hd_graphic = str(node.get_meta("hd_graphic", "")) if node.has_meta("hd_graphic") else ""
 	var hd_tex = HdSpriteProvider.get_object_sprite(hd_graphic, 1, current_tile_model) if (hd_graphics_enabled and hd_graphic != "") else null
 	if hd_tex != null:
+		prop_hd_pending.erase(o_id)
 		spr.texture = hd_tex
 		spr.offset = Vector2(0, float(hd_tex.get_height()) * 0.5)
 		spr.pixel_size = PIXEL_SIZE_HD
 		apply_entity_hd_material(spr, spr.texture)
-	elif diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
-		var s_data = diablo_bridge.get_object_sprite_data(o_id)
-		var sw = s_data.get("width", 0)
-		var sh = s_data.get("height", 0)
-		var rgba = s_data.get("rgba", PackedByteArray())
-		if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
-			var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
-			img.generate_mipmaps()
-			var tex = ImageTexture.create_from_image(img)
-			spr.texture = tex
-			spr.offset = Vector2(0, float(sh) * 0.5)
-			if sw >= 200:
-				spr.pixel_size = PIXEL_SIZE_HD
-			else:
-				spr.pixel_size = PIXEL_SIZE_1X
-			if spr.texture:
-				apply_entity_hd_material(spr, spr.texture)
+	else:
+		prop_hd_pending[o_id] = (hd_graphics_enabled and hd_graphic != "" and HdSpriteProvider.last_lookup_pending)
+		if diablo_bridge and diablo_bridge.has_method("get_object_sprite_data"):
+			var s_data = diablo_bridge.get_object_sprite_data(o_id)
+			var sw = s_data.get("width", 0)
+			var sh = s_data.get("height", 0)
+			var rgba = s_data.get("rgba", PackedByteArray())
+			if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
+				var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
+				img.generate_mipmaps()
+				var tex = ImageTexture.create_from_image(img)
+				spr.texture = tex
+				spr.offset = Vector2(0, float(sh) * 0.5)
+				if sw >= 200:
+					spr.pixel_size = PIXEL_SIZE_HD
+				else:
+					spr.pixel_size = PIXEL_SIZE_1X
+				if spr.texture:
+					apply_entity_hd_material(spr, spr.texture)
 
 	node.add_child(spr)
 
@@ -3038,6 +3169,20 @@ func update_ground_items(delta: float):
 		var anim_frame = item.get("anim_frame", 0)
 
 		var node = get_or_create_item_node(i_id, curs_id, anim_frame, quality, iname, tx, ty, item)
+		if hd_graphics_enabled and item_hd_pending.get(i_id, false):
+			var hd_up = HdSpriteProvider.get_item_sprite(curs_id, anim_frame, current_tile_model)
+			if hd_up != null:
+				item_hd_pending.erase(i_id)
+				var cache_key = "%d_%d" % [curs_id, anim_frame]
+				item_textures[cache_key] = hd_up
+				item_is_hd_cache[cache_key] = true
+				var ispr = node.get_node_or_null("ItemSprite") as Sprite3D
+				if ispr:
+					ispr.texture = hd_up
+					ispr.pixel_size = PIXEL_SIZE_HD
+					apply_entity_hd_material(ispr, hd_up)
+			elif not HdSpriteProvider.last_lookup_pending:
+				item_hd_pending.erase(i_id)
 
 		# Visibility / Fog-of-war gating for ground items
 		var is_item_visible = true
@@ -3104,6 +3249,7 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 	if item_textures.has(cache_key):
 		tex = item_textures[cache_key]
 		item_is_hd = item_is_hd_cache.get(cache_key, false)
+		item_hd_pending.erase(i_id)
 	else:
 		# 1. Offline-upscaled HD ground item sprite (assets/hd_sprites*/items/curs_*),
 		#    model-aware with corruption screening.
@@ -3111,6 +3257,12 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 			tex = HdSpriteProvider.get_item_sprite(curs_id, anim_frame, current_tile_model)
 			if tex != null:
 				item_is_hd = true
+				item_hd_pending.erase(i_id)
+				item_textures[cache_key] = tex
+				item_is_hd_cache[cache_key] = true
+
+		var is_pending = (tex == null and hd_graphics_enabled and HdSpriteProvider.last_lookup_pending)
+		item_hd_pending[i_id] = is_pending
 
 		# 2. Fallback: authentic Diablo 1 ground item sprite rasterization from bridge
 		if tex == null and diablo_bridge:
@@ -3130,9 +3282,12 @@ func get_or_create_item_node(i_id: int, curs_id: int, anim_frame: int, quality: 
 				img.generate_mipmaps()
 				tex = ImageTexture.create_from_image(img)
 				item_is_hd = false
-
-		item_textures[cache_key] = tex
-		item_is_hd_cache[cache_key] = item_is_hd
+				if not is_pending:
+					item_textures[cache_key] = tex
+					item_is_hd_cache[cache_key] = false
+		elif tex == null and not is_pending:
+			item_textures[cache_key] = null
+			item_is_hd_cache[cache_key] = false
 
 	# 3D Item Sprite (grounded slightly above floor)
 	var spr = Sprite3D.new()
@@ -3349,28 +3504,44 @@ func update_missiles(delta: float):
 
 		if missile_textures.has(cache_key):
 			tex = missile_textures[cache_key]
+			missile_hd_pending.erase(m_id)
 		else:
 			node.set_meta("last_anim_frame", anim_frame)
 			node.set_meta("last_anim_dir", m_dir)
+			var cel_name = str(m.get("cel", ""))
 			# 1. Offline-upscaled HD frame (assets/hd_sprites*/missiles/<cel>/)
-			var hd_mis = HdSpriteProvider.get_missile_sprite(str(m.get("cel", "")), m_dir, anim_frame, current_tile_model) if hd_graphics_enabled else null
+			var hd_mis = HdSpriteProvider.get_missile_sprite(cel_name, m_dir, anim_frame, current_tile_model) if hd_graphics_enabled else null
 			if hd_mis != null:
 				tex = hd_mis
+				missile_hd_pending.erase(m_id)
 				missile_textures[cache_key] = tex
-			elif diablo_bridge.has_method("get_missile_sprite_data"):
-				var ms_data = diablo_bridge.get_missile_sprite_data(m_id)
-				var mw = ms_data.get("width", 0)
-				var mh = ms_data.get("height", 0)
-				var m_rgba = ms_data.get("rgba", PackedByteArray())
-				if mw > 0 and mh > 0 and m_rgba.size() == mw * mh * 4:
-					var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
-					m_img.generate_mipmaps()
-					tex = ImageTexture.create_from_image(m_img)
-					missile_textures[cache_key] = tex
-				else:
-					missile_textures[cache_key] = null
+				missile_textures_hd[cache_key] = true
+			else:
+				var is_pending = (hd_graphics_enabled and cel_name != "" and HdSpriteProvider.last_lookup_pending)
+				missile_hd_pending[m_id] = is_pending
+				if diablo_bridge.has_method("get_missile_sprite_data"):
+					var ms_data = diablo_bridge.get_missile_sprite_data(m_id)
+					var mw = ms_data.get("width", 0)
+					var mh = ms_data.get("height", 0)
+					var m_rgba = ms_data.get("rgba", PackedByteArray())
+					if mw > 0 and mh > 0 and m_rgba.size() == mw * mh * 4:
+						var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
+						m_img.generate_mipmaps()
+						tex = ImageTexture.create_from_image(m_img)
+						if not is_pending:
+							missile_textures[cache_key] = tex
+							missile_textures_hd[cache_key] = false
+					elif not is_pending:
+						missile_textures[cache_key] = null
+						missile_textures_hd[cache_key] = false
 
 		if spr and tex:
+			# HD missile frames are 4x the classic pixel density; the node is created
+			# with PIXEL_SIZE_1X, so an HD bigexp would render 4x too large in world
+			# units (a fireball explosion covering the whole room). Scale by provenance.
+			var want_px = PIXEL_SIZE_HD if (tex.get_width() >= 200 or bool(missile_textures_hd.get(cache_key, false))) else PIXEL_SIZE_1X
+			if spr.pixel_size != want_px:
+				spr.pixel_size = want_px
 			if spr.texture != tex:
 				spr.texture = tex
 				if is_ground_skill:
@@ -3500,7 +3671,23 @@ func update_corpses():
 		var c_key = "%d_%d_%d" % [tx, ty, c_idx]
 		seen_keys[c_key] = true
 
+		var c_tex_key = "%d_%d" % [c_idx, c_dir]
 		if corpse_instances.has(c_key):
+			if hd_graphics_enabled and corpse_hd_pending.get(c_key, false):
+				var hd_up: Texture2D = corpse_textures.get(c_tex_key, null)
+				if hd_up == null:
+					hd_up = HdSpriteProvider.get_corpse_sprite(str(c.get("monster_name", "")), c_dir, int(c.get("frame", 0)), current_tile_model)
+				if hd_up != null:
+					corpse_textures[c_tex_key] = hd_up
+					corpse_hd_pending.erase(c_key)
+					var existing_spr = corpse_instances[c_key].get_node_or_null("CorpseSprite") as Sprite3D
+					if existing_spr:
+						existing_spr.texture = hd_up
+						existing_spr.pixel_size = PIXEL_SIZE_HD if hd_up.get_width() >= 200 else PIXEL_SIZE_1X
+						existing_spr.offset = Vector2(0, float(hd_up.get_height()) * 0.5)
+						apply_corpse_hd_material(existing_spr, hd_up)
+				elif not HdSpriteProvider.last_lookup_pending:
+					corpse_hd_pending.erase(c_key)
 			continue
 
 		var node = Node3D.new()
@@ -3523,27 +3710,34 @@ func update_corpses():
 		spr.modulate = Color(1.35, 1.32, 1.25)
 		node.add_child(spr)
 
-		var c_tex_key = "%d_%d" % [c_idx, c_dir]
 		var c_tex: Texture2D = null
 		if corpse_textures.has(c_tex_key):
 			c_tex = corpse_textures[c_tex_key]
+			corpse_hd_pending.erase(c_key)
 		else:
 			# 1. Offline-upscaled HD death frame (assets/hd_sprites*/monsters/<family>_death/)
-			var hd_c = HdSpriteProvider.get_corpse_sprite(str(c.get("monster_name", "")), c_dir, int(c.get("frame", 0)), current_tile_model) if hd_graphics_enabled else null
+			var m_name = str(c.get("monster_name", ""))
+			var hd_c = HdSpriteProvider.get_corpse_sprite(m_name, c_dir, int(c.get("frame", 0)), current_tile_model) if hd_graphics_enabled else null
 			if hd_c != null:
 				c_tex = hd_c
-			elif diablo_bridge.has_method("get_corpse_sprite_data"):
-				var cs_data = diablo_bridge.get_corpse_sprite_data(c_idx, c_dir)
-				var cw = cs_data.get("width", 0)
-				var ch = cs_data.get("height", 0)
-				var c_rgba = cs_data.get("rgba", PackedByteArray())
-				if cw > 0 and ch > 0 and c_rgba.size() == cw * ch * 4:
-					var c_img = Image.create_from_data(cw, ch, false, Image.FORMAT_RGBA8, c_rgba)
-					c_img.generate_mipmaps()
-					c_tex = ImageTexture.create_from_image(c_img)
-				else:
-					c_tex = null
-			corpse_textures[c_tex_key] = c_tex
+				corpse_hd_pending.erase(c_key)
+				corpse_textures[c_tex_key] = c_tex
+			else:
+				var is_pending = (hd_graphics_enabled and HdSpriteProvider.last_lookup_pending)
+				corpse_hd_pending[c_key] = is_pending
+				if diablo_bridge.has_method("get_corpse_sprite_data"):
+					var cs_data = diablo_bridge.get_corpse_sprite_data(c_idx, c_dir)
+					var cw = cs_data.get("width", 0)
+					var ch = cs_data.get("height", 0)
+					var c_rgba = cs_data.get("rgba", PackedByteArray())
+					if cw > 0 and ch > 0 and c_rgba.size() == cw * ch * 4:
+						var c_img = Image.create_from_data(cw, ch, false, Image.FORMAT_RGBA8, c_rgba)
+						c_img.generate_mipmaps()
+						c_tex = ImageTexture.create_from_image(c_img)
+					else:
+						c_tex = null
+				if not is_pending:
+					corpse_textures[c_tex_key] = c_tex
 
 		if c_tex:
 			spr.texture = c_tex
@@ -3660,60 +3854,163 @@ func snap_camera_to_player():
 		player_root.position = player_target_pos
 	update_camera_transform()
 
+var _pr_acc := {}
+var _pr_t := 0
+var _skip := ""
+var _spr_vis := 0
+var _spr_change := 0
+var _t0 := 0
+var _cnt_hd := 0
+var _geom_pix := 0
+var _geom_off := 0
+var _geom_sort := 0
+var _geom_by: Dictionary = {}
+var _geom_dbg_left := 6
+var _cnt_1x := 0
+var _ms_hd := 0.0
+var _ms_1x := 0.0
+var _pr_n := 0
+
+func _prb(k: String) -> void:
+	_pr_t = Time.get_ticks_usec()
+
+func _pre(k: String) -> void:
+	_pr_acc[k] = float(_pr_acc.get(k, 0.0)) + float(Time.get_ticks_usec() - _pr_t)
+
+func _pr_report() -> void:
+	_pr_n += 1
+	if _pr_n % 240 == 0:
+		var out = []
+		for k in _pr_acc.keys():
+			out.append("%s=%.2f" % [k, _pr_acc[k] / 240.0])
+		out.append("spr_vis=%d spr_change=%d hd=%d/%.0fus 1x=%d/%.0fus geom=%d/%d/%d" % [
+			_spr_vis / 240, _spr_change / 240, _cnt_hd / 240, _ms_hd / 240.0, _cnt_1x / 240, _ms_1x / 240.0,
+			_geom_pix / 240, _geom_off / 240, _geom_sort / 240])
+		var gparts = []
+		for k in _geom_by.keys():
+			gparts.append("%s=%d" % [k, _geom_by[k] / 240])
+		gparts.sort()
+		out.append("geom_by " + " ".join(gparts))
+		out.append("hdcache hits=%d miss=%d made=%d evict=%d cache=%d pending=%d" % [
+			int(HdSpriteProvider.stat_hits) / 240, int(HdSpriteProvider.stat_misses) / 240,
+			int(HdSpriteProvider.stat_created) / 240, int(HdSpriteProvider.stat_evicted) / 240,
+			int(HdSpriteProvider.cache_count()), int(HdSpriteProvider.pending_count())])
+		_spr_vis = 0
+		_spr_change = 0
+		_geom_pix = 0
+		_geom_off = 0
+		_geom_sort = 0
+		_geom_by.clear()
+		_cnt_hd = 0
+		_cnt_1x = 0
+		_ms_hd = 0.0
+		_ms_1x = 0.0
+		out.sort()
+		print("[PR] %s" % " ".join(out))
+		_pr_acc.clear()
+
+var _pf_n := 0
+var _pf_total := 0
+
 func _process(delta: float):
+	var _t0 = Time.get_ticks_usec()
+	_process_body(delta)
+	if OS.get_environment("PROFILE") == "1":
+		_pf_total += Time.get_ticks_usec() - _t0
+		_pf_n += 1
+		if _pf_n >= 240:
+			print("[SB] sandbox_process=%.2f ms/frame" % (_pf_total / float(_pf_n) / 1000.0))
+			_pf_total = 0
+			_pf_n = 0
+
+func _process_body(delta: float):
 	if not is_sandbox_active or not diablo_bridge:
 		return
-	if not _bridge_read_gate_open():
+	_prb("gate")
+	if _skip == "everything":
 		return
+	if not _bridge_read_gate_open():
+		_pre("gate")
+		return
+	_pre("gate")
 
 	# Instant level transition check (executed every frame, never waiting on 1.5s timer)
+	_prb("lvl")
 	var cur_lvl = diablo_bridge.get_current_level() if diablo_bridge.has_method("get_current_level") else 1
 	if cur_lvl != last_level_idx:
 		_on_level_changed(cur_lvl)
+	_pre("lvl")
 
 	# Gamma change check
+	_prb("gamma")
 	if diablo_bridge.has_method("get_gamma"):
 		var cur_gamma = diablo_bridge.get_gamma()
 		if cur_gamma != last_gamma_value:
 			last_gamma_value = cur_gamma
-			player_texture = null
-			last_player_frame = -1
-			last_player_dir = -1
-			monster_textures.clear()
-			monster_anim_cache.clear()
-			monster_last_frame.clear()
-			missile_textures.clear()
-			corpse_textures.clear()
+			_clear_entity_texture_caches()
 
+	_pre("gamma")
+	_prb("total")
+	_skip = OS.get_environment("SKIP")
 	time_accum += delta
 	last_check_timer += delta
 	last_prop_check_timer += delta
 
 	# Check and rebuild dungeon if map changes (every 1.5s)
-	if last_check_timer >= 1.5:
+	_prb("dungeon")
+	if _skip != "dungeon" and last_check_timer >= 1.5:
 		last_check_timer = 0.0
 		rebuild_dungeon_if_needed(false)
+	_pre("dungeon")
 
 	# Update 3D entities
-	update_player_entity(delta)
-	update_monster_entities(delta)
-	update_ground_items(delta)
-	update_missiles(delta)
-	update_corpses()
+	_prb("player")
+	if _skip != "player":
+		update_player_entity(delta)
+	_pre("player")
+	_prb("monsters")
+	if _skip != "monsters":
+		update_monster_entities(delta)
+	_pre("monsters")
+	_prb("items")
+	if _skip != "items":
+		update_ground_items(delta)
+	_pre("items")
+	_prb("missiles")
+	if _skip != "missiles":
+		update_missiles(delta)
+	_pre("missiles")
+	_prb("corpses")
+	if _skip != "corpses":
+		update_corpses()
+	_pre("corpses")
 
 	# Native Godot 3D Combat Events & Floating Combat Text (Task 5.2)
-	process_combat_events(delta)
+	_prb("events")
+	if _skip != "events":
+		process_combat_events(delta)
 	update_flashing(delta)
 	update_visual_effects()
+	_pre("events")
 
-	# Update interactive 3D props & environmental torches (every 0.2s)
+	# Props animate every frame: engine object frames advance at 20 TPS and the
+	# HD barrel-explosion / flame sequences are only 9 frames long, so a 5 Hz
+	# refresh polls them once every 2 engine ticks and the animation freezes
+	# into a slideshow. update_props() costs ~0.57 ms/call, which fits the frame
+	# budget; static props are cheap no-ops (frame compare short-circuits).
+	_prb("props")
+	if _skip != "props":
+		update_props(delta)
 	if last_prop_check_timer >= 0.2:
 		last_prop_check_timer = 0.0
-		update_props(delta)
 		update_environmental_torches(delta)
+	_pre("props")
 
 	# Update wall transparency (every frame for smooth responsive camera transitions)
-	update_scenery_transparency()
+	_prb("scenery")
+	if _skip != "scenery":
+		update_scenery_transparency()
+	_pre("scenery")
 
 	# Dynamic torch flame flicker animation
 	for t_node in torch_instances.values():
@@ -3735,6 +4032,15 @@ func _process(delta: float):
 			var mat = click_marker.material_override as StandardMaterial3D
 			if mat:
 				mat.albedo_color.a = click_fade
+	# Finish HD frames that this frame's lookups queued: decode, mips and texture
+	# creation happen here, spread over frames, instead of stalling the entity
+	# pass (and the user's frame) on a cold PNG load.
+	_prb("pump")
+	if _skip != "pump" and hd_graphics_enabled:
+		HdSpriteProvider.pump(HD_PREFETCH_PER_FRAME)
+	_pre("pump")
+	_pre("total")
+	_pr_report()
 
 # ==============================================================================
 # Camera & Controls
@@ -4417,3 +4723,4 @@ func update_visual_effects() -> void:
 				extra_bone.position = wpos + Vector3(randf_range(-0.15, 0.15), randf_range(-0.1, 0.1), randf_range(-0.15, 0.15))
 				extra_bone.scale = Vector3(ev_scale * 1.1, ev_scale * 1.1, ev_scale * 1.1)
 				effects_root.add_child(extra_bone)
+

@@ -5,6 +5,7 @@ extends Node2D
 # with 144Hz smooth camera, Godot 2D Y-sorting, and dynamic PointLight2D lighting.
 
 const UpscalerModelConfig = preload("res://scripts/upscaler_model_config.gd")
+const HdSpriteProvider = preload("res://scripts/hd_sprite_provider.gd")
 
 var diablo_bridge = null
 var is_active: bool = false
@@ -161,11 +162,15 @@ var monster_hd_cache: Dictionary = {}  # cache_key -> Texture2D (4x native HD sp
 
 # Milestone 4: Dungeon Objects (Torches, Barrels, Chests, Shrines)
 var object_sprites: Dictionary = {} # int (id) -> Sprite2D
-var object_textures: Dictionary = {} # String ("type_frame") -> ImageTexture
+var object_textures: Dictionary = {} # String ("graphic_frame_model") -> Texture2D
+var object_is_hd: Dictionary = {} # String -> bool
+var object_last_frame: Dictionary = {} # int (id) -> int
+var object_hd_pending: Dictionary = {} # int (id) -> bool
 
 # Milestone 4: Dropped Items (Loot with name labels)
 var item_nodes: Dictionary = {} # int (id) -> Node2D
 var item_textures: Dictionary = {}
+var item_hd_pending: Dictionary = {} # int (id) -> bool
 var _loot_stylebox_normal: StyleBoxFlat = null
 var _loot_stylebox_magic: StyleBoxFlat = null
 var _loot_stylebox_unique: StyleBoxFlat = null
@@ -186,17 +191,24 @@ var loot_beam_material: CanvasItemMaterial = null
 var corpse_sprites: Dictionary = {} # Vector2i -> Sprite2D
 var corpse_textures: Dictionary = {} # String ("corpseIdx_dir") -> ImageTexture
 var corpse_is_hd: Dictionary = {} # String -> bool
+var corpse_hd_pending: Dictionary = {} # Vector2i -> bool
 var item_is_hd: Dictionary = {} # String -> bool
 
 # Missiles & Spell Projectiles
 var missile_nodes: Dictionary = {} # int (id) -> Node2D
 var missile_textures: Dictionary = {} # String ("type_frame") -> ImageTexture
+var missile_is_hd: Dictionary = {} # String -> bool
+var missile_hd_pending: Dictionary = {} # int (id) -> bool
+var player_hd_pending: bool = false
+var monster_hd_pending: Dictionary = {} # int (id) -> bool
 
 # D1DE Combat VFX - Native Godot 2.5D GPUParticles2D one-shot bursts
 var blood_splatter_2d_scene = preload("res://scenes/effects/blood_splatter_2d.tscn")
 var bone_shards_2d_scene = preload("res://scenes/effects/bone_shards_2d.tscn")
 var fireball_explosion_2d_scene = preload("res://scenes/effects/fireball_explosion_2d.tscn")
 var last_player_mode: int = -999
+var last_player_action: String = ""
+var _cached_spell_missiles: Array = []
 
 # Torch light pool
 var torch_lights: Array = []
@@ -229,9 +241,10 @@ var TOWN_LIGHT_LUT: PackedByteArray = PackedByteArray([
 var cached_light_grid: PackedByteArray = PackedByteArray()
 var cached_light_level_idx: int = -1
 
-# Freestanding pillars/columns classification (must never become translucent or clip heroes)
+# Freestanding pillars/columns classification (must never become translucent or clip heroes).
+# Only standalone narrow columns belong here; solid wall coping/roof/stair pieces fade with walls.
 const KNOWN_PILLAR_PIECES: Array[int] = [
-	7, 8, 9, 15, 16, 24, 25, 26, 27, 28, 29, 33, 36, 37, 39, 40, 41, 46, 64, 105, 113, 117, 136, 269, 436, 440, 444, 447, 448
+	7, 9, 15, 16, 20, 21, 24, 25, 26, 27, 28, 113, 117, 152, 208, 251, 253, 265, 267, 269, 323
 ]
 
 func is_piece_pillar(piece_id: int) -> bool:
@@ -337,8 +350,8 @@ func setup_scene_hierarchy():
 	entity_hd_material.shader = entity_hd_shader
 	entity_hd_material.set_shader_parameter("hd_enabled", hd_graphics_enabled)
 	entity_hd_material.set_shader_parameter("upscaler_mode", current_upscaler_mode)
-	entity_hd_material.set_shader_parameter("gamma", 1.0)
-	entity_hd_material.set_shader_parameter("brightness", 1.0)
+	entity_hd_material.set_shader_parameter("gamma", 1.22)
+	entity_hd_material.set_shader_parameter("brightness", 1.10)
 	player_hd_material = entity_hd_material
 	monster_hd_material = entity_hd_material
 
@@ -372,19 +385,30 @@ func set_hd_graphics_enabled(enabled: bool) -> void:
 	player_hd_cache.clear()
 	monster_hd_cache.clear()
 	player_texture = null
+	player_hd_pending = false
 	last_player_frame = -999
 	last_player_dir = -999
 	last_player_mode = -999
+	last_player_action = ""
 	monster_textures.clear()
 	monster_anim_cache.clear()
+	monster_hd_pending.clear()
 	monster_last_frame.clear()
 	monster_last_dir.clear()
 	object_textures.clear()
+	object_is_hd.clear()
+	object_last_frame.clear()
+	object_hd_pending.clear()
 	item_textures.clear()
 	item_is_hd.clear()
+	item_hd_pending.clear()
 	corpse_textures.clear()
 	corpse_is_hd.clear()
+	corpse_hd_pending.clear()
 	missile_textures.clear()
+	missile_is_hd.clear()
+	missile_hd_pending.clear()
+	HdSpriteProvider.clear_cache()
 	if entity_hd_material:
 		entity_hd_material.set_shader_parameter("hd_enabled", enabled)
 	if dungeon_tile_material:
@@ -547,15 +571,30 @@ func set_tile_model(model_id: int) -> void:
 	player_hd_cache.clear()
 	monster_hd_cache.clear()
 	player_texture = null
+	player_hd_pending = false
 	last_player_frame = -999
 	last_player_dir = -999
 	last_player_mode = -999
+	last_player_action = ""
 	monster_textures.clear()
 	monster_anim_cache.clear()
+	monster_hd_pending.clear()
 	monster_last_frame.clear()
 	monster_last_dir.clear()
+	object_textures.clear()
+	object_is_hd.clear()
+	object_last_frame.clear()
+	object_hd_pending.clear()
+	item_textures.clear()
+	item_is_hd.clear()
+	item_hd_pending.clear()
 	corpse_textures.clear()
 	corpse_is_hd.clear()
+	corpse_hd_pending.clear()
+	missile_textures.clear()
+	missile_is_hd.clear()
+	missile_hd_pending.clear()
+	HdSpriteProvider.clear_cache()
 	# Rebuild dungeon tiles with the new model's assets
 	rebuild_dungeon_tiles()
 	var inline_light = diablo_bridge.get_dungeon_light_grid() if _has_light_grid else PackedByteArray()
@@ -663,19 +702,29 @@ func _process(delta: float):
 			last_gamma_value = cur_gamma
 			pending_dungeon_rebuild = true
 			player_texture = null
+			player_hd_pending = false
 			last_player_frame = -999
 			last_player_dir = -999
 			last_player_mode = -999
+			last_player_action = ""
 			monster_textures.clear()
 			monster_anim_cache.clear()
+			monster_hd_pending.clear()
 			monster_last_frame.clear()
 			monster_last_dir.clear()
 			object_textures.clear()
+			object_is_hd.clear()
+			object_last_frame.clear()
+			object_hd_pending.clear()
 			item_textures.clear()
 			item_is_hd.clear()
+			item_hd_pending.clear()
 			corpse_textures.clear()
 			corpse_is_hd.clear()
+			corpse_hd_pending.clear()
 			missile_textures.clear()
+			missile_is_hd.clear()
+			missile_hd_pending.clear()
 
 	if tile_sprites.is_empty():
 		pending_dungeon_rebuild = true
@@ -752,6 +801,8 @@ func _process(delta: float):
 	update_missiles(frame_light_grid)
 	update_visual_effects()
 	update_lighting_and_transparency(frame_light_grid, frame_solidity_grid, frame_player_pos)
+	if hd_graphics_enabled:
+		HdSpriteProvider.pump(20)
 
 # --- PBR Asset & Linear Wall Occluder Pipeline ---
 
@@ -983,6 +1034,10 @@ func rebuild_dungeon_tiles():
 	if grid.size() < 112 * 112:
 		return
 
+	# Sync active level index BEFORE loading PBR folders or building Cathedral specials
+	if _has_current_level:
+		last_level_idx = diablo_bridge.get_current_level()
+
 	# Clear previous tile sprites
 	for pos_key in tile_sprites:
 		var spr = tile_sprites[pos_key]
@@ -1022,6 +1077,9 @@ func rebuild_dungeon_tiles():
 			spr.queue_free()
 	object_sprites.clear()
 	object_textures.clear()
+	object_is_hd.clear()
+	object_last_frame.clear()
+	object_hd_pending.clear()
 
 	# Clear previous ground items
 	for i_id in item_nodes:
@@ -1031,6 +1089,7 @@ func rebuild_dungeon_tiles():
 	item_nodes.clear()
 	item_textures.clear()
 	item_is_hd.clear()
+	item_hd_pending.clear()
 
 	# Clear previous corpses
 	for pos_key in corpse_sprites:
@@ -1040,6 +1099,7 @@ func rebuild_dungeon_tiles():
 	corpse_sprites.clear()
 	corpse_textures.clear()
 	corpse_is_hd.clear()
+	corpse_hd_pending.clear()
 
 	# Clear previous missiles
 	for m_id in missile_nodes:
@@ -1048,6 +1108,8 @@ func rebuild_dungeon_tiles():
 			node.queue_free()
 	missile_nodes.clear()
 	missile_textures.clear()
+	missile_is_hd.clear()
+	missile_hd_pending.clear()
 
 	# Clear previous monsters / NPCs
 	for m_id in monster_nodes:
@@ -1057,14 +1119,17 @@ func rebuild_dungeon_tiles():
 	monster_nodes.clear()
 	monster_textures.clear()
 	monster_anim_cache.clear()
+	monster_hd_pending.clear()
 	monster_last_frame.clear()
 	monster_last_dir.clear()
 	monster_shadow_materials.clear()
 
 	player_texture = null
+	player_hd_pending = false
 	last_player_frame = -999
 	last_player_dir = -999
 	last_player_mode = -999
+	last_player_action = ""
 
 	var special_grid = PackedInt32Array()
 	if _has_special_grid:
@@ -1109,8 +1174,7 @@ func rebuild_dungeon_tiles():
 					spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if (hd_graphics_enabled and is_hd_asset) else CanvasItem.TEXTURE_FILTER_NEAREST
 					spr.texture_repeat = CanvasItem.TEXTURE_REPEAT_DISABLED
 					spr.centered = false
-					var subpixel_pad = 1.002 if not is_wall else 1.0
-					spr.scale = Vector2(scale_factor * subpixel_pad, scale_factor * subpixel_pad)
+					spr.scale = Vector2(scale_factor, scale_factor)
 					spr.position = tile_pos
 					spr.offset = Vector2(-float(tw) * 0.5, -float(th))
 					spr.self_modulate = Color(1.0, 1.0, 1.0)
@@ -1284,7 +1348,7 @@ func update_lighting_and_transparency(light_grid: PackedByteArray, solidity_grid
 			if has_trans and has_trans_mask and trans_mask[idx] != 0 and not is_piece_pillar(pid):
 				var trans_val = trans_grid[idx]
 				if trans_val > 0 and trans_val < trans_list.size() and trans_list[trans_val] != 0:
-					wall_alpha = 0.65 # Soft natural stone translucency
+					wall_alpha = 0.50 # Smooth translucent fade over foreground walls
 
 			if wall_spr:
 				wall_spr.visible = true
@@ -1294,7 +1358,9 @@ func update_lighting_and_transparency(light_grid: PackedByteArray, solidity_grid
 			if arch_spr:
 				arch_spr.visible = true
 				arch_spr.self_modulate = Color(1.0, 1.0, 1.0)
-				arch_spr.modulate.a = wall_alpha
+				# Only fade doorway/arch overlays that belong to an actively faded wall piece;
+				# freestanding column caps & floor arch tiles stay 100% opaque.
+				arch_spr.modulate.a = wall_alpha if (wall_spr != null and not is_piece_pillar(pid)) else 1.0
 
 			if enable_wall_occluders:
 				var occ = tile_occluders.get(pos_key, null)
@@ -1792,20 +1858,29 @@ func update_player(delta: float, light_grid: PackedByteArray, player_pos: Dictio
 
 	# Update animated player sprite (supports all Diablo 1 & Hellfire classes: Monk, Bard, Barbarian, Sorcerer, Rogue, Warrior)
 	if _has_player_sprite:
-		if anim_frame != last_player_frame or dir != last_player_dir or mode != last_player_mode or player_texture == null:
+		var p_action = str(p_data.get("action", "STAND"))
+		if anim_frame != last_player_frame or dir != last_player_dir or mode != last_player_mode or p_action != last_player_action or player_texture == null or player_hd_pending:
 			last_player_frame = anim_frame
 			last_player_dir = dir
 			last_player_mode = mode
+			last_player_action = p_action
 
-			# 1. Try loading 4X Native HD Sprite PNG from the active neural model directory
+			# 1. Try loading 4X Native HD Sprite PNG via shared HdSpriteProvider
 			var p_class = diablo_bridge.get_player_class() if diablo_bridge.has_method("get_player_class") else -1
-			var hd_tex = get_hd_player_sprite(p_class, mode, dir, anim_frame)
-			if hd_tex:
+			var gfx_prefix := ""
+			if diablo_bridge.has_method("get_player_cel_path"):
+				var cel_parts = str(diablo_bridge.get_player_cel_path()).replace("/", "\\").split("\\")
+				if cel_parts.size() >= 3:
+					gfx_prefix = str(cel_parts[2]).to_lower()
+			var hd_tex = HdSpriteProvider.get_player_sprite(p_class, p_action, dir, anim_frame, current_tile_model, gfx_prefix) if hd_graphics_enabled else null
+			if hd_tex != null:
+				player_hd_pending = false
 				player_texture = hd_tex
 				player_sprite.texture = player_texture
 				player_sprite.scale = Vector2(0.25, 0.25)
 				player_sprite.offset = Vector2(0, -float(hd_tex.get_height()) * 0.5)
 			else:
+				player_hd_pending = (hd_graphics_enabled and HdSpriteProvider.last_lookup_pending)
 				# 2. Fallback to real-time DevilutionX C++ sprite extraction
 				var s_data: Dictionary = diablo_bridge.get_player_sprite_data()
 				var sw = s_data.get("width", 0)
@@ -1886,7 +1961,7 @@ func update_monsters(delta: float, light_grid: PackedByteArray):
 		var m_mode = int(m.get("mode", 0))
 
 		if _has_monster_sprite:
-			if anim_frame != last_f or dir != last_d or cur_tex == null:
+			if anim_frame != last_f or dir != last_d or cur_tex == null or monster_hd_pending.get(m_id, false):
 				monster_last_frame[m_id] = anim_frame
 				monster_last_dir[m_id] = dir
 
@@ -1896,15 +1971,19 @@ func update_monsters(delta: float, light_grid: PackedByteArray):
 				if monster_anim_cache.has(anim_cache_key):
 					cur_tex = monster_anim_cache[anim_cache_key]
 					is_hd = (cur_tex != null and cur_tex.get_width() >= 200)
+					monster_hd_pending.erase(m_id)
 				else:
-					# 1. Try loading 4X Native HD Sprite PNG from the active neural model directory
-					var m_hd_tex = get_hd_monster_sprite(m_name, m_mode, dir, anim_frame, m_type)
+					# 1. Try loading 4X Native HD Sprite PNG via shared HdSpriteProvider
+					var m_hd_tex = HdSpriteProvider.get_monster_sprite(m_name, m_mode, dir, anim_frame, current_tile_model, m_type) if hd_graphics_enabled else null
 					if m_hd_tex:
 						cur_tex = m_hd_tex
 						is_hd = true
+						monster_hd_pending.erase(m_id)
 						monster_anim_cache[anim_cache_key] = cur_tex
 					else:
-						# 2. Fallback to real-time DevilutionX C++ monster sprite extraction (cached permanently)
+						var is_pending = (hd_graphics_enabled and HdSpriteProvider.last_lookup_pending)
+						monster_hd_pending[m_id] = is_pending
+						# 2. Fallback to real-time DevilutionX C++ monster sprite extraction
 						var ms_data: Dictionary = diablo_bridge.get_monster_sprite_data(m_id)
 						var mw = ms_data.get("width", 0)
 						var mh = ms_data.get("height", 0)
@@ -1913,8 +1992,9 @@ func update_monsters(delta: float, light_grid: PackedByteArray):
 							var m_img = Image.create_from_data(mw, mh, false, Image.FORMAT_RGBA8, m_rgba)
 							cur_tex = ImageTexture.create_from_image(m_img)
 							is_hd = false
-							monster_anim_cache[anim_cache_key] = cur_tex
-						else:
+							if not is_pending:
+								monster_anim_cache[anim_cache_key] = cur_tex
+						elif not is_pending:
 							monster_anim_cache[anim_cache_key] = null
 
 				monster_textures[m_id] = cur_tex
@@ -1948,7 +2028,7 @@ func update_monsters(delta: float, light_grid: PackedByteArray):
 				node.visible = false
 				continue
 			var m_norm = clamp(1.0 - float(m_light) / 14.5, 0.0, 1.0)
-			var m_bright = clampf(lerpf(0.25, 1.0, m_norm), 0.25, 1.0)
+			var m_bright = clampf(lerpf(0.36, 1.38, m_norm), 0.36, 1.38)
 			if m_sprite:
 				m_sprite.self_modulate = Color(1.0, 0.98, 0.95) * m_bright
 			node.visible = true
@@ -2014,6 +2094,7 @@ func update_torches(light_grid: PackedByteArray, player_pos: Dictionary):
 	var is_town = (last_level_idx == 0)
 
 	var active_spell_lights = 0
+	var spell_missiles_fetched = false
 	# Index 0 is the hero torch; environmental lights are 1..N
 	for i in range(torch_lights.size()):
 		var pl: PointLight2D = torch_lights[i]
@@ -2038,6 +2119,9 @@ func update_torches(light_grid: PackedByteArray, player_pos: Dictionary):
 				if active_spell_lights >= 4:
 					pl.visible = false
 					continue
+				if not spell_missiles_fetched:
+					_cached_spell_missiles = diablo_bridge.get_active_missiles() if _has_active_missiles else []
+					spell_missiles_fetched = true
 				active_spell_lights += 1
 
 			var l_pos = Vector2((tx - ty) * 32.0, (tx + ty) * 16.0 - 10.0)
@@ -2054,9 +2138,9 @@ func update_torches(light_grid: PackedByteArray, player_pos: Dictionary):
 				pl.energy = hdr_torch_energy * t_flicker
 				pl.texture_scale = clampf(rad * (0.20 + float(current_hdr_level) * 0.03), 1.0, 1.9)
 				pl.shadow_enabled = (i <= 3 and enable_wall_occluders)
-			elif l_type == 2: # Spell / missile (Fireball, flame, Nova)
+			elif l_type == 2: # Spell / missile (element-aware light color)
 				var hdr_missile_energy = [1.00, 1.30, 1.65, 1.95][current_hdr_level]
-				pl.color = Color(1.0, 0.88, 0.50)
+				pl.color = _match_spell_light_color(tx, ty)
 				pl.energy = hdr_missile_energy * t_flicker
 				pl.texture_scale = clampf(rad * (0.24 + float(current_hdr_level) * 0.03), 1.2, 2.2)
 				pl.shadow_enabled = false # Spell/missile lights NEVER cast 2D wall occluder shadows!
@@ -2223,22 +2307,44 @@ func update_objects(light_grid: PackedByteArray, player_pos: Dictionary):
 		spr.position = tile_pos
 		spr.z_index = 0
 
-		# Texture caching by (type, anim_frame)
-		var cache_key = "%d_%d" % [o_type, anim_frame]
-		var tex: ImageTexture = object_textures.get(cache_key, null)
-		if tex == null and diablo_bridge.has_method("get_object_sprite_data"):
-			var s_data = diablo_bridge.get_object_sprite_data(o_id)
-			var sw = s_data.get("width", 0)
-			var sh = s_data.get("height", 0)
-			var rgba = s_data.get("rgba", PackedByteArray())
-			if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
-				var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
-				tex = ImageTexture.create_from_image(img)
+		# Texture caching by (type/graphic, anim_frame, model) — try HD first, never lock on async pending 1x
+		var hd_graphic = str(obj.get("graphic", ""))
+		var cache_key = "%s_%d_%d_%d" % [hd_graphic if hd_graphic != "" else str(o_type), o_type, anim_frame, current_tile_model]
+		var tex: Texture2D = null
+		var o_is_hd = false
+		if object_textures.has(cache_key):
+			tex = object_textures[cache_key]
+			o_is_hd = object_is_hd.get(cache_key, false)
+			object_hd_pending.erase(o_id)
+		else:
+			var hd_o_tex = HdSpriteProvider.get_object_sprite(hd_graphic, anim_frame, current_tile_model) if (hd_graphics_enabled and hd_graphic != "") else null
+			if hd_o_tex != null:
+				tex = hd_o_tex
+				o_is_hd = true
+				object_hd_pending.erase(o_id)
 				object_textures[cache_key] = tex
+				object_is_hd[cache_key] = true
+			else:
+				var is_pending = (hd_graphics_enabled and hd_graphic != "" and HdSpriteProvider.last_lookup_pending)
+				object_hd_pending[o_id] = is_pending
+				if diablo_bridge.has_method("get_object_sprite_data"):
+					var s_data = diablo_bridge.get_object_sprite_data(o_id)
+					var sw = s_data.get("width", 0)
+					var sh = s_data.get("height", 0)
+					var rgba = s_data.get("rgba", PackedByteArray())
+					if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
+						var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
+						tex = ImageTexture.create_from_image(img)
+						if not is_pending:
+							object_textures[cache_key] = tex
+							object_is_hd[cache_key] = false
+		object_last_frame[o_id] = anim_frame
 
 		if tex:
 			spr.texture = tex
-			spr.offset = Vector2(-float(tex.get_width()) * 0.5, -float(tex.get_height()) - (2.0 if not pre_flag else 0.0))
+			spr.scale = Vector2(0.25, 0.25) if o_is_hd else Vector2(1.0, 1.0)
+			spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if (o_is_hd and current_upscaler_mode != 4) else CanvasItem.TEXTURE_FILTER_NEAREST
+			spr.offset = Vector2(-float(tex.get_width()) * 0.5, -float(tex.get_height()) - (2.0 if (not pre_flag and not o_is_hd) else 0.0))
 
 		# Authentic per-tile lighting (Objects in Diablo 1 are NEVER transparent!)
 		spr.modulate.a = 1.0
@@ -2383,9 +2489,23 @@ func update_ground_items(light_grid: PackedByteArray):
 		if item_textures.has(cache_key):
 			tex = item_textures[cache_key]
 			is_hd = item_is_hd.get(cache_key, false)
+			item_hd_pending.erase(i_id)
 		else:
-			# 1. Authoritative authentic Diablo 1 ground item sprite rasterization from bridge
-			if diablo_bridge.has_method("get_ground_item_sprite_data"):
+			# 1. Try 4x HD ground item via HdSpriteProvider first
+			if hd_graphics_enabled:
+				var hd_it = HdSpriteProvider.get_item_sprite(curs_id, anim_frame, current_tile_model)
+				if hd_it != null:
+					tex = hd_it
+					is_hd = true
+					item_hd_pending.erase(i_id)
+					item_textures[cache_key] = tex
+					item_is_hd[cache_key] = true
+
+			var is_pending = (tex == null and hd_graphics_enabled and HdSpriteProvider.last_lookup_pending)
+			item_hd_pending[i_id] = is_pending
+
+			# 2. Fallback to authentic Diablo 1 ground item sprite rasterization from bridge
+			if tex == null and diablo_bridge.has_method("get_ground_item_sprite_data"):
 				var s_data = diablo_bridge.get_ground_item_sprite_data(i_id)
 				var sw = s_data.get("width", 0)
 				var sh = s_data.get("height", 0)
@@ -2398,38 +2518,12 @@ func update_ground_items(light_grid: PackedByteArray):
 					img.generate_mipmaps()
 					tex = ImageTexture.create_from_image(img)
 					is_hd = false
-
-			# 2. HD sprite fallback - ONLY if valid on disk and NOT a pure black silhouette mask
-			if tex == null and hd_graphics_enabled:
-				var folder = UpscalerModelConfig.get_sprite_folder(current_tile_model)
-				var p1 = "%s/items/curs_%d_f%d.png" % [folder, curs_id, anim_frame]
-				var p2 = "%s/items/curs_%d.png" % [folder, curs_id]
-				var chosen_path = ""
-				if FileAccess.file_exists(p1):
-					chosen_path = p1
-				elif FileAccess.file_exists(p2):
-					chosen_path = p2
-				else:
-					var fb_folder = UpscalerModelConfig.get_sprite_folder(0)
-					var fb1 = "%s/items/curs_%d_f%d.png" % [fb_folder, curs_id, anim_frame]
-					var fb2 = "%s/items/curs_%d.png" % [fb_folder, curs_id]
-					if FileAccess.file_exists(fb1):
-						chosen_path = fb1
-					elif FileAccess.file_exists(fb2):
-						chosen_path = fb2
-
-				if chosen_path != "":
-					var img = Image.load_from_file(ProjectSettings.globalize_path(chosen_path))
-					if img and not img.is_empty() and not _is_texture_pure_black(img):
-						var used_rect = img.get_used_rect()
-						if used_rect.size.x > 0 and used_rect.size.y > 0:
-							img = img.get_region(used_rect)
-						img.generate_mipmaps()
-						tex = ImageTexture.create_from_image(img)
-						is_hd = true
-
-			item_textures[cache_key] = tex
-			item_is_hd[cache_key] = is_hd
+					if not is_pending:
+						item_textures[cache_key] = tex
+						item_is_hd[cache_key] = false
+			elif tex == null and not is_pending:
+				item_textures[cache_key] = null
+				item_is_hd[cache_key] = false
 
 		if tex and spr:
 			spr.texture = tex
@@ -2657,16 +2751,19 @@ func update_corpses(light_grid: PackedByteArray):
 		if corpse_textures.has(cache_key):
 			tex = corpse_textures[cache_key]
 			is_hd = corpse_is_hd.get(cache_key, false)
+			corpse_hd_pending.erase(pos_key)
 		else:
 			if hd_graphics_enabled and m_name != "":
-				# Mode 6 = MonsterGraphic::Death in get_hd_monster_sprite
-				var hd_tex = get_hd_monster_sprite(m_name, 6, dir, frame)
-				if hd_tex:
-					var test_img = hd_tex.get_image()
-					if test_img and not test_img.is_empty():
-						if not _is_texture_corrupted_black(test_img):
-							tex = hd_tex
-							is_hd = true
+				var hd_tex = HdSpriteProvider.get_corpse_sprite(m_name, dir, frame, current_tile_model)
+				if hd_tex != null:
+					tex = hd_tex
+					is_hd = true
+					corpse_hd_pending.erase(pos_key)
+					corpse_textures[cache_key] = tex
+					corpse_is_hd[cache_key] = true
+
+			var is_pending = (tex == null and hd_graphics_enabled and m_name != "" and HdSpriteProvider.last_lookup_pending)
+			corpse_hd_pending[pos_key] = is_pending
 
 			if tex == null and diablo_bridge.has_method("get_corpse_sprite_data"):
 				var s_data = diablo_bridge.get_corpse_sprite_data(corpse_idx, dir)
@@ -2681,10 +2778,12 @@ func update_corpses(light_grid: PackedByteArray):
 					img.generate_mipmaps()
 					tex = ImageTexture.create_from_image(img)
 					is_hd = false
-
-			# Store in cache (even if null) so we NEVER re-extract or re-scan disk on future frames!
-			corpse_textures[cache_key] = tex
-			corpse_is_hd[cache_key] = is_hd
+					if not is_pending:
+						corpse_textures[cache_key] = tex
+						corpse_is_hd[cache_key] = false
+			elif tex == null and not is_pending:
+				corpse_textures[cache_key] = null
+				corpse_is_hd[cache_key] = false
 
 		if tex:
 			spr.texture = tex
@@ -2761,6 +2860,52 @@ func update_visual_effects():
 			extra_bones.scale = Vector2(ev_scale * 1.05, ev_scale * 1.05)
 			world_root.add_child(extra_bones)
 
+static func _classify_missile_element(m_type: int, cel_name: String) -> int:
+	# Returns: 0=generic, 1=fire, 2=lightning, 3=holy, 4=arcane/portal, 5=acid
+	var cel = cel_name.to_lower()
+	if m_type in [3, 21, 26, 29] or cel.begins_with("lgh") or cel.begins_with("thin") or cel.begins_with("mini") or cel.begins_with("larrow"):
+		return 2
+	if m_type in [27, 28] or cel.begins_with("holy"):
+		return 3
+	if m_type in [6, 7, 8, 9, 36, 37, 41, 42, 47, 49, 54, 56, 58] or cel.begins_with("portal") or cel.begins_with("bluex") or cel.begins_with("mana") or cel.begins_with("ressur") or cel.begins_with("sklball") or cel.begins_with("ms_bl") or cel.begins_with("ex_blu") or cel.begins_with("scubmisb") or cel.begins_with("scbsexpb"):
+		return 4
+	if m_type in [31, 32, 33] or cel.begins_with("acid"):
+		return 5
+	if m_type in [1, 4, 5, 13, 17, 20, 24, 30, 35, 38, 39, 48, 57] or cel.begins_with("fire") or cel.begins_with("fwall") or cel.begins_with("farrow") or cel.begins_with("magm") or cel.begins_with("inferno") or cel.begins_with("rportal") or cel.begins_with("ms_ora") or cel.begins_with("ms_reb") or cel.begins_with("ex_ora") or cel.begins_with("ex_red") or cel.begins_with("bigexp") or cel.begins_with("newexp"):
+		return 1
+	return 0
+
+static func _get_missile_light_color(elem: int) -> Color:
+	match elem:
+		2: return Color(0.45, 0.84, 1.0) # Lightning / Charged Bolt / Nova
+		3: return Color(1.0, 0.95, 0.68) # Holy Bolt
+		4: return Color(0.50, 0.72, 1.0) # Town Portal / Arcane Blue
+		5: return Color(0.40, 0.95, 0.45) # Acid
+		_: return Color(1.0, 0.76, 0.38) # Fireball / Fire spells
+
+static func _get_missile_sprite_modulate(elem: int, hdr_level: int) -> Color:
+	match elem:
+		2: # Electric cyan-white boost without orange shift
+			return [Color(1.0, 1.0, 1.0), Color(1.06, 1.18, 1.35), Color(1.12, 1.30, 1.55), Color(1.18, 1.42, 1.80)][hdr_level]
+		3: # Pure Holy golden-white
+			return [Color(1.0, 1.0, 1.0), Color(1.15, 1.15, 1.0), Color(1.30, 1.30, 1.10), Color(1.48, 1.45, 1.20)][hdr_level]
+		4: # Arcane blue
+			return [Color(1.0, 1.0, 1.0), Color(1.05, 1.18, 1.35), Color(1.12, 1.30, 1.55), Color(1.20, 1.42, 1.80)][hdr_level]
+		5: # Acid green
+			return [Color(1.0, 1.0, 1.0), Color(1.05, 1.25, 1.05), Color(1.15, 1.42, 1.15), Color(1.25, 1.60, 1.25)][hdr_level]
+		_: # Fireball / fire HDR glow
+			return [Color(1.0, 1.0, 1.0), Color(1.4, 1.15, 0.9), Color(1.75, 1.4, 1.05), Color(2.1, 1.6, 1.2)][hdr_level]
+
+func _match_spell_light_color(lx: float, ly: float) -> Color:
+	var best_elem := 0
+	var best_d2 := 6.25
+	for m in _cached_spell_missiles:
+		var d2 = pow(float(m.get("tile_x", -999)) - lx, 2.0) + pow(float(m.get("tile_y", -999)) - ly, 2.0)
+		if d2 <= best_d2:
+			best_d2 = d2
+			best_elem = _classify_missile_element(int(m.get("type", 0)), str(m.get("cel", "")))
+	return _get_missile_light_color(best_elem)
+
 # Projectiles & Spells (Arrows, Firebolts, Fireballs, Lightning, Holy Bolts)
 func update_missiles(light_grid: PackedByteArray):
 	if not diablo_bridge or not _has_active_missiles:
@@ -2812,14 +2957,8 @@ func update_missiles(light_grid: PackedByteArray):
 		# Non-glowing missiles (arrows) sample the dungeon light grid
 		if spr:
 			if light_flag:
-				var m_mod = Color(1.0, 1.0, 1.0)
-				if current_hdr_level == 1:
-					m_mod = Color(1.4, 1.15, 0.9)
-				elif current_hdr_level == 2:
-					m_mod = Color(1.75, 1.4, 1.05)
-				elif current_hdr_level == 3:
-					m_mod = Color(2.1, 1.6, 1.2)
-				spr.self_modulate = m_mod
+				var m_elem = _classify_missile_element(m_type, str(m.get("cel", "")))
+				spr.self_modulate = _get_missile_sprite_modulate(m_elem, current_hdr_level)
 			elif has_light:
 				var tile_idx = clamp(m_ty, 0, 111) * 112 + clamp(m_tx, 0, 111)
 				var l_val = light_grid[tile_idx]
@@ -2831,25 +2970,45 @@ func update_missiles(light_grid: PackedByteArray):
 
 		node.visible = true
 
-		# Texture caching by (type, dir, anim_frame)
-		var cache_key = "%d_%d_%d" % [m_type, m_dir, anim_frame]
-		var tex: ImageTexture = null
+		# Texture caching by (type, dir, anim_frame, model) — try HD first
+		var cache_key = "%d_%d_%d_%d" % [m_type, m_dir, anim_frame, current_tile_model]
+		var tex: Texture2D = null
+		var m_is_hd = false
 		if missile_textures.has(cache_key):
 			tex = missile_textures[cache_key]
-		elif diablo_bridge.has_method("get_missile_sprite_data"):
-			var s_data = diablo_bridge.get_missile_sprite_data(m_id)
-			var sw = s_data.get("width", 0)
-			var sh = s_data.get("height", 0)
-			var rgba = s_data.get("rgba", PackedByteArray())
-			if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
-				var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
-				tex = ImageTexture.create_from_image(img)
+			m_is_hd = missile_is_hd.get(cache_key, false)
+			missile_hd_pending.erase(m_id)
+		else:
+			var cel_name = str(m.get("cel", ""))
+			var hd_mis = HdSpriteProvider.get_missile_sprite(cel_name, m_dir, anim_frame, current_tile_model) if (hd_graphics_enabled and cel_name != "") else null
+			if hd_mis != null:
+				tex = hd_mis
+				m_is_hd = true
+				missile_hd_pending.erase(m_id)
 				missile_textures[cache_key] = tex
+				missile_is_hd[cache_key] = true
 			else:
-				missile_textures[cache_key] = null
+				var is_pending = (hd_graphics_enabled and cel_name != "" and HdSpriteProvider.last_lookup_pending)
+				missile_hd_pending[m_id] = is_pending
+				if diablo_bridge.has_method("get_missile_sprite_data"):
+					var s_data = diablo_bridge.get_missile_sprite_data(m_id)
+					var sw = s_data.get("width", 0)
+					var sh = s_data.get("height", 0)
+					var rgba = s_data.get("rgba", PackedByteArray())
+					if sw > 0 and sh > 0 and rgba.size() == sw * sh * 4:
+						var img = Image.create_from_data(sw, sh, false, Image.FORMAT_RGBA8, rgba)
+						tex = ImageTexture.create_from_image(img)
+						if not is_pending:
+							missile_textures[cache_key] = tex
+							missile_is_hd[cache_key] = false
+					elif not is_pending:
+						missile_textures[cache_key] = null
+						missile_is_hd[cache_key] = false
 
 		if spr and tex:
 			spr.texture = tex
+			spr.scale = Vector2(0.25, 0.25) if m_is_hd else Vector2(1.0, 1.0)
+			spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if (m_is_hd and current_upscaler_mode != 4) else CanvasItem.TEXTURE_FILTER_NEAREST
 			spr.offset = Vector2(-float(tex.get_width()) * 0.5, -float(tex.get_height()))
 
 	# Hide inactive missiles
