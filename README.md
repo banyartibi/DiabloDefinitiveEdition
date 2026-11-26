@@ -55,6 +55,16 @@ A complete technical guide covering all C++ bridge methods, thread safety models
 * Vulkan-compatible GPU (e.g. AMD Radeon RX 6000/7000, NVIDIA RTX, Intel Arc)
 * Original `diabdat.mpq` (from your legal copy of Diablo 1 or GOG.com) placed in `~/.local/share/diasurgical/devilution/` or the project root.
 
+### Optional HD Sprites & 4X PBR Asset Packs
+Pre-upscaled HD sprites (`assets/hd_sprites*`) and 4X PBR dungeon tiles (`assets/dungeon_pbr_*_x4plus`, `_nmkd`, `_omnisr`) are excluded from git and distributed as `.tar.gz` packs under GitHub Release [`assets-v1`](https://github.com/banyartibi/DiabloDefinitiveEdition/releases/tag/assets-v1). To download, SHA-256 verify, and extract all packs into `assets/`:
+```bash
+./scripts/download_assets.sh
+```
+For a lighter install without the ~18 GiB hero/legacy player sheets:
+```bash
+./scripts/download_assets.sh --core-only
+```
+
 ### Launching the Game
 ```bash
 ./run_d1_godot3d.sh
